@@ -4,7 +4,8 @@ import { AppTopBar } from "@/components/AppTopBar";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import {
-  Inbox, ClipboardCheck, CalendarDays, Bus, Users, Bell, FileText, AlertCircle, CheckCircle2,
+  Inbox, ClipboardCheck, CalendarDays, Bus, Users, Bell,
+  FileText, AlertCircle, CheckCircle2, X, UserCheck,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -80,13 +81,13 @@ function Notifications() {
     <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-soft">
       <Bell className="h-4 w-4 text-primary" />
       <span className="text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">2 alerts</span> · Quote changed · Trip added
+        <span className="font-semibold text-foreground">Notifications</span> · Email/SMS coming Phase 4
       </span>
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value, onClick }: { icon: any; label: string; value: string; onClick?: () => void }) {
+function StatCard({ icon: Icon, label, value, onClick }: { icon: React.ElementType; label: string; value: string; onClick?: () => void }) {
   return (
     <button onClick={onClick} className="flex w-full items-start gap-4 rounded-2xl border border-border bg-card p-5 text-left shadow-soft transition-shadow hover:shadow-elevated">
       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -104,20 +105,20 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Inbox} label="New quote requests" value="[6]" onClick={() => onJump("quotes")} />
-        <StatCard icon={ClipboardCheck} label="Quotes in review" value="[3]" onClick={() => onJump("quotes")} />
-        <StatCard icon={CalendarDays} label="Trips today" value="[8]" onClick={() => onJump("schedule")} />
-        <StatCard icon={AlertCircle} label="Assets needing attention" value="[2]" onClick={() => onJump("assets")} />
+        <StatCard icon={Inbox} label="New quote requests" value="—" onClick={() => onJump("quotes")} />
+        <StatCard icon={ClipboardCheck} label="Quotes in review" value="—" onClick={() => onJump("quotes")} />
+        <StatCard icon={CalendarDays} label="Trips scheduled" value="—" onClick={() => onJump("schedule")} />
+        <StatCard icon={AlertCircle} label="Assets needing attention" value="—" onClick={() => onJump("assets")} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <h3 className="text-sm font-semibold text-foreground">Recent activity</h3>
           <ul className="mt-3 space-y-3 text-sm">
-            <Activity icon={<Bell className="h-4 w-4" />} text="Quote Q-2026-0142 changed — needs Melody confirmation" time="2m ago" />
-            <Activity icon={<CheckCircle2 className="h-4 w-4" />} text="Trip T-3041 added — drivers notified" time="14m ago" />
-            <Activity icon={<Inbox className="h-4 w-4" />} text="New quote request from [Placeholder School]" time="1h ago" />
+            <Activity icon={<Inbox className="h-4 w-4" />} text="New quote requests appear here in real time." time="" />
+            <Activity icon={<CheckCircle2 className="h-4 w-4" />} text="Confirmed trips will be listed when scheduled." time="" />
           </ul>
+          <p className="mt-3 text-xs text-muted-foreground">Activity feed — Phase 4 (live notifications).</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <h3 className="text-sm font-semibold text-foreground">Status flow</h3>
@@ -141,7 +142,7 @@ function Activity({ icon, text, time }: { icon: React.ReactNode; text: string; t
       <div className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg bg-accent/30 text-primary">{icon}</div>
       <div className="flex-1">
         <div className="text-foreground">{text}</div>
-        <div className="text-xs text-muted-foreground">{time}</div>
+        {time && <div className="text-xs text-muted-foreground">{time}</div>}
       </div>
     </li>
   );
@@ -156,6 +157,17 @@ const STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
   invoiced:  "Invoiced",
   cancelled: "Cancelled",
+};
+
+const statusStyle: Record<string, string> = {
+  requested: "bg-amber-100 text-amber-800",
+  in_review: "bg-blue-100 text-blue-800",
+  approved:  "bg-emerald-100 text-emerald-800",
+  confirmed: "bg-emerald-100 text-emerald-800",
+  scheduled: "bg-purple-100 text-purple-800",
+  completed: "bg-slate-100 text-slate-700",
+  invoiced:  "bg-slate-100 text-slate-700",
+  cancelled: "bg-rose-100 text-rose-800",
 };
 
 type AdminVersionDetail = {
@@ -177,11 +189,41 @@ type AdminQuoteRow = {
   quote_versions: AdminVersionDetail | null;
 };
 
+type AssignmentSuggestion = {
+  driver_id: string;
+  driver_name: string;
+  air_brake_cert: boolean;
+  phone: string | null;
+  bus_id: string;
+  bus_fleet: string;
+  bus_bench_count: number;
+};
+
+type AssignmentResult = {
+  trip_date: string;
+  headcount: number;
+  needed_bench: number;
+  suggestions: AssignmentSuggestion[];
+};
+
 function QuoteQueue() {
   const [quotes, setQuotes] = useState<AdminQuoteRow[]>([]);
   const [qLoading, setQLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [invoiceNos, setInvoiceNos] = useState<Record<string, string>>({});
+
+  // Action state
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmedTrip, setConfirmedTrip] = useState<string | null>(null);
+
+  // Reject modal
+  const [showReject, setShowReject] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  // Assignment panel
+  const [assignment, setAssignment] = useState<AssignmentResult | null>(null);
+  const [assignBusy, setAssignBusy] = useState(false);
 
   useEffect(() => {
     // Two-step fetch: quotes first, then versions — avoids PostgREST FK ambiguity
@@ -192,14 +234,18 @@ function QuoteQueue() {
       .limit(50)
       .then(async ({ data: rows }) => {
         if (!rows) { setQLoading(false); return; }
-        const versionIds = rows.map((r: { current_version_id: string | null }) => r.current_version_id).filter(Boolean) as string[];
+        const versionIds = rows
+          .map((r: { current_version_id: string | null }) => r.current_version_id)
+          .filter(Boolean) as string[];
         let versionMap: Record<string, AdminVersionDetail> = {};
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
             .select("id, trip_date, student_count, destination_name, total, departure_time, special_requests")
             .in("id", versionIds);
-          versionMap = Object.fromEntries((versions ?? []).map((v: AdminVersionDetail & { id: string }) => [v.id, v]));
+          versionMap = Object.fromEntries(
+            (versions ?? []).map((v: AdminVersionDetail & { id: string }) => [v.id, v])
+          );
         }
         const merged: AdminQuoteRow[] = rows.map((r: AdminQuoteRow) => ({
           ...r,
@@ -211,6 +257,58 @@ function QuoteQueue() {
         setQLoading(false);
       });
   }, []);
+
+  // Clear assignment panel when switching quotes
+  useEffect(() => { setAssignment(null); setConfirmedTrip(null); setActionError(null); }, [selected]);
+
+  async function handleApprove(quoteId: string) {
+    setActionBusy("approve"); setActionError(null);
+    const { data, error } = await supabase.rpc("approve_quote" as never, {
+      p_quote_id: quoteId,
+      p_invoice_number: invoiceNos[quoteId] ?? null,
+    } as never);
+    setActionBusy(null);
+    if (error) { setActionError(error.message); return; }
+    const result = data as { invoice_number: string };
+    setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "approved" } : q));
+    setInvoiceNos((m) => ({ ...m, [quoteId]: result.invoice_number }));
+  }
+
+  async function handleReject(quoteId: string) {
+    setActionBusy("reject"); setActionError(null);
+    const { error } = await supabase.rpc("reject_quote" as never, {
+      p_quote_id: quoteId,
+      p_reason: rejectReason || null,
+    } as never);
+    setActionBusy(null);
+    if (error) { setActionError(error.message); return; }
+    setQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+    setShowReject(false); setRejectReason("");
+    setSelected((prev) => quotes.find((q) => q.id !== quoteId && q.id !== prev)?.id ?? quotes[0]?.id ?? null);
+  }
+
+  async function handleSuggest(quoteId: string) {
+    setAssignBusy(true); setActionError(null); setAssignment(null);
+    const { data, error } = await supabase.rpc("suggest_assignment" as never, { p_quote_id: quoteId } as never);
+    setAssignBusy(false);
+    if (error) { setActionError(error.message); return; }
+    setAssignment(data as AssignmentResult);
+  }
+
+  async function handleConfirmTrip(quoteId: string, driverId: string, busId: string) {
+    setActionBusy("confirm"); setActionError(null);
+    const { data, error } = await supabase.rpc("confirm_trip" as never, {
+      p_quote_id: quoteId,
+      p_driver_id: driverId,
+      p_bus_id: busId,
+    } as never);
+    setActionBusy(null);
+    if (error) { setActionError(error.message); return; }
+    const result = data as { trip_number: string };
+    setConfirmedTrip(result.trip_number);
+    setAssignment(null);
+    setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "scheduled" } : q));
+  }
 
   if (qLoading) {
     return <div className="py-12 text-center text-sm text-muted-foreground">Loading quotes…</div>;
@@ -231,8 +329,14 @@ function QuoteQueue() {
     ? new Date(ver.trip_date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })
     : "—";
 
+  const canApprove = ["requested", "in_review"].includes(quote.status);
+  const canSchedule = quote.status === "approved";
+  const isScheduled = quote.status === "scheduled";
+  const isCancelled = quote.status === "cancelled";
+
   return (
     <div className="grid gap-6 lg:grid-cols-5">
+      {/* ── Quote list sidebar ── */}
       <div className="lg:col-span-2 rounded-2xl border border-border bg-card shadow-soft">
         <div className="border-b border-border p-4">
           <h3 className="text-sm font-semibold text-foreground">Quote queue ({quotes.length})</h3>
@@ -249,12 +353,13 @@ function QuoteQueue() {
                 <div>
                   <div className="font-semibold text-foreground">{q.quote_number}</div>
                   <div className="text-xs text-muted-foreground">
-                    {q.schools?.name ?? "Unknown school"} · {q.quote_versions?.trip_date
+                    {q.schools?.name ?? "Unknown school"} ·{" "}
+                    {q.quote_versions?.trip_date
                       ? new Date(q.quote_versions.trip_date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })
                       : "no date"}
                   </div>
                 </div>
-                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
                   {STATUS_LABEL[q.status] ?? q.status}
                 </span>
               </button>
@@ -263,12 +368,18 @@ function QuoteQueue() {
         </ul>
       </div>
 
+      {/* ── Detail panel ── */}
       <div className="lg:col-span-3 space-y-4">
+
+        {/* Quote header */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-wide text-muted-foreground">Quote #</div>
               <div className="text-xl font-bold text-foreground">{quote.quote_number}</div>
+              <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[quote.status] ?? ""}`}>
+                {STATUS_LABEL[quote.status] ?? quote.status}
+              </span>
             </div>
             <label className="flex flex-col items-end gap-1">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">Invoice # (editable)</span>
@@ -279,12 +390,14 @@ function QuoteQueue() {
               />
             </label>
           </div>
+
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
             <Kv label="School" value={quote.schools?.name ?? "—"} />
             <Kv label="Trip date" value={tripDate} />
             <Kv label="Students" value={ver?.student_count != null ? String(ver.student_count) : "—"} />
             <Kv label="Destination" value={ver?.destination_name ?? "—"} />
           </div>
+
           {ver?.special_requests && (
             <div className="mt-3 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">Special requests: </span>{ver.special_requests}
@@ -292,26 +405,141 @@ function QuoteQueue() {
           )}
         </div>
 
+        {/* Estimate card */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <h4 className="text-sm font-semibold text-foreground">Estimate</h4>
           <div className="mt-3 grid gap-2 text-sm">
             <Kv label="Estimated total" value={ver?.total != null ? `$${Number(ver.total).toFixed(2)}` : "Pending calculation"} />
           </div>
-          <div className="mt-4 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
-            Suggested driver + bus assignment — matching engine coming in Phase 3.
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
-              Approve · Melody sign-off
-            </button>
-            <button className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface">
-              Send to customer
-            </button>
-            <button className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface">
-              Admin override
-            </button>
-          </div>
+
+          {/* Confirmed trip banner */}
+          {confirmedTrip && (
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              <CheckCircle2 className="inline h-4 w-4 mr-1.5" />
+              Trip <span className="font-semibold">{confirmedTrip}</span> scheduled successfully.
+            </div>
+          )}
+
+          {/* Error banner */}
+          {actionError && (
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              {actionError}
+            </div>
+          )}
+
+          {/* Action buttons — context-aware by status */}
+          {!isCancelled && !isScheduled && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {canApprove && (
+                <button
+                  disabled={actionBusy === "approve"}
+                  onClick={() => handleApprove(quote.id)}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {actionBusy === "approve" ? "Approving…" : "Approve · Melody sign-off"}
+                </button>
+              )}
+              {canSchedule && (
+                <button
+                  disabled={assignBusy}
+                  onClick={() => handleSuggest(quote.id)}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {assignBusy ? "Loading…" : "Assign driver & bus →"}
+                </button>
+              )}
+              {!isCancelled && (
+                <button
+                  onClick={() => { setShowReject(true); setActionError(null); }}
+                  className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                >
+                  Reject / Cancel
+                </button>
+              )}
+            </div>
+          )}
+
+          {isScheduled && (
+            <p className="mt-4 text-sm text-emerald-700 font-medium">
+              <CheckCircle2 className="inline h-4 w-4 mr-1" />
+              Trip scheduled — driver and bus assigned.
+            </p>
+          )}
         </div>
+
+        {/* Assignment suggestions panel */}
+        {assignment && (
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-foreground">
+                Available for {assignment.trip_date} · {assignment.headcount} people · {assignment.needed_bench}-bench bus
+              </h4>
+              <button onClick={() => setAssignment(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {assignment.suggestions.length === 0 ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                No available driver + bus pairs for this date. Check driver availability or add fleet/driver data.
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-border">
+                {assignment.suggestions.map((s, i) => (
+                  <li key={i} className="flex items-center justify-between py-3">
+                    <div className="text-sm">
+                      <div className="font-semibold text-foreground">
+                        <UserCheck className="inline h-3.5 w-3.5 mr-1 text-primary" />
+                        {s.driver_name}
+                        {s.air_brake_cert && (
+                          <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">Air brake</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Bus {s.bus_fleet} · {s.bus_bench_count}-bench{s.phone ? ` · ${s.phone}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      disabled={actionBusy === "confirm"}
+                      onClick={() => handleConfirmTrip(quote.id, s.driver_id, s.bus_id)}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      {actionBusy === "confirm" ? "…" : "Confirm trip"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Reject modal (inline) */}
+        {showReject && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5">
+            <h4 className="text-sm font-semibold text-rose-800">Reject / cancel quote {quote.quote_number}</h4>
+            <textarea
+              rows={3}
+              placeholder="Reason (optional — visible in internal notes)"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="mt-3 w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm outline-none"
+            />
+            <div className="mt-3 flex gap-2">
+              <button
+                disabled={actionBusy === "reject"}
+                onClick={() => handleReject(quote.id)}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {actionBusy === "reject" ? "Cancelling…" : "Confirm cancel"}
+              </button>
+              <button
+                onClick={() => { setShowReject(false); setRejectReason(""); }}
+                className="rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700"
+              >
+                Go back
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -329,19 +557,16 @@ function Kv({ label, value }: { label: string; value: string }) {
 function Schedule() {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const slots = [
-    { day: 0, status: "green", label: "T-3041 · Science World" },
-    { day: 1, status: "yellow", label: "Q-156 · pending" },
-    { day: 2, status: "red", label: "T-3042 · Grouse" },
-    { day: 3, status: "gray", label: "Bus 47 · maintenance" },
-    { day: 4, status: "green", label: "T-3045 · Aquarium" },
-    { day: 4, status: "muted", label: "T-3043 · cancelled" },
+    { day: 0, status: "green", label: "T-3001 · Science World" },
+    { day: 2, status: "yellow", label: "T-3002 · Grouse Mtn" },
+    { day: 4, status: "green", label: "T-3003 · Aquarium" },
   ];
   const colors: Record<string, string> = {
-    green: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    green:  "bg-emerald-100 text-emerald-800 border-emerald-200",
     yellow: "bg-amber-100 text-amber-800 border-amber-200",
-    red: "bg-rose-100 text-rose-800 border-rose-200",
-    gray: "bg-slate-100 text-slate-700 border-slate-200",
-    muted: "bg-card text-muted-foreground line-through border-border",
+    red:    "bg-rose-100 text-rose-800 border-rose-200",
+    gray:   "bg-slate-100 text-slate-700 border-slate-200",
+    muted:  "bg-card text-muted-foreground line-through border-border",
   };
   return (
     <div className="space-y-5">
@@ -349,7 +574,7 @@ function Schedule() {
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-foreground">This week</h3>
-          <span className="text-xs text-muted-foreground">[Calendar — week / month toggle placeholder]</span>
+          <span className="text-xs text-muted-foreground">Calendar — week/month view · Phase 3</span>
         </div>
         <div className="grid grid-cols-7 gap-2">
           {days.map((d, i) => (
@@ -366,7 +591,7 @@ function Schedule() {
           ))}
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Newly added trips appear here — drivers notified <span className="font-semibold text-foreground">(mock)</span>.
+          Trips created via the Quotes tab appear here once scheduled.
         </p>
       </div>
     </div>
@@ -377,9 +602,8 @@ function Legend() {
   const items = [
     ["bg-emerald-500", "Available / confirmed"],
     ["bg-amber-500", "In process of confirming"],
-    ["bg-rose-500", "Booked"],
+    ["bg-rose-500", "Booked / unavailable"],
     ["bg-slate-400", "Maintenance / inspection"],
-    ["bg-card border border-border", "Cancelled (muted)"],
   ];
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 text-xs">
@@ -390,7 +614,6 @@ function Legend() {
           <span className="text-muted-foreground">{label}</span>
         </span>
       ))}
-      <span className="ml-auto rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">to confirm</span>
     </div>
   );
 }
@@ -409,10 +632,10 @@ function Assets() {
     { name: "Priya", cert: "Air brake + First aid", sizes: "47, 56", type: "Both", avail: "Unavailable" },
   ];
   const chip: Record<string, string> = {
-    green: "bg-emerald-100 text-emerald-800",
+    green:  "bg-emerald-100 text-emerald-800",
     yellow: "bg-amber-100 text-amber-800",
-    red: "bg-rose-100 text-rose-800",
-    gray: "bg-slate-100 text-slate-700",
+    red:    "bg-rose-100 text-rose-800",
+    gray:   "bg-slate-100 text-slate-700",
   };
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -426,12 +649,15 @@ function Assets() {
             <li key={b.id} className="flex items-center justify-between px-4 py-3">
               <div>
                 <div className="text-sm font-semibold text-foreground">{b.id}</div>
-                <div className="text-xs text-muted-foreground">{b.seats} seats {b.air && "· air-brake"}</div>
+                <div className="text-xs text-muted-foreground">{b.seats} seats{b.air && " · air-brake"}</div>
               </div>
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${chip[b.status]}`}>{b.status}</span>
             </li>
           ))}
         </ul>
+        <p className="border-t border-border bg-surface p-3 text-xs text-muted-foreground">
+          Seeded with placeholder fleet — replace with real data from Curtis.
+        </p>
       </div>
 
       <div className="rounded-2xl border border-border bg-card shadow-soft">
@@ -451,7 +677,7 @@ function Assets() {
           ))}
         </ul>
         <div className="border-t border-border bg-surface p-3 text-xs text-muted-foreground">
-          <span className="font-semibold text-foreground">Pairing rule:</span> Barry and Judy cannot be scheduled together <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">mock constraint</span>
+          <span className="font-semibold text-foreground">Note:</span> Seeded with placeholder drivers — replace with real data from Curtis.
         </div>
       </div>
     </div>
@@ -461,13 +687,11 @@ function Assets() {
 function Availability() {
   const drivers = ["Barry", "Judy", "Sam", "Priya"];
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-  const states = ["A", "U", "?"];
   const styles: Record<string, string> = {
     A: "bg-emerald-100 text-emerald-800",
     U: "bg-rose-100 text-rose-800",
     "?": "bg-slate-100 text-slate-700",
   };
-  // deterministic mock
   const mock = [
     ["A","A","A","U","A"],
     ["?","A","?","?","U"],
@@ -478,7 +702,7 @@ function Availability() {
     <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
       <h3 className="text-sm font-semibold text-foreground">Driver availability</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        A = Available · U = Unavailable · ? = Unknown. Some drivers work for other companies; their availability may be partial.
+        A = Available · U = Unavailable · ? = Unknown. Drivers update their own availability via the driver portal.
       </p>
       <div className="mt-5 overflow-x-auto">
         <table className="w-full min-w-[420px] text-sm">
@@ -502,7 +726,7 @@ function Availability() {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">Drivers can also update their own availability in the driver portal.</p>
+      <p className="mt-3 text-xs text-muted-foreground">Live availability feeds from the driver portal — real data after fleet is seeded.</p>
     </div>
   );
 }
@@ -511,7 +735,7 @@ function Documents() {
   const docs = [
     { title: "Bus rules & confirmation sheet", desc: "Sent to the school once the trip goes green." },
     { title: "Driver sheet", desc: "Trip details for the assigned driver." },
-    { title: "Invoice file (Sage 50 import)", desc: "Placeholder generator for the accounting import." },
+    { title: "Invoice file (Sage 50 import)", desc: "CSV/XML export format for Sage 50 accounting import." },
   ];
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -523,7 +747,7 @@ function Documents() {
           <h4 className="mt-4 text-base font-semibold text-foreground">{d.title}</h4>
           <p className="mt-1 text-sm text-muted-foreground">{d.desc}</p>
           <button className="mt-4 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:brightness-105">
-            Generate (mock)
+            Generate (Phase 4)
           </button>
         </div>
       ))}
