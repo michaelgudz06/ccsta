@@ -1,7 +1,7 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
-import { useAuth } from "@/lib/auth-store";
+import { useAuth } from "@/lib/auth";
 import { Bus, ClipboardList, MapPin, CalendarDays, Bell } from "lucide-react";
 
 export const Route = createFileRoute("/driver")({
@@ -44,11 +44,10 @@ const UPCOMING = [
 ];
 
 function DriverPage() {
-  const { role } = useAuth();
-  const [ready, setReady] = useState(false);
+  const { role, loading } = useAuth();
   const [checks, setChecks] = useState<Record<string, boolean>>({});
-  useEffect(() => setReady(true), []);
-  if (ready && role !== "driver") return <Navigate to="/login" />;
+  if (loading) return null;
+  if (role !== "driver") return <Navigate to="/login" />;
 
   return (
     <div className="min-h-screen bg-surface">

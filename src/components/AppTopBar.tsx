@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth-store";
+import { useAuth } from "@/lib/auth";
 
 export function AppTopBar() {
   const { logout, role } = useAuth();
@@ -25,7 +25,7 @@ export function AppTopBar() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => { logout(); navigate({ to: "/" }); }}
+            onClick={() => { logout().then(() => navigate({ to: "/" })); }}
           >
             Log Out
           </Button>

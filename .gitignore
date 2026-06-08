@@ -30,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Test scripts and scratch dirs
+fvb-test.mjs
+ccsta-test/

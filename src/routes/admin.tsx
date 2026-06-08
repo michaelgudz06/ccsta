@@ -1,7 +1,8 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
-import { useAuth } from "@/lib/auth-store";
+import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import {
   Inbox, ClipboardCheck, CalendarDays, Bus, Users, Bell, FileText, AlertCircle, CheckCircle2,
 } from "lucide-react";
@@ -14,11 +15,10 @@ export const Route = createFileRoute("/admin")({
 type Tab = "dashboard" | "quotes" | "schedule" | "assets" | "availability" | "documents";
 
 function AdminPage() {
-  const { role } = useAuth();
-  const [ready, setReady] = useState(false);
+  const { role, loading } = useAuth();
   const [tab, setTab] = useState<Tab>("dashboard");
-  useEffect(() => setReady(true), []);
-  if (ready && role !== "admin") return <Navigate to="/login" />;
+  if (loading) return null;
+  if (role !== "admin") return <Navigate to="/login" />;
 
   return (
     <div className="min-h-screen bg-surface">
@@ -147,33 +147,98 @@ function Activity({ icon, text, time }: { icon: React.ReactNode; text: string; t
   );
 }
 
-const QUEUE = [
-  { id: "Q-2026-0156", school: "[Placeholder School A]", date: "Apr 02", students: 48, status: "Requested" },
-  { id: "Q-2026-0155", school: "[Placeholder School B]", date: "Apr 04", students: 22, status: "In review" },
-  { id: "Q-2026-0154", school: "[Placeholder School C]", date: "Apr 09", students: 56, status: "Approved" },
-];
+const STATUS_LABEL: Record<string, string> = {
+  requested: "Requested",
+  in_review: "In review",
+  approved:  "Approved",
+  confirmed: "Confirmed",
+  scheduled: "Scheduled",
+  completed: "Completed",
+  invoiced:  "Invoiced",
+  cancelled: "Cancelled",
+};
 
-function autoInvoiceNo(quoteId: string) {
-  // Auto-generated default: derive from the quote number (e.g. Q-2026-0156 → INV-2026-0156)
-  return quoteId.replace(/^Q-/, "INV-");
-}
+type AdminVersionDetail = {
+  trip_date: string | null;
+  student_count: number | null;
+  destination_name: string | null;
+  total: number | null;
+  departure_time: string | null;
+  special_requests: string | null;
+};
+
+type AdminQuoteRow = {
+  id: string;
+  quote_number: string;
+  status: string;
+  created_at: string;
+  current_version_id: string | null;
+  schools: { name: string } | null;
+  quote_versions: AdminVersionDetail | null;
+};
 
 function QuoteQueue() {
-  const [selected, setSelected] = useState<string | null>(QUEUE[0].id);
-  const quote = QUEUE.find((q) => q.id === selected)!;
-  const [invoiceNos, setInvoiceNos] = useState<Record<string, string>>(() =>
-    Object.fromEntries(QUEUE.map((q) => [q.id, autoInvoiceNo(q.id)])),
-  );
-  const invoiceNo = invoiceNos[quote.id] ?? autoInvoiceNo(quote.id);
+  const [quotes, setQuotes] = useState<AdminQuoteRow[]>([]);
+  const [qLoading, setQLoading] = useState(true);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [invoiceNos, setInvoiceNos] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    // Two-step fetch: quotes first, then versions — avoids PostgREST FK ambiguity
+    supabase
+      .from("quotes")
+      .select("id, quote_number, status, created_at, current_version_id, schools(name)")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(async ({ data: rows }) => {
+        if (!rows) { setQLoading(false); return; }
+        const versionIds = rows.map((r: { current_version_id: string | null }) => r.current_version_id).filter(Boolean) as string[];
+        let versionMap: Record<string, AdminVersionDetail> = {};
+        if (versionIds.length > 0) {
+          const { data: versions } = await supabase
+            .from("quote_versions")
+            .select("id, trip_date, student_count, destination_name, total, departure_time, special_requests")
+            .in("id", versionIds);
+          versionMap = Object.fromEntries((versions ?? []).map((v: AdminVersionDetail & { id: string }) => [v.id, v]));
+        }
+        const merged: AdminQuoteRow[] = rows.map((r: AdminQuoteRow) => ({
+          ...r,
+          quote_versions: r.current_version_id ? (versionMap[r.current_version_id] ?? null) : null,
+        }));
+        setQuotes(merged);
+        if (merged.length > 0) setSelected(merged[0].id);
+        setInvoiceNos(Object.fromEntries(merged.map((q) => [q.id, q.quote_number.replace(/^Q-/, "INV-")])));
+        setQLoading(false);
+      });
+  }, []);
+
+  if (qLoading) {
+    return <div className="py-12 text-center text-sm text-muted-foreground">Loading quotes…</div>;
+  }
+
+  if (quotes.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
+        No quote requests yet. They'll appear here once customers submit the quote form.
+      </div>
+    );
+  }
+
+  const quote = quotes.find((q) => q.id === selected) ?? quotes[0];
+  const ver = quote.quote_versions;
+  const invoiceNo = invoiceNos[quote.id] ?? quote.quote_number.replace(/^Q-/, "INV-");
+  const tripDate = ver?.trip_date
+    ? new Date(ver.trip_date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })
+    : "—";
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
       <div className="lg:col-span-2 rounded-2xl border border-border bg-card shadow-soft">
         <div className="border-b border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground">Quote queue</h3>
+          <h3 className="text-sm font-semibold text-foreground">Quote queue ({quotes.length})</h3>
         </div>
         <ul className="divide-y divide-border">
-          {QUEUE.map((q) => (
+          {quotes.map((q) => (
             <li key={q.id}>
               <button
                 onClick={() => setSelected(q.id)}
@@ -182,10 +247,16 @@ function QuoteQueue() {
                 }`}
               >
                 <div>
-                  <div className="font-semibold text-foreground">{q.id}</div>
-                  <div className="text-xs text-muted-foreground">{q.school} · {q.date}</div>
+                  <div className="font-semibold text-foreground">{q.quote_number}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {q.schools?.name ?? "Unknown school"} · {q.quote_versions?.trip_date
+                      ? new Date(q.quote_versions.trip_date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })
+                      : "no date"}
+                  </div>
                 </div>
-                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">{q.status}</span>
+                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  {STATUS_LABEL[q.status] ?? q.status}
+                </span>
               </button>
             </li>
           ))}
@@ -197,38 +268,37 @@ function QuoteQueue() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-wide text-muted-foreground">Quote #</div>
-              <div className="text-xl font-bold text-foreground">{quote.id}</div>
+              <div className="text-xl font-bold text-foreground">{quote.quote_number}</div>
             </div>
             <label className="flex flex-col items-end gap-1">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">Invoice # (editable)</span>
               <input
                 value={invoiceNo}
-                onChange={(e) =>
-                  setInvoiceNos((m) => ({ ...m, [quote.id]: e.target.value }))
-                }
+                onChange={(e) => setInvoiceNos((m) => ({ ...m, [quote.id]: e.target.value }))}
                 className="w-44 rounded-lg border border-input bg-background px-2.5 py-1 text-right text-sm font-semibold text-foreground shadow-sm outline-none ring-ring focus:ring-2"
               />
             </label>
           </div>
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <Kv label="School" value={quote.school} />
-            <Kv label="Date" value={quote.date} />
-            <Kv label="Students" value={String(quote.students)} />
-            <Kv label="Destination" value="[Placeholder destination]" />
+            <Kv label="School" value={quote.schools?.name ?? "—"} />
+            <Kv label="Trip date" value={tripDate} />
+            <Kv label="Students" value={ver?.student_count != null ? String(ver.student_count) : "—"} />
+            <Kv label="Destination" value={ver?.destination_name ?? "—"} />
           </div>
+          {ver?.special_requests && (
+            <div className="mt-3 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">Special requests: </span>{ver.special_requests}
+            </div>
+          )}
         </div>
 
-
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h4 className="text-sm font-semibold text-foreground">Editable estimate (mock)</h4>
+          <h4 className="text-sm font-semibold text-foreground">Estimate</h4>
           <div className="mt-3 grid gap-2 text-sm">
-            <Kv label="Suggested bus" value="[47-seat]" />
-            <Kv label="Hourly rate" value="$[xxx]" />
-            <Kv label="Hours" value="[x.x]" />
-            <Kv label="Estimated total" value="$[xxx.xx]" />
+            <Kv label="Estimated total" value={ver?.total != null ? `$${Number(ver.total).toFixed(2)}` : "Pending calculation"} />
           </div>
           <div className="mt-4 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
-            Suggested driver: <span className="font-semibold text-foreground">[Driver Name]</span> · matching engine placeholder
+            Suggested driver + bus assignment — matching engine coming in Phase 3.
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
             <button className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
