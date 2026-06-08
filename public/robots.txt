@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /portal
+Disallow: /driver
+Disallow: /login
+
+Sitemap: https://ccsta-test.lovable.app/sitemap.xml

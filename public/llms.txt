@@ -1,0 +1,9 @@
+# School Field Trip Busing
+
+> Surrey-based student transportation serving schools across the Lower Mainland and beyond. Book the right bus for your field trip in minutes with smart estimates and trusted drivers.
+
+## Pages
+
+- [Home](/): Overview of services, how it works, reviews, and contact info.
+- [About](/about): Company background and approach to school field-trip busing.
+- [Get a Quote](/quote): Multi-step form to request a field-trip estimate.
