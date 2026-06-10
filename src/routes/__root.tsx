@@ -77,17 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "School Field Trip Busing — Lower Mainland & Beyond" },
-      { name: "description", content: "Book the right bus for your school field trip in minutes. Smart estimates, trusted drivers, serving schools across the Lower Mainland and beyond." },
-      { property: "og:title", content: "School Field Trip Busing — Lower Mainland & Beyond" },
+      { title: "CCSTA — Christian School Transportation" },
+      { name: "description", content: "Combined Christian Schools Transportation Association. Book the right bus for your school field trip in minutes. Serving member schools across the Lower Mainland and beyond." },
+      { property: "og:title", content: "CCSTA — Christian School Transportation" },
       { property: "og:description", content: "Smart estimates, the right-sized bus, a trusted driver. Field trips across the Lower Mainland, handled." },
       { property: "og:type", content: "website" },
-      { property: "og:site_name", content: "School Field Trip Busing" },
+      { property: "og:site_name", content: "CCSTA" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "School Field Trip Busing — Lower Mainland & Beyond" },
+      { name: "twitter:title", content: "CCSTA — Christian School Transportation" },
       { name: "twitter:description", content: "Smart estimates, the right-sized bus, a trusted driver. Field trips across the Lower Mainland, handled." },
     ],
     links: [
+      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -105,7 +106,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         children: JSON.stringify({
           "@context": "https://schema.org",
           "@type": "WebSite",
-          name: "School Field Trip Busing",
+          name: "CCSTA",
           url: "https://ccsta-test.lovable.app",
         }),
       },
@@ -114,7 +115,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         children: JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Organization",
-          name: "School Field Trip Busing",
+          name: "Combined Christian Schools Transportation Association",
+          alternateName: "CCSTA",
           url: "https://ccsta-test.lovable.app",
           areaServed: "Lower Mainland, British Columbia",
         }),
