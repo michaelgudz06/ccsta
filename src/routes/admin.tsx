@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import {
   Inbox, ClipboardCheck, CalendarDays, Bus, Users, Bell,
-  FileText, AlertCircle, CheckCircle2, X, UserCheck,
+  FileText, AlertCircle, CheckCircle2, X, UserCheck, UserPlus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -699,67 +699,168 @@ function Legend() {
   );
 }
 
+type DriverRow = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  trip_type: string;
+  air_brake_cert: boolean;
+  active: boolean;
+};
+
 function Assets() {
-  const buses = [
-    { id: "Bus 14", seats: 18, status: "green", air: false },
-    { id: "Bus 22", seats: 47, status: "red", air: true },
-    { id: "Bus 31", seats: 56, status: "yellow", air: true },
-    { id: "Bus 47", seats: 47, status: "gray", air: true },
-  ];
-  const drivers = [
-    { name: "Barry", cert: "Air brake", sizes: "47, 56", type: "Route + field trips", avail: "Available" },
-    { name: "Judy", cert: "Air brake", sizes: "47", type: "Route", avail: "Unknown" },
-    { name: "Sam", cert: "Standard", sizes: "18", type: "Field trips only", avail: "Available" },
-    { name: "Priya", cert: "Air brake + First aid", sizes: "47, 56", type: "Both", avail: "Unavailable" },
-  ];
-  const chip: Record<string, string> = {
-    green:  "bg-emerald-100 text-emerald-800",
-    yellow: "bg-amber-100 text-amber-800",
-    red:    "bg-rose-100 text-rose-800",
-    gray:   "bg-slate-100 text-slate-700",
-  };
+  const { session } = useAuth();
+  const [drivers, setDrivers]     = useState<DriverRow[]>([]);
+  const [driversLoading, setDriversLoading] = useState(true);
+
+  // Invite form state
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteFirst, setInviteFirst] = useState("");
+  const [inviteLast,  setInviteLast]  = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteBusy,  setInviteBusy]  = useState(false);
+  const [inviteMsg,   setInviteMsg]   = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from("drivers")
+      .select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active")
+      .order("last_name")
+      .then(({ data }) => { setDrivers(data ?? []); setDriversLoading(false); });
+  }, []);
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteFirst || !inviteLast || !inviteEmail) return;
+    setInviteBusy(true); setInviteMsg(null);
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const res = await fetch(`${supabaseUrl}/functions/v1/invite-driver`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session?.access_token}`,
+      },
+      body: JSON.stringify({ email: inviteEmail, first_name: inviteFirst, last_name: inviteLast }),
+    });
+    const json = await res.json();
+    setInviteBusy(false);
+
+    if (!res.ok) {
+      setInviteMsg({ ok: false, text: json.error ?? "Invite failed" });
+    } else {
+      setInviteMsg({ ok: true, text: `Invite sent to ${inviteEmail}. They'll get an email to set their password.` });
+      setInviteFirst(""); setInviteLast(""); setInviteEmail("");
+      setShowInvite(false);
+      // Refresh driver list
+      supabase.from("drivers").select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active")
+        .order("last_name").then(({ data }) => setDrivers(data ?? []));
+    }
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="space-y-6">
+      {/* Buses placeholder */}
       <div className="rounded-2xl border border-border bg-card shadow-soft">
         <div className="flex items-center justify-between border-b border-border p-4">
           <h3 className="text-sm font-semibold text-foreground">Buses</h3>
           <Bus className="h-4 w-4 text-muted-foreground" />
         </div>
-        <ul className="divide-y divide-border">
-          {buses.map((b) => (
-            <li key={b.id} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <div className="text-sm font-semibold text-foreground">{b.id}</div>
-                <div className="text-xs text-muted-foreground">{b.seats} seats{b.air && " · air-brake"}</div>
-              </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${chip[b.status]}`}>{b.status}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="border-t border-border bg-surface p-3 text-xs text-muted-foreground">
-          Seeded with placeholder fleet — replace with real data from Curtis.
-        </p>
+        <div className="p-4 text-sm text-muted-foreground">
+          Fleet data pending — to be seeded once Curtis provides bus list.
+        </div>
       </div>
 
+      {/* Drivers — live from DB */}
       <div className="rounded-2xl border border-border bg-card shadow-soft">
         <div className="flex items-center justify-between border-b border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground">Drivers</h3>
-          <Users className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold text-foreground">
+            Drivers {!driversLoading && `(${drivers.length})`}
+          </h3>
+          <button
+            onClick={() => { setShowInvite((v) => !v); setInviteMsg(null); }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+            Invite driver
+          </button>
         </div>
-        <ul className="divide-y divide-border">
-          {drivers.map((d) => (
-            <li key={d.name} className="px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-foreground">{d.name}</div>
-                <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">{d.avail}</span>
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">{d.cert} · Cleared for {d.sizes} · {d.type}</div>
-            </li>
-          ))}
-        </ul>
-        <div className="border-t border-border bg-surface p-3 text-xs text-muted-foreground">
-          <span className="font-semibold text-foreground">Note:</span> Seeded with placeholder drivers — replace with real data from Curtis.
-        </div>
+
+        {/* Invite form */}
+        {showInvite && (
+          <form onSubmit={handleInvite} className="border-b border-border bg-surface p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Enter the driver's details — they'll receive an email to set their own password.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-xs">
+                <span className="font-medium text-foreground">First name</span>
+                <input required value={inviteFirst} onChange={(e) => setInviteFirst(e.target.value)}
+                  placeholder="Jane" className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
+              </label>
+              <label className="block text-xs">
+                <span className="font-medium text-foreground">Last name</span>
+                <input required value={inviteLast} onChange={(e) => setInviteLast(e.target.value)}
+                  placeholder="Smith" className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
+              </label>
+              <label className="block text-xs">
+                <span className="font-medium text-foreground">Email</span>
+                <input required type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="jane@driver.ca" className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={inviteBusy}
+                className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                {inviteBusy ? "Sending…" : "Send invite"}
+              </button>
+              <button type="button" onClick={() => setShowInvite(false)}
+                className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                Cancel
+              </button>
+            </div>
+            {inviteMsg && (
+              <p className={`text-xs rounded-lg px-3 py-2 ${inviteMsg.ok ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>
+                {inviteMsg.text}
+              </p>
+            )}
+          </form>
+        )}
+
+        {inviteMsg?.ok && !showInvite && (
+          <div className="border-b border-border bg-emerald-50 px-4 py-2 text-xs text-emerald-800">
+            <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />{inviteMsg.text}
+          </div>
+        )}
+
+        {driversLoading ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading drivers…</div>
+        ) : drivers.length === 0 ? (
+          <div className="p-4 text-sm text-muted-foreground">No drivers yet — use the invite button to add them.</div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {drivers.map((d) => (
+              <li key={d.id} className="px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-foreground">{d.first_name} {d.last_name}</div>
+                  <div className="flex gap-1.5">
+                    {d.air_brake_cert && (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">Air brake</span>
+                    )}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${d.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                      {d.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {d.email ?? "No email"}{d.phone ? ` · ${d.phone}` : ""} · {d.trip_type.replace("_", " ")}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

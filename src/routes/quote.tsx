@@ -59,10 +59,20 @@ function QuotePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedQuoteNo, setSubmittedQuoteNo] = useState<string | null>(null);
 
-  // Estimated rate placeholder (real calculation comes in Phase 2 estimate engine)
-  const estimatedRate = 125; // 47-seat default placeholder
-  const estimatedHours = 4;  // placeholder
-  const estimatedTotal = estimatedRate * estimatedHours;
+  // Client-side preview estimate using real 2026-2027 non-member rates.
+  // The exact quote is confirmed by admin after review.
+  const headcount = (parseInt(students) || 0) + (parseInt(adults) || 0);
+  const benchCount = headcount <= 36 ? 18 : headcount <= 94 ? 47 : 56;
+  const benchCap   = benchCount === 18 ? 36 : benchCount === 47 ? 94 : 112;
+  const busCount   = headcount > 0 ? Math.ceil(headcount / benchCap) : 1;
+  const hourlyRate = benchCount === 56 ? 105.00 : 92.50; // non-member rate
+  const minHours   = 4;
+  const baseCost   = minHours * hourlyRate * busCount;
+  const fuelSurcharge = 50 * busCount;
+  const subtotal   = baseCost + fuelSurcharge;
+  const gst        = subtotal * 0.05;
+  const estimatedTotal = subtotal + gst;
+  const busLabel   = benchCount === 18 ? "18-seat mini-bus" : benchCount === 47 ? "47-seat coach" : "56-seat coach";
 
   const next = () => setStep((s) => Math.min(s + 1, totalSteps));
   const back = () => setStep((s) => Math.max(s - 1, 1));
@@ -242,9 +252,9 @@ function QuotePage() {
               <div className="rounded-xl border border-border p-4">
                 <div className="text-sm font-semibold text-foreground">Primary contact</div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Field label="Name" value={c1n} onChange={setC1n} />
-                  <Field label="Email" type="email" value={c1e} onChange={setC1e} />
-                  <Field label="Phone" value={c1p} onChange={setC1p} />
+                  <Field label="Name" value={c1n} onChange={setC1n} placeholder="Jane Smith" />
+                  <Field label="Email" type="email" value={c1e} onChange={setC1e} placeholder="jane@school.ca" />
+                  <Field label="Phone" value={c1p} onChange={setC1p} placeholder="604-555-0100" />
                 </div>
               </div>
               <div className="rounded-xl border border-border p-4">
@@ -252,17 +262,17 @@ function QuotePage() {
                   Secondary contact <span className="font-normal text-muted-foreground">(optional)</span>
                 </div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Field label="Name" value={c2n} onChange={setC2n} />
-                  <Field label="Email" type="email" value={c2e} onChange={setC2e} />
-                  <Field label="Phone" value={c2p} onChange={setC2p} />
+                  <Field label="Name" value={c2n} onChange={setC2n} placeholder="John Doe" />
+                  <Field label="Email" type="email" value={c2e} onChange={setC2e} placeholder="john@school.ca" />
+                  <Field label="Phone" value={c2p} onChange={setC2p} placeholder="604-555-0101" />
                 </div>
               </div>
               <div className="rounded-xl border border-border p-4">
                 <div className="text-sm font-semibold text-foreground">Day-of contact</div>
                 <p className="text-xs text-muted-foreground">Who the driver contacts on the day of the trip.</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Name" value={dayN} onChange={setDayN} />
-                  <Field label="Phone" value={dayP} onChange={setDayP} />
+                  <Field label="Name" value={dayN} onChange={setDayN} placeholder="On-site coordinator" />
+                  <Field label="Phone" value={dayP} onChange={setDayP} placeholder="604-555-0102" />
                 </div>
               </div>
             </StepWrap>
@@ -299,11 +309,13 @@ function QuotePage() {
 
                 <table className="mt-5 w-full text-sm">
                   <tbody className="divide-y divide-border">
-                    <Row label="Suggested bus" value="47-seat coach (estimated)" />
-                    <Row label="Hourly rate" value={`$${estimatedRate}/hr (estimated)`} />
-                    <Row label="Estimated hours" value={`${estimatedHours} hrs`} />
-                    <Row label="Fuel surcharge (~5%)" value={`$${(estimatedTotal * 0.05).toFixed(2)}`} />
-                    <Row label="Estimated total" value={`$${(estimatedTotal * 1.05).toFixed(2)}`} emphasize />
+                    <Row label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
+                    <Row label="Hourly rate" value={`$${hourlyRate.toFixed(2)}/hr`} />
+                    <Row label="Minimum hours" value={`${minHours} hrs`} />
+                    <Row label="Base cost" value={`$${baseCost.toFixed(2)}`} />
+                    <Row label="Fuel surcharge" value={`$${fuelSurcharge.toFixed(2)} flat`} />
+                    <Row label="GST (5%)" value={`$${gst.toFixed(2)}`} />
+                    <Row label="Estimated total" value={`$${estimatedTotal.toFixed(2)}`} emphasize />
                   </tbody>
                 </table>
                 <p className="mt-3 text-xs text-muted-foreground">
