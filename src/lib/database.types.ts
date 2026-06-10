@@ -7,6 +7,8 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
@@ -61,6 +63,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      destinations: {
+        Row: {
+          address: string | null
+          created_at: string
+          id: string
+          name: string
+          post_hours: number | null
+          pre_hours: number | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          post_hours?: number | null
+          pre_hours?: number | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          post_hours?: number | null
+          pre_hours?: number | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       driver_availability: {
         Row: {
@@ -293,6 +325,63 @@ export type Database = {
             columns: ["school_id"]
             isOneToOne: false
             referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_log: {
+        Row: {
+          body: string
+          created_at: string
+          error: string | null
+          id: string
+          quote_id: string | null
+          recipient: string
+          sent_at: string | null
+          status: string
+          subject: string | null
+          trip_id: string | null
+          type: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          quote_id?: string | null
+          recipient: string
+          sent_at?: string | null
+          status?: string
+          subject?: string | null
+          trip_id?: string | null
+          type: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          quote_id?: string | null
+          recipient?: string
+          sent_at?: string | null
+          status?: string
+          subject?: string | null
+          trip_id?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_log_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_log_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
             referencedColumns: ["id"]
           },
         ]
@@ -568,6 +657,7 @@ export type Database = {
         Row: {
           bench_count: number
           created_at: string
+          customer_type: string
           hourly_rate: number
           id: string
           label: string
@@ -578,6 +668,7 @@ export type Database = {
         Insert: {
           bench_count: number
           created_at?: string
+          customer_type?: string
           hourly_rate: number
           id?: string
           label: string
@@ -588,6 +679,7 @@ export type Database = {
         Update: {
           bench_count?: number
           created_at?: string
+          customer_type?: string
           hourly_rate?: number
           id?: string
           label?: string
@@ -822,25 +914,35 @@ export type Database = {
     }
     Functions: {
       approve_quote: {
-        Args: { p_quote_id: string; p_invoice_number?: string | null }
+        Args: { p_invoice_number?: string; p_quote_id: string }
         Returns: Json
       }
+      calculate_estimate: { Args: { p_quote_id: string }; Returns: Json }
       confirm_trip: {
-        Args: { p_quote_id: string; p_driver_id: string; p_bus_id: string }
+        Args: { p_bus_id: string; p_driver_id: string; p_quote_id: string }
         Returns: Json
+      }
+      notify_customer: {
+        Args: {
+          p_body?: string
+          p_quote_id?: string
+          p_recipient: string
+          p_subject?: string
+          p_trip_id?: string
+          p_type: string
+        }
+        Returns: string
+      }
+      notify_driver: {
+        Args: { p_driver_id: string; p_trip_id: string }
+        Returns: string
       }
       reject_quote: {
-        Args: { p_quote_id: string; p_reason?: string | null }
+        Args: { p_quote_id: string; p_reason?: string }
         Returns: Json
       }
-      submit_quote: {
-        Args: { p_data: Json }
-        Returns: Json
-      }
-      suggest_assignment: {
-        Args: { p_quote_id: string }
-        Returns: Json
-      }
+      submit_quote: { Args: { p_data: Json }; Returns: Json }
+      suggest_assignment: { Args: { p_quote_id: string }; Returns: Json }
     }
     Enums: {
       app_role: "customer" | "driver" | "admin"
@@ -866,6 +968,7 @@ export type Database = {
 }
 
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
@@ -978,7 +1081,7 @@ export type CompositeTypes<
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][CompositeTypeName]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
 
 export const Constants = {
