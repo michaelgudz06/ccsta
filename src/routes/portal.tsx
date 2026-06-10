@@ -74,7 +74,9 @@ function PortalPage() {
   }, [loading, role]);
 
   if (loading) return null;
-  if (!role || role !== "customer") return <Navigate to="/login" />;
+  if (!role) return <Navigate to="/login" />;
+  if (role === "admin") return <Navigate to="/admin" />;
+  if (role === "driver") return <Navigate to="/driver" />;
 
   return (
     <div className="min-h-screen bg-surface">
