@@ -34,3 +34,6 @@ dist-ssr
 # Test scripts and scratch dirs
 fvb-test.mjs
 ccsta-test/
+
+# Build output
+.vercel/

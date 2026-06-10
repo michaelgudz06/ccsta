@@ -209,10 +209,16 @@ function QuotePage() {
                       <input
                         placeholder="Student count"
                         type="number"
+                        min={0}
+                        step={1}
+                        inputMode="numeric"
                         value={g.count}
-                        onChange={(e) =>
-                          setGrades((rows) => rows.map((r, idx) => (idx === i ? { ...r, count: e.target.value } : r)))
-                        }
+                        onKeyDown={(e) => { if (e.key === "-" || e.key === "e") e.preventDefault(); }}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const val = raw === "" ? "" : String(Math.max(0, Math.floor(Number(raw)) || 0));
+                          setGrades((rows) => rows.map((r, idx) => (idx === i ? { ...r, count: val } : r)));
+                        }}
                         className="w-1/2 rounded-xl border border-input bg-background px-3 py-2 text-sm"
                       />
                       {grades.length > 1 && (
@@ -428,13 +434,25 @@ function Field({
 }: {
   label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
 }) {
+  // For number fields, never allow a negative value — floor at 0.
+  const handleChange = (raw: string) => {
+    if (type === "number") {
+      if (raw === "") { onChange(""); return; }
+      const n = Math.max(0, Math.floor(Number(raw)));
+      onChange(Number.isNaN(n) ? "" : String(n));
+      return;
+    }
+    onChange(raw);
+  };
   return (
     <label className="block text-sm">
       <span className="font-medium text-foreground">{label}</span>
       <input
         type={type}
+        {...(type === "number" ? { min: 0, step: 1, inputMode: "numeric" as const } : {})}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => handleChange(e.target.value)}
+        onKeyDown={(e) => { if (type === "number" && (e.key === "-" || e.key === "e")) e.preventDefault(); }}
         placeholder={placeholder}
         className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
       />
