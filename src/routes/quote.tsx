@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
@@ -12,9 +13,9 @@ import { formatMoney } from "@/lib/format";
 export const Route = createFileRoute("/quote")({
   head: () => ({
     meta: [
-      { title: "Get a Field Trip Quote — School Field Trip Busing" },
+      { title: "Get a Field Trip Quote — CCSTA" },
       { name: "description", content: "Request a school field-trip quote in minutes. Tell us your destination, date, and group — no account required." },
-      { property: "og:title", content: "Get a Field Trip Quote" },
+      { property: "og:title", content: "Get a Field Trip Quote — CCSTA" },
       { property: "og:description", content: "Smart estimate for your next school field trip. Tell us the trip, get a price in minutes." },
     ],
   }),
@@ -58,13 +59,17 @@ function QuotePage() {
   // Step 4
   const [notes, setNotes] = useState("");
 
-  // Submission state
+  // Validation
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showTimeWarning, setShowTimeWarning] = useState(false);
+  const [pendingNext, setPendingNext] = useState(false);
+
+  // Submission
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedQuoteNo, setSubmittedQuoteNo] = useState<string | null>(null);
 
-  // Prefill school + contact details from the customer's most recent quote so
-  // repeat bookings don't re-type everything.
+  // Prefill from previous quote
   useEffect(() => {
     if (!session || prefilled) return;
     setPrefilled(true);
@@ -97,34 +102,87 @@ function QuotePage() {
     })();
   }, [session, prefilled]);
 
+  // Trip-duration helper (minutes)
+  const tripMinutes = (() => {
+    if (!departTime || !returnTime) return null;
+    const [dh, dm] = departTime.split(":").map(Number);
+    const [rh, rm] = returnTime.split(":").map(Number);
+    let diff = (rh * 60 + rm) - (dh * 60 + dm);
+    if (diff < 0) diff += 24 * 60;
+    return diff;
+  })();
+  const tripHoursCalc = tripMinutes !== null ? tripMinutes / 60 : null;
+
   // Client-side preview estimate using real 2026-2027 non-member rates.
-  // The exact quote is confirmed by admin after review.
   const headcount = (parseInt(students) || 0) + (parseInt(adults) || 0);
   const benchCount = headcount <= 36 ? 18 : headcount <= 94 ? 47 : 56;
   const benchCap   = benchCount === 18 ? 36 : benchCount === 47 ? 94 : 112;
   const busCount   = headcount > 0 ? Math.ceil(headcount / benchCap) : 1;
-  const hourlyRate = benchCount === 56 ? 105.00 : 92.50; // non-member rate
+  const hourlyRate = benchCount === 56 ? 105.00 : 92.50;
   const minHours   = 4;
-  const baseCost   = minHours * hourlyRate * busCount;
+  // Use actual trip duration if entered, otherwise fall back to minimum
+  const tripHours  = tripHoursCalc !== null ? tripHoursCalc : minHours;
+  const billHours  = Math.max(tripHours, minHours);
+  const baseCost   = billHours * hourlyRate * busCount;
   const fuelSurcharge = 50 * busCount;
   const subtotal   = baseCost + fuelSurcharge;
   const gst        = subtotal * 0.05;
   const estimatedTotal = subtotal + gst;
   const busLabel   = benchCount === 18 ? "18-seat mini-bus" : benchCount === 47 ? "47-seat coach" : "56-seat coach";
 
-  const next = () => setStep((s) => Math.min(s + 1, totalSteps));
-  const back = () => setStep((s) => Math.max(s - 1, 1));
+  // Validation per step
+  const validateStep = (s: number): boolean => {
+    const e: Record<string, string> = {};
+    if (s === 1) {
+      if (!school.trim())            e.school = "Please enter your school name.";
+      if (!destination.trim())       e.destination = "Please enter the destination name.";
+      if (!destinationAddress.trim()) e.destinationAddress = "Please enter the destination address so we can calculate the route.";
+      if (!date)                     e.date = "Please select the trip date.";
+      if (!departTime)               e.departTime = "Please enter the departure time.";
+      if (!returnTime)               e.returnTime = "Please enter the pick-up time from the destination.";
+    }
+    if (s === 2) {
+      if (!students || parseInt(students) < 1) e.students = "Please enter the number of students (at least 1).";
+    }
+    if (s === 3) {
+      if (!c1n.trim()) e.c1n = "Name is required.";
+      if (!c1e.trim()) e.c1e = "Email is required.";
+      if (!c1p.trim()) e.c1p = "Phone is required.";
+      if (!c2n.trim()) e.c2n = "Name is required.";
+      if (!c2e.trim()) e.c2e = "Email is required.";
+      if (!c2p.trim()) e.c2p = "Phone is required.";
+      if (!dayN.trim()) e.dayN = "Name is required.";
+      if (!dayP.trim()) e.dayP = "Phone is required.";
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
-  const handleSubmit = async () => {
-    if (!session) {
-      // Not logged in — redirect to login, come back after
-      navigate({ to: "/login" });
+  const next = () => {
+    if (!validateStep(step)) return;
+
+    // Time-gap warning on step 1
+    if (step === 1 && tripMinutes !== null && tripMinutes < 60) {
+      setPendingNext(true);
+      setShowTimeWarning(true);
       return;
     }
 
+    setStep((s) => Math.min(s + 1, totalSteps));
+  };
+
+  const confirmTimeAndNext = () => {
+    setShowTimeWarning(false);
+    setPendingNext(false);
+    setStep((s) => Math.min(s + 1, totalSteps));
+  };
+
+  const back = () => setStep((s) => Math.max(s - 1, 1));
+
+  const handleSubmit = async () => {
+    if (!session) { navigate({ to: "/login" }); return; }
     setSubmitting(true);
     setSubmitError(null);
-
     const { data, error } = await supabase.rpc("submit_quote", {
       p_data: {
         school_name:         school,
@@ -144,24 +202,16 @@ function QuotePage() {
         special_requests:    notes,
       },
     });
-
     setSubmitting(false);
-
-    if (error) {
-      setSubmitError(error.message);
-      return;
-    }
-
+    if (error) { setSubmitError(error.message); return; }
     setSubmittedQuoteNo((data as { quote_number: string }).quote_number);
   };
 
-  // Show success screen after submission
+  // Success screen
   if (submittedQuoteNo) {
     return (
       <div className="min-h-screen bg-surface">
-        {session ? (
-          <AppTopBar />
-        ) : (
+        {session ? <AppTopBar /> : (
           <header className="border-b border-border bg-card/80 backdrop-blur">
             <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
               <Logo />
@@ -173,14 +223,14 @@ function QuotePage() {
           <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-primary/10">
             <Check className="h-8 w-8 text-primary" />
           </div>
-          <h1 className="mt-6 text-3xl font-bold tracking-tight text-foreground">Request received</h1>
+          <h1 className="mt-6 text-3xl font-bold tracking-tight text-foreground">Request received!</h1>
           <p className="mt-3 text-muted-foreground">
             Your quote number is <span className="font-semibold text-foreground">{submittedQuoteNo}</span>.
-            Melody or Alan will review it and send you a confirmed estimate, usually within one business day.
+            Melody or Alan will review it and send you a confirmed price — usually within one business day.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Button variant="hero" size="lg" onClick={() => navigate({ to: "/portal" })}>
-              View my dashboard →
+              View my quotes →
             </Button>
             <Button asChild variant="outline" size="lg">
               <Link to="/">Back to site</Link>
@@ -191,17 +241,45 @@ function QuotePage() {
     );
   }
 
+  // Whether to show the route map preview in step 1
+  const showMapPreview = !!(pickup || school) && !!destinationAddress;
+
   return (
     <div className="min-h-screen bg-surface">
-      {session ? (
-        <AppTopBar />
-      ) : (
+      {/* Short-trip warning modal */}
+      {showTimeWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <h3 className="text-lg font-semibold text-foreground">Short trip time — are you sure?</h3>
+              <button onClick={() => { setShowTimeWarning(false); setPendingNext(false); }} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Your departure time and pick-up time are less than 1 hour apart (
+              {tripMinutes} minutes). That's a very short trip — is the pick-up time correct?
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              The "pick-up time" is when we should collect the students <em>from the destination</em>, not the departure time from school.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <Button className="flex-1" variant="outline" onClick={() => { setShowTimeWarning(false); setPendingNext(false); }}>
+                Go back and fix
+              </Button>
+              <Button className="flex-1" variant="accent" onClick={confirmTimeAndNext}>
+                Yes, it's correct
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {session ? <AppTopBar /> : (
         <header className="border-b border-border bg-card/80 backdrop-blur">
           <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
             <Logo />
-            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
-              ← Back to site
-            </Link>
+            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Back to site</Link>
           </div>
         </header>
       )}
@@ -218,42 +296,111 @@ function QuotePage() {
         <div className="rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
           {step === 1 && (
             <StepWrap title="Trip basics">
-              <Field label="School name" value={school} onChange={setSchool} placeholder="e.g. Maple Ridge Elementary" />
-              <Field label="Pickup address" value={pickup} onChange={setPickup} placeholder="Leave blank to use school name" />
-              <Field label="Destination name" value={destination} onChange={setDestination} placeholder="e.g. Science World" />
-              <Field label="Destination address" value={destinationAddress} onChange={setDestinationAddress} placeholder="e.g. 1455 Quebec St, Vancouver" />
+              <Field
+                label="School name" required
+                value={school} onChange={(v) => { setSchool(v); setErrors((e) => ({ ...e, school: "" })); }}
+                placeholder="e.g. Maple Ridge Christian School"
+                error={errors.school}
+              />
+              <AddressAutocomplete
+                label="Pick-up address (leave blank to use school name)"
+                value={pickup} onChange={(v) => setPickup(v)}
+                placeholder="e.g. 123 Main St, Maple Ridge, BC"
+              />
+              <Field
+                label="Destination name" required
+                value={destination} onChange={(v) => { setDestination(v); setErrors((e) => ({ ...e, destination: "" })); }}
+                placeholder="e.g. Science World"
+                error={errors.destination}
+              />
+              <AddressAutocomplete
+                label="Destination address" required
+                value={destinationAddress}
+                onChange={(v) => { setDestinationAddress(v); setErrors((e) => ({ ...e, destinationAddress: "" })); }}
+                placeholder="e.g. 1455 Quebec St, Vancouver, BC"
+                error={errors.destinationAddress}
+              />
+
+              {/* Route map preview — appears as soon as pickup + destination are filled */}
+              {showMapPreview && (
+                <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+                  <div className="px-4 pt-3 pb-1">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Route preview</p>
+                  </div>
+                  <RouteMap
+                    pickup={pickup || school}
+                    destination={destinationAddress}
+                    departTime={departTime || undefined}
+                    className="h-52 w-full"
+                  />
+                  <p className="px-4 py-2 text-xs text-muted-foreground">
+                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel from our Surrey yard, your trip, and the return.
+                  </p>
+                </div>
+              )}
+
               <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Trip date" type="date" value={date} onChange={setDate} />
-                <Field label="Departure time" type="time" value={departTime} onChange={setDepartTime} />
-                <Field label="Pick up from destination" type="time" value={returnTime} onChange={setReturnTime} />
+                <Field
+                  label="Trip date" type="date" required
+                  value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
+                  error={errors.date}
+                />
+                <Field
+                  label="Departure time" type="time" required
+                  value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
+                  error={errors.departTime}
+                />
+                <Field
+                  label="Pick-up from destination" type="time" required
+                  value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
+                  error={errors.returnTime}
+                />
               </div>
+              {departTime && returnTime && tripMinutes !== null && tripMinutes >= 60 && (
+                <p className="text-xs text-muted-foreground">
+                  Trip duration: <span className="font-medium text-foreground">{Math.floor(tripMinutes / 60)}h {tripMinutes % 60 > 0 ? `${tripMinutes % 60}m` : ""}</span>
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
-                We calculate travel time, driver pre-trip time, and return to yard for you.
+                "Pick-up from destination" is when you want us to collect the students and head back to school.
               </p>
             </StepWrap>
           )}
 
           {step === 2 && (
             <StepWrap title="Group details">
-              <Field label="Number of students" type="number" value={students} onChange={setStudents} placeholder="e.g. 48" />
+              <Field
+                label="Number of students" type="number" required
+                value={students} onChange={(v) => { setStudents(v); setErrors((e) => ({ ...e, students: "" })); }}
+                placeholder="e.g. 48"
+                error={errors.students}
+              />
               <div>
-                <div className="text-sm font-medium text-foreground">Grades</div>
+                <div className="text-sm font-medium text-foreground">Grades <span className="font-normal text-muted-foreground">(optional)</span></div>
                 <p className="text-xs text-muted-foreground">
                   K–4 seat 3 per bench, grades 5+ seat 2 — helps us pick the right bus size.
                 </p>
                 <div className="mt-3 space-y-2">
                   {grades.map((g, i) => (
                     <div key={g.id} className="flex gap-2">
-                      <input
-                        placeholder="Grade (e.g. 2)"
+                      <select
                         value={g.grade}
                         onChange={(e) =>
                           setGrades((rows) => rows.map((r, idx) => (idx === i ? { ...r, grade: e.target.value } : r)))
                         }
                         className="w-1/2 rounded-xl border border-input bg-background px-3 py-2 text-sm"
-                      />
+                      >
+                        <option value="">Select grade…</option>
+                        <option value="K">Kindergarten (K)</option>
+                        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                          <option key={n} value={String(n)}>Grade {n} — Elementary</option>
+                        ))}
+                        {[8, 9, 10, 11, 12].map((n) => (
+                          <option key={n} value={String(n)}>Grade {n} — Secondary</option>
+                        ))}
+                      </select>
                       <input
-                        placeholder="Student count"
+                        placeholder="# students"
                         type="number"
                         min={0}
                         step={1}
@@ -288,7 +435,11 @@ function QuotePage() {
                   </button>
                 </div>
               </div>
-              <Field label="Adults / chaperones" type="number" value={adults} onChange={setAdults} placeholder="Counted in capacity" />
+              <Field
+                label="Adults / chaperones" type="number"
+                value={adults} onChange={setAdults}
+                placeholder="Counted in total capacity"
+              />
               <label className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3">
                 <input type="checkbox" checked={cargo} onChange={(e) => setCargo(e.target.checked)} className="h-4 w-4" />
                 <span className="text-sm">
@@ -301,30 +452,47 @@ function QuotePage() {
 
           {step === 3 && (
             <StepWrap title="Contacts">
-              <div className="rounded-xl border border-border p-4">
-                <div className="text-sm font-semibold text-foreground">Primary contact</div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Field label="Name" value={c1n} onChange={setC1n} placeholder="Jane Smith" />
-                  <Field label="Email" type="email" value={c1e} onChange={setC1e} placeholder="jane@school.ca" />
-                  <Field label="Phone" value={c1p} onChange={setC1p} placeholder="604-555-0100" />
+              {/* Primary contact */}
+              <div className="rounded-xl border border-border p-4 space-y-3">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">Primary contact <span className="text-destructive">*</span></div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    The person booking this trip — usually the school secretary or administrator. We'll send the confirmed quote to this person.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="Name" required value={c1n} onChange={(v) => { setC1n(v); setErrors((e) => ({ ...e, c1n: "" })); }} placeholder="Jane Smith" error={errors.c1n} />
+                  <Field label="Email" type="email" required value={c1e} onChange={(v) => { setC1e(v); setErrors((e) => ({ ...e, c1e: "" })); }} placeholder="jane@school.ca" error={errors.c1e} />
+                  <Field label="Phone" required value={c1p} onChange={(v) => { setC1p(v); setErrors((e) => ({ ...e, c1p: "" })); }} placeholder="604-555-0100" error={errors.c1p} />
                 </div>
               </div>
-              <div className="rounded-xl border border-border p-4">
-                <div className="text-sm font-semibold text-foreground">
-                  Secondary contact <span className="font-normal text-muted-foreground">(optional)</span>
+
+              {/* Secondary contact */}
+              <div className="rounded-xl border border-border p-4 space-y-3">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">Secondary contact <span className="text-destructive">*</span></div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    A backup contact at the school — for example a vice-principal or another administrator. Required so we always have someone to reach.
+                  </p>
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Field label="Name" value={c2n} onChange={setC2n} placeholder="John Doe" />
-                  <Field label="Email" type="email" value={c2e} onChange={setC2e} placeholder="john@school.ca" />
-                  <Field label="Phone" value={c2p} onChange={setC2p} placeholder="604-555-0101" />
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="Name" required value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
+                  <Field label="Email" type="email" required value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
+                  <Field label="Phone" required value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
                 </div>
               </div>
-              <div className="rounded-xl border border-border p-4">
-                <div className="text-sm font-semibold text-foreground">Day-of contact</div>
-                <p className="text-xs text-muted-foreground">Who the driver contacts on the day of the trip.</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Name" value={dayN} onChange={setDayN} placeholder="On-site coordinator" />
-                  <Field label="Phone" value={dayP} onChange={setDayP} placeholder="604-555-0102" />
+
+              {/* Day-of contact */}
+              <div className="rounded-xl border border-border p-4 space-y-3">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">Day-of contact <span className="text-destructive">*</span></div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    The teacher taking the class on the trip — this is who the driver will call on the day if they need to reach someone at the destination.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Name" required value={dayN} onChange={(v) => { setDayN(v); setErrors((e) => ({ ...e, dayN: "" })); }} placeholder="Ms. Johnson" error={errors.dayN} />
+                  <Field label="Phone (cell preferred)" required value={dayP} onChange={(v) => { setDayP(v); setErrors((e) => ({ ...e, dayP: "" })); }} placeholder="604-555-0102" error={errors.dayP} />
                 </div>
               </div>
             </StepWrap>
@@ -332,16 +500,22 @@ function QuotePage() {
 
           {step === 4 && (
             <StepWrap title="Anything else?">
-              <label className="text-sm">
-                <span className="font-medium text-foreground">Special requests</span>
-                <textarea
-                  rows={6}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Accessibility or special-needs seating, a preferred driver, anything we should know."
-                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
-                />
-              </label>
+              <div>
+                <label className="text-sm">
+                  <span className="font-medium text-foreground">Special requests</span>
+                  <span className="ml-2 text-xs text-muted-foreground">(optional)</span>
+                  <textarea
+                    rows={6}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Accessibility or special-needs seating, a preferred driver, wheelchair lift required, musical instruments, anything we should know."
+                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This field is optional. If everything looks good, just click Continue.
+                </p>
+              </div>
             </StepWrap>
           )}
 
@@ -355,9 +529,7 @@ function QuotePage() {
                   departTime={departTime}
                 />
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Why distance matters: your price covers the driver's full time on the road
-                  (including travel from our Surrey yard and back), plus a flat fuel surcharge per bus.
-                  Longer trips mean more driving hours.
+                  Why distance matters: your price covers the driver's full day — travel from our Surrey yard to your school, the trip itself, and the return drive back. Longer routes mean more hours on the clock.
                 </p>
               </div>
 
@@ -366,7 +538,9 @@ function QuotePage() {
                   <div>
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">Destination</div>
                     <div className="text-lg font-semibold text-foreground">{destination || "Your destination"}</div>
-                    <div className="text-sm text-muted-foreground">{date || "—"} · {students || "—"} students</div>
+                    <div className="text-sm text-muted-foreground">
+                      {date || "—"} · {departTime || "—"} → {returnTime || "—"} · {students || "—"} students
+                    </div>
                   </div>
                   <span className="rounded-full bg-accent/30 px-3 py-1 text-xs font-semibold text-primary">
                     Estimate
@@ -376,16 +550,17 @@ function QuotePage() {
                 <table className="mt-5 w-full text-sm">
                   <tbody className="divide-y divide-border">
                     <Row label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
-                    <Row label="Hourly rate" value={`$${hourlyRate.toFixed(2)}/hr`} />
-                    <Row label="Minimum hours" value={`${minHours} hrs`} />
-                    <Row label="Base cost (min. hours)" value={formatMoney(baseCost)} />
-                    <Row label="Fuel surcharge" value={`${formatMoney(fuelSurcharge)} flat`} />
+                    <Row label="Hourly rate" value={`${formatMoney(hourlyRate)}/hr`} />
+                    <Row label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
+                    <Row label="Base cost" value={formatMoney(baseCost)} />
+                    <Row label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />
+                    <Row label="Subtotal" value={formatMoney(subtotal)} />
                     <Row label="GST (5%)" value={formatMoney(gst)} />
                     <Row label="Estimated total" value={formatMoney(estimatedTotal)} emphasize />
                   </tbody>
                 </table>
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Prices are estimates only. Melody or Alan will confirm the exact amount after reviewing your request.
+                  This is a ballpark estimate only. Melody or Alan will confirm the exact amount after reviewing your request — it may be higher or lower based on the actual route.
                 </p>
               </div>
 
@@ -404,17 +579,12 @@ function QuotePage() {
 
               {!session && (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  You need to be logged in to submit. Your form data is saved — log in and come back to this step.
+                  You need to log in to submit. Your answers are saved — log in and come back here to finish.
                 </p>
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <Button
-                  variant="accent"
-                  size="lg"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                >
+                <Button variant="accent" size="lg" onClick={handleSubmit} disabled={submitting}>
                   {submitting ? "Submitting…" : session ? "Submit request" : "Log in to submit"}
                 </Button>
                 {!session && (
@@ -490,11 +660,10 @@ function StepWrap({ title, children }: { title: string; children: React.ReactNod
 }
 
 function Field({
-  label, value, onChange, type = "text", placeholder,
+  label, value, onChange, type = "text", placeholder, error, required,
 }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean;
 }) {
-  // For number fields, never allow a negative value — floor at 0.
   const handleChange = (raw: string) => {
     if (type === "number") {
       if (raw === "") { onChange(""); return; }
@@ -506,7 +675,10 @@ function Field({
   };
   return (
     <label className="block text-sm">
-      <span className="font-medium text-foreground">{label}</span>
+      <span className="font-medium text-foreground">
+        {label}
+        {required && <span className="ml-0.5 text-destructive">*</span>}
+      </span>
       <input
         type={type}
         {...(type === "number" ? { min: 0, step: 1, inputMode: "numeric" as const } : {})}
@@ -514,8 +686,9 @@ function Field({
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={(e) => { if (type === "number" && (e.key === "-" || e.key === "e")) e.preventDefault(); }}
         placeholder={placeholder}
-        className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
+        className={`mt-1.5 w-full rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
       />
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </label>
   );
 }
