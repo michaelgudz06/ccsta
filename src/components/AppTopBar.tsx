@@ -7,6 +7,8 @@ export function AppTopBar() {
   const { logout, role } = useAuth();
   const navigate = useNavigate();
   const roleLabel = role === "admin" ? "Admin" : role === "driver" ? "Driver" : role === "customer" ? "Customer" : "";
+  const dashboard = role === "admin" ? "/admin" : role === "driver" ? "/driver" : "/portal";
+
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -20,7 +22,7 @@ export function AppTopBar() {
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="ghost" size="sm">
-            <Link to="/">Home</Link>
+            <Link to={dashboard}>My Dashboard</Link>
           </Button>
           <Button
             variant="outline"

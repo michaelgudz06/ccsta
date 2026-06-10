@@ -92,7 +92,7 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
         const to = await geocode(destination);
         if (cancelled) return;
         if (!from || !to) {
-          setErrorMsg("Couldn't locate one of the addresses. Check the pickup and destination.");
+          setErrorMsg(null); // silent — map just won't show, estimate still works
           setStatus("error");
           return;
         }
@@ -160,12 +160,21 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
     );
   }
 
+  // Silent error (e.g. address not geocodable) — show nothing rather than alarming the user.
+  if (status === "error" && !errorMsg) {
+    return (
+      <div className={`rounded-2xl border border-dashed border-border bg-card p-5 text-sm text-muted-foreground ${className ?? ""}`}>
+        Route preview not available for this address — your estimate is still accurate.
+      </div>
+    );
+  }
+
   return (
     <div className={`overflow-hidden rounded-2xl border border-border bg-card ${className ?? ""}`}>
       <div ref={mapEl} className="h-56 w-full bg-surface" aria-label="Route map" />
       <div className="border-t border-border px-4 py-3 text-sm">
         {status === "loading" && <span className="text-muted-foreground">Calculating route…</span>}
-        {status === "error" && <span className="text-destructive">{errorMsg}</span>}
+        {status === "error" && errorMsg && <span className="text-muted-foreground text-xs">{errorMsg}</span>}
         {status === "ready" && result && (
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
             <span><span className="font-semibold text-foreground">{result.distanceKm} km</span> <span className="text-muted-foreground">one way</span></span>
