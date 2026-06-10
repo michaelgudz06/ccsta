@@ -1,3 +1,4 @@
+/// <reference types="google.maps" />
 /**
  * Address autocomplete backed by Google Maps Places API.
  * Falls back gracefully to a plain text input if the API key is missing
