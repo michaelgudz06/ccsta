@@ -1,15 +1,18 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
+import { RouteMap } from "@/components/RouteMap";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { formatTripDate, formatTime, formatMoney, todayISO, addDaysISO } from "@/lib/format";
+import { COMPANY } from "@/lib/company";
 import {
-  Inbox, ClipboardCheck, CalendarDays, Bus, Users, Bell,
+  Inbox, ClipboardCheck, CalendarDays, Bus, Bell,
   FileText, AlertCircle, CheckCircle2, X, UserCheck, UserPlus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
-  head: () => ({ meta: [{ title: "Admin Console — School Field Trip Busing" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: `Admin Console — ${COMPANY.name}` }, { name: "robots", content: "noindex" }] }),
   component: AdminPage,
 });
 
@@ -101,24 +104,66 @@ function StatCard({ icon: Icon, label, value, onClick }: { icon: React.ElementTy
   );
 }
 
+type RecentQuote = { quote_number: string; status: string; created_at: string; school: string };
+
 function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
+  const [counts, setCounts] = useState({ requested: 0, in_review: 0, scheduled: 0, inactiveAssets: 0 });
+  const [recent, setRecent] = useState<RecentQuote[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const [reqRes, revRes, schedRes, busRes, drvRes, recentRes] = await Promise.all([
+        supabase.from("quotes").select("id", { count: "exact", head: true }).eq("status", "requested"),
+        supabase.from("quotes").select("id", { count: "exact", head: true }).eq("status", "in_review"),
+        supabase.from("trips").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
+        supabase.from("buses").select("id", { count: "exact", head: true }).eq("active", false),
+        supabase.from("drivers").select("id", { count: "exact", head: true }).eq("active", false),
+        supabase.from("quotes").select("quote_number, status, created_at, schools(name)").order("created_at", { ascending: false }).limit(6),
+      ]);
+      setCounts({
+        requested: reqRes.count ?? 0,
+        in_review: revRes.count ?? 0,
+        scheduled: schedRes.count ?? 0,
+        inactiveAssets: (busRes.count ?? 0) + (drvRes.count ?? 0),
+      });
+      setRecent(
+        ((recentRes.data ?? []) as Array<{ quote_number: string; status: string; created_at: string; schools: { name: string } | null }>)
+          .map((r) => ({ quote_number: r.quote_number, status: r.status, created_at: r.created_at, school: r.schools?.name ?? "Unknown school" })),
+      );
+    })();
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Inbox} label="New quote requests" value="—" onClick={() => onJump("quotes")} />
-        <StatCard icon={ClipboardCheck} label="Quotes in review" value="—" onClick={() => onJump("quotes")} />
-        <StatCard icon={CalendarDays} label="Trips scheduled" value="—" onClick={() => onJump("schedule")} />
-        <StatCard icon={AlertCircle} label="Assets needing attention" value="—" onClick={() => onJump("assets")} />
+        <StatCard icon={Inbox} label="New quote requests" value={String(counts.requested)} onClick={() => onJump("quotes")} />
+        <StatCard icon={ClipboardCheck} label="Quotes in review" value={String(counts.in_review)} onClick={() => onJump("quotes")} />
+        <StatCard icon={CalendarDays} label="Trips scheduled" value={String(counts.scheduled)} onClick={() => onJump("schedule")} />
+        <StatCard icon={AlertCircle} label="Inactive assets" value={String(counts.inactiveAssets)} onClick={() => onJump("assets")} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h3 className="text-sm font-semibold text-foreground">Recent activity</h3>
-          <ul className="mt-3 space-y-3 text-sm">
-            <Activity icon={<Inbox className="h-4 w-4" />} text="New quote requests appear here in real time." time="" />
-            <Activity icon={<CheckCircle2 className="h-4 w-4" />} text="Confirmed trips will be listed when scheduled." time="" />
+          <h3 className="text-sm font-semibold text-foreground">Recent quote activity</h3>
+          <ul className="mt-3 space-y-2 text-sm">
+            {recent.length === 0 ? (
+              <li className="rounded-xl border border-dashed border-border bg-surface p-3 text-muted-foreground">
+                New quote requests will appear here.
+              </li>
+            ) : (
+              recent.map((r) => (
+                <li key={r.quote_number} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface p-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-foreground">{r.school}</div>
+                    <div className="text-xs text-muted-foreground">{r.quote_number} · {formatTripDate(r.created_at.slice(0, 10))}</div>
+                  </div>
+                  <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle[r.status] ?? "bg-slate-100 text-slate-700"}`}>
+                    {STATUS_LABEL[r.status] ?? r.status}
+                  </span>
+                </li>
+              ))
+            )}
           </ul>
-          <p className="mt-3 text-xs text-muted-foreground">Activity feed — Phase 4 (live notifications).</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <h3 className="text-sm font-semibold text-foreground">Status flow</h3>
@@ -136,24 +181,13 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
   );
 }
 
-function Activity({ icon, text, time }: { icon: React.ReactNode; text: string; time: string }) {
-  return (
-    <li className="flex items-start gap-3 rounded-xl border border-border bg-surface p-3">
-      <div className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg bg-accent/30 text-primary">{icon}</div>
-      <div className="flex-1">
-        <div className="text-foreground">{text}</div>
-        {time && <div className="text-xs text-muted-foreground">{time}</div>}
-      </div>
-    </li>
-  );
-}
-
 const STATUS_LABEL: Record<string, string> = {
   requested: "Requested",
   in_review: "In review",
   approved:  "Approved",
   confirmed: "Confirmed",
   scheduled: "Scheduled",
+  in_progress: "In progress",
   completed: "Completed",
   invoiced:  "Invoiced",
   cancelled: "Cancelled",
@@ -165,6 +199,7 @@ const statusStyle: Record<string, string> = {
   approved:  "bg-emerald-100 text-emerald-800",
   confirmed: "bg-emerald-100 text-emerald-800",
   scheduled: "bg-purple-100 text-purple-800",
+  in_progress: "bg-indigo-100 text-indigo-800",
   completed: "bg-slate-100 text-slate-700",
   invoiced:  "bg-slate-100 text-slate-700",
   cancelled: "bg-rose-100 text-rose-800",
@@ -174,6 +209,8 @@ type AdminVersionDetail = {
   trip_date: string | null;
   student_count: number | null;
   destination_name: string | null;
+  destination_address: string | null;
+  pickup_address: string | null;
   total: number | null;
   departure_time: string | null;
   special_requests: string | null;
@@ -266,7 +303,7 @@ function QuoteQueue() {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, destination_name, total, departure_time, special_requests")
+            .select("id, trip_date, student_count, destination_name, destination_address, pickup_address, total, departure_time, special_requests")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
             (versions ?? []).map((v: AdminVersionDetail & { id: string }) => [v.id, v])
@@ -369,10 +406,10 @@ function QuoteQueue() {
   const quote = quotes.find((q) => q.id === selected) ?? quotes[0];
   const ver = quote.quote_versions;
   const invoiceNo = invoiceNos[quote.id] ?? quote.quote_number.replace(/^Q-/, "INV-");
-  const tripDate = ver?.trip_date
-    ? new Date(ver.trip_date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })
-    : "—";
+  const tripDate = formatTripDate(ver?.trip_date);
 
+  // An estimate must exist before approval (the server enforces this too).
+  const hasEstimate = ver?.total != null || estimate != null;
   const canApprove = ["requested", "in_review"].includes(quote.status);
   const canSchedule = quote.status === "approved";
   const isScheduled = quote.status === "scheduled";
@@ -449,6 +486,16 @@ function QuoteQueue() {
           )}
         </div>
 
+        {/* Route map */}
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+          <h4 className="mb-3 text-sm font-semibold text-foreground">Route</h4>
+          <RouteMap
+            pickup={ver?.pickup_address || quote.schools?.name || ""}
+            destination={ver?.destination_address || ver?.destination_name || ""}
+            departTime={ver?.departure_time ?? undefined}
+          />
+        </div>
+
         {/* Estimate card */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <div className="flex items-center justify-between">
@@ -474,22 +521,22 @@ function QuoteQueue() {
                 <Kv label="Trip hours" value={`${estimate.trip_hours}h`} />
                 <Kv label="Driver yard travel" value={`+${estimate.driver_pre_hours}h / +${estimate.driver_post_hours}h`} />
                 <Kv label="Billable hours" value={`${estimate.billable_hours}h (min ${estimate.min_hours}h)`} />
-                <Kv label="Base cost" value={`$${estimate.base_cost.toFixed(2)}`} />
-                <Kv label="Fuel surcharge" value={`$${estimate.fuel_surcharge.toFixed(2)}`} />
+                <Kv label="Base cost" value={formatMoney(estimate.base_cost)} />
+                <Kv label="Fuel surcharge" value={formatMoney(estimate.fuel_surcharge)} />
                 {estimate.overtime_charge > 0 && (
-                  <Kv label="Overtime" value={`$${estimate.overtime_charge.toFixed(2)}`} />
+                  <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
                 )}
-                <Kv label="Subtotal" value={`$${estimate.subtotal.toFixed(2)}`} />
-                <Kv label={`GST (${estimate.gst_pct}%)`} value={`$${estimate.gst.toFixed(2)}`} />
+                <Kv label="Subtotal" value={formatMoney(estimate.subtotal)} />
+                <Kv label={`GST (${estimate.gst_pct}%)`} value={formatMoney(estimate.gst)} />
                 <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-semibold">
                   <span className="text-xs uppercase tracking-wide text-primary">Total</span>
-                  <span className="text-sm text-primary">${estimate.total.toFixed(2)}</span>
+                  <span className="text-sm text-primary">{formatMoney(estimate.total)}</span>
                 </div>
               </div>
             </div>
           ) : (
             <div className="mt-3 grid gap-2 text-sm">
-              <Kv label="Estimated total" value={ver?.total != null ? `$${Number(ver.total).toFixed(2)}` : "Click Calculate →"} />
+              <Kv label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Click Calculate →"} />
             </div>
           )}
 
@@ -512,13 +559,19 @@ function QuoteQueue() {
           {!isCancelled && !isScheduled && (
             <div className="mt-5 flex flex-wrap gap-2">
               {canApprove && (
-                <button
-                  disabled={actionBusy === "approve"}
-                  onClick={() => handleApprove(quote.id)}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                >
-                  {actionBusy === "approve" ? "Approving…" : "Approve · Melody sign-off"}
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button
+                    disabled={actionBusy === "approve" || !hasEstimate}
+                    onClick={() => handleApprove(quote.id)}
+                    title={hasEstimate ? "" : "Calculate an estimate first"}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {actionBusy === "approve" ? "Approving…" : "Approve · Melody sign-off"}
+                  </button>
+                  {!hasEstimate && (
+                    <span className="text-[11px] text-muted-foreground">Calculate an estimate before approving.</span>
+                  )}
+                </div>
               )}
               {canSchedule && (
                 <button
@@ -635,66 +688,94 @@ function Kv({ label, value }: { label: string; value: string }) {
   );
 }
 
+type ScheduleTrip = {
+  id: string;
+  trip_number: string;
+  trip_date: string;
+  departure_time: string | null;
+  return_time: string | null;
+  destination_name: string | null;
+  status: string;
+  school: string;
+  driver: string | null;
+  bus: string | null;
+};
+
 function Schedule() {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const slots = [
-    { day: 0, status: "green", label: "T-3001 · Science World" },
-    { day: 2, status: "yellow", label: "T-3002 · Grouse Mtn" },
-    { day: 4, status: "green", label: "T-3003 · Aquarium" },
-  ];
-  const colors: Record<string, string> = {
-    green:  "bg-emerald-100 text-emerald-800 border-emerald-200",
-    yellow: "bg-amber-100 text-amber-800 border-amber-200",
-    red:    "bg-rose-100 text-rose-800 border-rose-200",
-    gray:   "bg-slate-100 text-slate-700 border-slate-200",
-    muted:  "bg-card text-muted-foreground line-through border-border",
-  };
+  const [trips, setTrips] = useState<ScheduleTrip[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("trips")
+        .select("id, trip_number, trip_date, departure_time, return_time, destination_name, status, schools(name), drivers(first_name, last_name), buses(fleet_number)")
+        .gte("trip_date", addDaysISO(todayISO(), -1))
+        .order("trip_date", { ascending: true })
+        .order("departure_time", { ascending: true });
+      setTrips(
+        ((data ?? []) as Array<{
+          id: string; trip_number: string; trip_date: string; departure_time: string | null; return_time: string | null;
+          destination_name: string | null; status: string;
+          schools: { name: string } | null; drivers: { first_name: string; last_name: string } | null; buses: { fleet_number: string } | null;
+        }>).map((t) => ({
+          id: t.id, trip_number: t.trip_number, trip_date: t.trip_date, departure_time: t.departure_time, return_time: t.return_time,
+          destination_name: t.destination_name, status: t.status,
+          school: t.schools?.name ?? "Unknown school",
+          driver: t.drivers ? `${t.drivers.first_name} ${t.drivers.last_name}` : null,
+          bus: t.buses?.fleet_number ?? null,
+        })),
+      );
+      setLoading(false);
+    })();
+  }, []);
+
+  // Group trips by date.
+  const byDate = trips.reduce<Record<string, ScheduleTrip[]>>((acc, t) => {
+    (acc[t.trip_date] ??= []).push(t);
+    return acc;
+  }, {});
+  const dates = Object.keys(byDate).sort();
+
   return (
     <div className="space-y-5">
-      <Legend />
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">This week</h3>
-          <span className="text-xs text-muted-foreground">Calendar — week/month view · Phase 3</span>
-        </div>
-        <div className="grid grid-cols-7 gap-2">
-          {days.map((d, i) => (
-            <div key={d} className="min-h-[160px] rounded-xl border border-border bg-surface p-2">
-              <div className="mb-2 text-xs font-semibold text-muted-foreground">{d}</div>
-              <div className="space-y-1.5">
-                {slots.filter((s) => s.day === i).map((s, idx) => (
-                  <div key={idx} className={`rounded-lg border px-2 py-1.5 text-[11px] ${colors[s.status]}`}>
-                    {s.label}
-                  </div>
-                ))}
+        <h3 className="text-sm font-semibold text-foreground">Upcoming trips</h3>
+        {loading ? (
+          <p className="mt-3 text-sm text-muted-foreground">Loading…</p>
+        ) : dates.length === 0 ? (
+          <p className="mt-3 rounded-xl border border-dashed border-border bg-surface p-4 text-sm text-muted-foreground">
+            No trips scheduled yet. Approve a quote and assign a driver &amp; bus in the Quotes tab — it'll appear here.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-5">
+            {dates.map((date) => (
+              <div key={date}>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary">{formatTripDate(date)}</div>
+                <div className="space-y-2">
+                  {byDate[date].map((t) => (
+                    <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface p-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-foreground">
+                          {t.destination_name ?? "Field trip"}
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">{t.trip_number}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {t.school} · {formatTime(t.departure_time)}–{formatTime(t.return_time)}
+                          {t.driver ? ` · ${t.driver}` : ""}{t.bus ? ` · Bus ${t.bus}` : ""}
+                        </div>
+                      </div>
+                      <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle[t.status] ?? "bg-slate-100 text-slate-700"}`}>
+                        {STATUS_LABEL[t.status] ?? t.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Trips created via the Quotes tab appear here once scheduled.
-        </p>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
-  );
-}
-
-function Legend() {
-  const items = [
-    ["bg-emerald-500", "Available / confirmed"],
-    ["bg-amber-500", "In process of confirming"],
-    ["bg-rose-500", "Booked / unavailable"],
-    ["bg-slate-400", "Maintenance / inspection"],
-  ];
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 text-xs">
-      <span className="font-semibold text-foreground">Legend</span>
-      {items.map(([cls, label]) => (
-        <span key={label} className="inline-flex items-center gap-1.5">
-          <span className={`inline-block h-3 w-3 rounded-full ${cls}`} />
-          <span className="text-muted-foreground">{label}</span>
-        </span>
-      ))}
     </div>
   );
 }
@@ -710,10 +791,22 @@ type DriverRow = {
   active: boolean;
 };
 
+type BusRow = { id: string; fleet_number: string; bench_count: number; air_brake_req: boolean; active: boolean; notes: string | null };
+
 function Assets() {
   const { session } = useAuth();
   const [drivers, setDrivers]     = useState<DriverRow[]>([]);
   const [driversLoading, setDriversLoading] = useState(true);
+  const [buses, setBuses] = useState<BusRow[]>([]);
+  const [busesLoading, setBusesLoading] = useState(true);
+
+  useEffect(() => {
+    supabase
+      .from("buses")
+      .select("id, fleet_number, bench_count, air_brake_req, active, notes")
+      .order("fleet_number")
+      .then(({ data }) => { setBuses((data as BusRow[]) ?? []); setBusesLoading(false); });
+  }, []);
 
   // Invite form state
   const [showInvite, setShowInvite] = useState(false);
@@ -762,15 +855,40 @@ function Assets() {
 
   return (
     <div className="space-y-6">
-      {/* Buses placeholder */}
+      {/* Buses — live from DB */}
       <div className="rounded-2xl border border-border bg-card shadow-soft">
         <div className="flex items-center justify-between border-b border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground">Buses</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            Buses {!busesLoading && `(${buses.length})`}
+          </h3>
           <Bus className="h-4 w-4 text-muted-foreground" />
         </div>
-        <div className="p-4 text-sm text-muted-foreground">
-          Fleet data pending — to be seeded once Curtis provides bus list.
-        </div>
+        {busesLoading ? (
+          <div className="p-4 text-sm text-muted-foreground">Loading fleet…</div>
+        ) : buses.length === 0 ? (
+          <div className="p-4 text-sm text-muted-foreground">
+            No buses yet. (Demo fleet is seeded — real fleet replaces it once Curtis provides the bus list.)
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {buses.map((b) => (
+              <li key={b.id} className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">{b.fleet_number}</div>
+                  <div className="text-xs text-muted-foreground">{b.bench_count}-bench{b.notes ? ` · ${b.notes}` : ""}</div>
+                </div>
+                <div className="flex gap-1.5">
+                  {b.air_brake_req && (
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">Air brake</span>
+                  )}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${b.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                    {b.active ? "Active" : "Inactive"}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Drivers — live from DB */}
@@ -867,48 +985,75 @@ function Assets() {
 }
 
 function Availability() {
-  const drivers = ["Barry", "Judy", "Sam", "Priya"];
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-  const styles: Record<string, string> = {
-    A: "bg-emerald-100 text-emerald-800",
-    U: "bg-rose-100 text-rose-800",
-    "?": "bg-slate-100 text-slate-700",
+  const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
+  const [avail, setAvail] = useState<Record<string, string>>({}); // `${driverId}|${date}` → status
+  const [loading, setLoading] = useState(true);
+
+  // Next 7 days starting today.
+  const dates = Array.from({ length: 7 }).map((_, i) => addDaysISO(todayISO(), i));
+
+  useEffect(() => {
+    (async () => {
+      const { data: ds } = await supabase.from("drivers").select("id, first_name, last_name").eq("active", true).order("last_name");
+      const driverList = ((ds ?? []) as Array<{ id: string; first_name: string; last_name: string }>).map((d) => ({ id: d.id, name: `${d.first_name} ${d.last_name}` }));
+      setDrivers(driverList);
+      const { data: av } = await supabase
+        .from("driver_availability")
+        .select("driver_id, date, status")
+        .gte("date", dates[0])
+        .lte("date", dates[dates.length - 1]);
+      setAvail(Object.fromEntries(((av ?? []) as Array<{ driver_id: string; date: string; status: string }>).map((r) => [`${r.driver_id}|${r.date}`, r.status])));
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const cell: Record<string, { ch: string; cls: string }> = {
+    available: { ch: "A", cls: "bg-emerald-100 text-emerald-800" },
+    unavailable: { ch: "U", cls: "bg-rose-100 text-rose-800" },
+    unknown: { ch: "?", cls: "bg-slate-100 text-slate-700" },
   };
-  const mock = [
-    ["A","A","A","U","A"],
-    ["?","A","?","?","U"],
-    ["A","A","A","A","A"],
-    ["U","U","A","A","?"],
-  ];
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
       <h3 className="text-sm font-semibold text-foreground">Driver availability</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        A = Available · U = Unavailable · ? = Unknown. Drivers update their own availability via the driver portal.
+        A = Available · U = Away · ? = Not set. Drivers set their own availability in the driver portal.
       </p>
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[420px] text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="p-2">Driver</th>
-              {days.map((d) => <th key={d} className="p-2 text-center">{d}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {drivers.map((name, i) => (
-              <tr key={name}>
-                <td className="p-2 font-medium text-foreground">{name}</td>
-                {mock[i].map((v, j) => (
-                  <td key={j} className="p-2 text-center">
-                    <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${styles[v]}`}>{v}</span>
-                  </td>
+      {loading ? (
+        <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+      ) : drivers.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">No active drivers yet.</p>
+      ) : (
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[520px] text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="p-2">Driver</th>
+                {dates.map((d) => (
+                  <th key={d} className="p-2 text-center">{formatTripDate(d, { weekday: "short", day: "numeric" })}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="mt-3 text-xs text-muted-foreground">Live availability feeds from the driver portal — real data after fleet is seeded.</p>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {drivers.map((dr) => (
+                <tr key={dr.id}>
+                  <td className="p-2 font-medium text-foreground">{dr.name}</td>
+                  {dates.map((d) => {
+                    const status = avail[`${dr.id}|${d}`] ?? "unknown";
+                    const c = cell[status] ?? cell.unknown;
+                    return (
+                      <td key={d} className="p-2 text-center">
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${c.cls}`}>{c.ch}</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

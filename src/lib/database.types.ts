@@ -503,6 +503,7 @@ export type Database = {
           surcharge_total: number | null
           total: number | null
           trip_date: string | null
+          updated_at: string
           version_number: number
         }
         Insert: {
@@ -534,6 +535,7 @@ export type Database = {
           surcharge_total?: number | null
           total?: number | null
           trip_date?: string | null
+          updated_at?: string
           version_number: number
         }
         Update: {
@@ -565,6 +567,7 @@ export type Database = {
           surcharge_total?: number | null
           total?: number | null
           trip_date?: string | null
+          updated_at?: string
           version_number?: number
         }
         Relationships: [
@@ -776,6 +779,7 @@ export type Database = {
           id: string
           odometer_end: number | null
           odometer_start: number | null
+          pretrip_checklist: Json
           quote_id: string | null
           quote_version_id: string | null
           return_time: string | null
@@ -800,6 +804,7 @@ export type Database = {
           id?: string
           odometer_end?: number | null
           odometer_start?: number | null
+          pretrip_checklist?: Json
           quote_id?: string | null
           quote_version_id?: string | null
           return_time?: string | null
@@ -824,6 +829,7 @@ export type Database = {
           id?: string
           odometer_end?: number | null
           odometer_start?: number | null
+          pretrip_checklist?: Json
           quote_id?: string | null
           quote_version_id?: string | null
           return_time?: string | null
@@ -918,10 +924,13 @@ export type Database = {
         Returns: Json
       }
       calculate_estimate: { Args: { p_quote_id: string }; Returns: Json }
+      cancel_own_quote: { Args: { p_quote_id: string }; Returns: Json }
+      confirm_own_quote: { Args: { p_quote_id: string }; Returns: Json }
       confirm_trip: {
         Args: { p_bus_id: string; p_driver_id: string; p_quote_id: string }
         Returns: Json
       }
+      is_admin: { Args: never; Returns: boolean }
       notify_customer: {
         Args: {
           p_body?: string

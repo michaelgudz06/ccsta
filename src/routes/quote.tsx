@@ -1,10 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
+import { AppTopBar } from "@/components/AppTopBar";
+import { RouteMap } from "@/components/RouteMap";
 import { Button } from "@/components/ui/button";
 import { Check, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { formatMoney } from "@/lib/format";
 
 export const Route = createFileRoute("/quote")({
   head: () => ({
@@ -25,6 +28,7 @@ function QuotePage() {
   const totalSteps = 5;
   const navigate = useNavigate();
   const { session } = useAuth();
+  const [prefilled, setPrefilled] = useState(false);
 
   // Step 1
   const [school, setSchool] = useState("");
@@ -58,6 +62,40 @@ function QuotePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedQuoteNo, setSubmittedQuoteNo] = useState<string | null>(null);
+
+  // Prefill school + contact details from the customer's most recent quote so
+  // repeat bookings don't re-type everything.
+  useEffect(() => {
+    if (!session || prefilled) return;
+    setPrefilled(true);
+    (async () => {
+      const { data: q } = await supabase
+        .from("quotes")
+        .select("current_version_id, schools(name)")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!q?.current_version_id) return;
+      const { data: v } = await supabase
+        .from("quote_versions")
+        .select("pickup_address, contact_primary, contact_secondary, contact_day_of")
+        .eq("id", q.current_version_id)
+        .maybeSingle();
+      const c1 = (v?.contact_primary ?? {}) as { name?: string; email?: string; phone?: string };
+      const c2 = (v?.contact_secondary ?? {}) as { name?: string; email?: string; phone?: string };
+      const cd = (v?.contact_day_of ?? {}) as { name?: string; phone?: string };
+      setSchool((s) => s || (q.schools as { name?: string } | null)?.name || "");
+      setPickup((s) => s || v?.pickup_address || "");
+      setC1n((s) => s || c1.name || "");
+      setC1e((s) => s || c1.email || "");
+      setC1p((s) => s || c1.phone || "");
+      setC2n((s) => s || c2.name || "");
+      setC2e((s) => s || c2.email || "");
+      setC2p((s) => s || c2.phone || "");
+      setDayN((s) => s || cd.name || "");
+      setDayP((s) => s || cd.phone || "");
+    })();
+  }, [session, prefilled]);
 
   // Client-side preview estimate using real 2026-2027 non-member rates.
   // The exact quote is confirmed by admin after review.
@@ -121,12 +159,16 @@ function QuotePage() {
   if (submittedQuoteNo) {
     return (
       <div className="min-h-screen bg-surface">
-        <header className="border-b border-border bg-card/80 backdrop-blur">
-          <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-            <Logo />
-            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Back to site</Link>
-          </div>
-        </header>
+        {session ? (
+          <AppTopBar />
+        ) : (
+          <header className="border-b border-border bg-card/80 backdrop-blur">
+            <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+              <Logo />
+              <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Back to site</Link>
+            </div>
+          </header>
+        )}
         <main className="mx-auto max-w-xl px-4 py-20 text-center sm:px-6">
           <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-primary/10">
             <Check className="h-8 w-8 text-primary" />
@@ -151,14 +193,18 @@ function QuotePage() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <header className="border-b border-border bg-card/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-          <Logo />
-          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
-            ← Back to site
-          </Link>
-        </div>
-      </header>
+      {session ? (
+        <AppTopBar />
+      ) : (
+        <header className="border-b border-border bg-card/80 backdrop-blur">
+          <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+            <Logo />
+            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
+              ← Back to site
+            </Link>
+          </div>
+        </header>
+      )}
 
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <div className="mb-8">
@@ -301,11 +347,25 @@ function QuotePage() {
 
           {step === 5 && (
             <StepWrap title="Your estimate">
+              <div>
+                <div className="mb-2 text-sm font-medium text-foreground">Your route</div>
+                <RouteMap
+                  pickup={pickup || school}
+                  destination={destinationAddress || destination}
+                  departTime={departTime}
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Why distance matters: your price covers the driver's full time on the road
+                  (including travel from our Surrey yard and back), plus a flat fuel surcharge per bus.
+                  Longer trips mean more driving hours.
+                </p>
+              </div>
+
               <div className="rounded-2xl border border-border bg-surface p-5">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">Destination</div>
-                    <div className="text-lg font-semibold text-foreground">{destination || "[destination]"}</div>
+                    <div className="text-lg font-semibold text-foreground">{destination || "Your destination"}</div>
                     <div className="text-sm text-muted-foreground">{date || "—"} · {students || "—"} students</div>
                   </div>
                   <span className="rounded-full bg-accent/30 px-3 py-1 text-xs font-semibold text-primary">
@@ -318,10 +378,10 @@ function QuotePage() {
                     <Row label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
                     <Row label="Hourly rate" value={`$${hourlyRate.toFixed(2)}/hr`} />
                     <Row label="Minimum hours" value={`${minHours} hrs`} />
-                    <Row label="Base cost" value={`$${baseCost.toFixed(2)}`} />
-                    <Row label="Fuel surcharge" value={`$${fuelSurcharge.toFixed(2)} flat`} />
-                    <Row label="GST (5%)" value={`$${gst.toFixed(2)}`} />
-                    <Row label="Estimated total" value={`$${estimatedTotal.toFixed(2)}`} emphasize />
+                    <Row label="Base cost (min. hours)" value={formatMoney(baseCost)} />
+                    <Row label="Fuel surcharge" value={`${formatMoney(fuelSurcharge)} flat`} />
+                    <Row label="GST (5%)" value={formatMoney(gst)} />
+                    <Row label="Estimated total" value={formatMoney(estimatedTotal)} emphasize />
                   </tbody>
                 </table>
                 <p className="mt-3 text-xs text-muted-foreground">

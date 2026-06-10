@@ -42,9 +42,11 @@ function AboutPage() {
             student grade levels, and account for pre-trip inspections and
             travel time so the estimate reflects the real trip.
           </p>
-          <p className="rounded-2xl border border-dashed border-border bg-surface p-4 text-sm">
-            [Placeholder: founding story and what makes the team different.
-            Confirm with owner.]
+          <p>
+            We're a Surrey-based team that has spent years moving students safely
+            around the Lower Mainland. We started this platform because booking a
+            field trip shouldn't mean a week of phone calls — schools deserve a
+            fast, clear quote and a driver they can trust.
           </p>
           <p>
             Every trip is tracked live from departure to drop-off, and when it

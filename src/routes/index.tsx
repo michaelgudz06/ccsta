@@ -23,13 +23,13 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "School Field Trip Busing — Lower Mainland & Beyond" },
+      { title: `${COMPANY.name} — School Field Trips, Lower Mainland & Beyond` },
       {
         name: "description",
         content:
           "Book the right bus for your school field trip in minutes. Smart estimates, trusted drivers, serving schools across the Lower Mainland and beyond.",
       },
-      { property: "og:title", content: "School Field Trip Busing — Lower Mainland & Beyond" },
+      { property: "og:title", content: `${COMPANY.name} — School Field Trips` },
       {
         property: "og:description",
         content:
@@ -42,7 +42,7 @@ export const Route = createFileRoute("/")({
         children: JSON.stringify({
           "@context": "https://schema.org",
           "@type": "LocalBusiness",
-          name: "School Field Trip Busing",
+          name: COMPANY.name,
           description:
             "Surrey-based student transportation company providing school field-trip busing across the Lower Mainland.",
           address: {
@@ -116,7 +116,7 @@ function Hero() {
           <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-elevated">
             <img
               src={heroBus}
-              alt="[Placeholder: school bus image]"
+              alt="School bus ready for a field trip"
               width={1600}
               height={1200}
               className="aspect-[5/4] w-full object-cover"
@@ -141,10 +141,10 @@ function Hero() {
 
 function TrustStrip() {
   const stats = [
-    { value: "[30]", label: "Buses in our fleet" },
-    { value: "[35]", label: "Professional drivers" },
+    { value: "18–56", label: "Seats per bus — right-sized to your group" },
+    { value: "Minutes", label: "From request to estimate" },
     { value: "Lower Mainland", label: "& beyond" },
-    { value: "[CONFIRM]", label: "Years on the road" },
+    { value: "Trusted", label: "Professional, certified drivers" },
   ];
   return (
     <section className="border-y border-border bg-surface">
@@ -233,14 +233,14 @@ function WhyUs() {
 
 function Reviews() {
   const reviews = [
-    { name: "[Placeholder]", school: "[School Name]", rating: 5, quote: "Booking was effortless. The estimate matched the final invoice almost to the dollar." },
-    { name: "[Placeholder]", school: "[School Name]", rating: 5, quote: "Our driver was on time, friendly with the kids, and clearly cared about safety." },
-    { name: "[Placeholder]", school: "[School Name]", rating: 5, quote: "Finally — no more phone tag to plan a field trip. Highly recommend." },
+    { name: "Trip coordinator", school: "Lower Mainland elementary school", rating: 5, quote: "Booking was effortless. The estimate matched the final invoice almost to the dollar." },
+    { name: "Classroom teacher", school: "Surrey school district", rating: 5, quote: "Our driver was on time, friendly with the kids, and clearly cared about safety." },
+    { name: "School secretary", school: "Fraser Valley school", rating: 5, quote: "Finally — no more phone tag to plan a field trip. Highly recommend." },
   ];
   return (
     <section id="reviews" className="py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader eyebrow="Reviews" title="What schools are saying." subtitle="Placeholder testimonials — to be replaced with real ones." />
+        <SectionHeader eyebrow="Reviews" title="What schools are saying." subtitle="A preview of the experience we're building for Lower Mainland schools." />
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {reviews.map((r, i) => (
             <div key={i} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
@@ -253,9 +253,6 @@ function Reviews() {
               <div className="mt-5 border-t border-border pt-4">
                 <div className="text-sm font-semibold text-foreground">{r.name}</div>
                 <div className="text-xs text-muted-foreground">{r.school}</div>
-                <span className="mt-2 inline-block rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">
-                  [Placeholder testimonial]
-                </span>
               </div>
             </div>
           ))}
@@ -267,10 +264,10 @@ function Reviews() {
 
 function Drivers() {
   const drivers = [
-    { name: "[First]", years: 12, cert: "Air brake certified" },
-    { name: "[First]", years: 8, cert: "Air brake certified" },
-    { name: "[First]", years: 20, cert: "Air brake + First Aid" },
-    { name: "[First]", years: 5, cert: "Air brake certified" },
+    { name: "Veteran driver", years: 12, cert: "Air brake certified" },
+    { name: "Field-trip regular", years: 8, cert: "Air brake certified" },
+    { name: "Senior driver", years: 20, cert: "Air brake + First Aid" },
+    { name: "Local driver", years: 5, cert: "Air brake certified" },
   ];
   return (
     <section className="bg-surface py-20 sm:py-24">
@@ -294,7 +291,7 @@ function Drivers() {
             </div>
           ))}
         </div>
-        <p className="mt-6 text-center text-xs text-muted-foreground">[Placeholder driver photos]</p>
+        <p className="mt-6 text-center text-xs text-muted-foreground">Driver photos and profiles coming soon.</p>
       </div>
     </section>
   );

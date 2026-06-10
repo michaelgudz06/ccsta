@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { COMPANY } from "@/lib/company";
 
 export function Logo({ className = "" }: { className?: string }) {
   return (
@@ -14,7 +15,7 @@ export function Logo({ className = "" }: { className?: string }) {
       </div>
       <div className="flex flex-col leading-none">
         <span className="text-base font-semibold tracking-tight text-foreground">
-          [Company Name]
+          {COMPANY.name}
         </span>
         <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
           Lower Mainland field trips
