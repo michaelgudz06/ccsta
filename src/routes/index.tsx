@@ -233,14 +233,14 @@ function WhyUs() {
 
 function Reviews() {
   const reviews = [
-    { name: "Trip coordinator", school: "Lower Mainland elementary school", rating: 5, quote: "Booking was effortless. The estimate matched the final invoice almost to the dollar." },
-    { name: "Classroom teacher", school: "Surrey school district", rating: 5, quote: "Our driver was on time, friendly with the kids, and clearly cared about safety." },
-    { name: "School secretary", school: "Fraser Valley school", rating: 5, quote: "Finally — no more phone tag to plan a field trip. Highly recommend." },
+    { name: "Test", school: "Example school", rating: 5, quote: "Test review — coming soon." },
+    { name: "Test", school: "Example school", rating: 5, quote: "Test review — coming soon." },
+    { name: "Test", school: "Example school", rating: 5, quote: "Test review — coming soon." },
   ];
   return (
     <section id="reviews" className="py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader eyebrow="Reviews" title="What schools are saying." subtitle="A preview of the experience we're building for Lower Mainland schools." />
+        <SectionHeader eyebrow="Reviews" title="What schools are saying." subtitle="Reviews will appear here once trips begin." />
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {reviews.map((r, i) => (
             <div key={i} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
