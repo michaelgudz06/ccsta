@@ -81,7 +81,7 @@ function Notifications() {
     <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-soft">
       <Bell className="h-4 w-4 text-primary" />
       <span className="text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">Notifications</span> · Email/SMS coming Phase 4
+        <span className="font-semibold text-foreground">Notifications</span> · Queue ready · SMTP/SMS keys pending
       </span>
     </div>
   );
@@ -206,6 +206,27 @@ type AssignmentResult = {
   suggestions: AssignmentSuggestion[];
 };
 
+type EstimateBreakdown = {
+  bench_count: number;
+  bus_count: number;
+  customer_type: string;
+  hourly_rate: number;
+  trip_hours: number;
+  driver_pre_hours: number;
+  driver_post_hours: number;
+  total_driver_hours: number;
+  billable_hours: number;
+  min_hours: number;
+  base_cost: number;
+  fuel_surcharge: number;
+  overtime_charge: number;
+  subtotal: number;
+  gst_pct: number;
+  gst: number;
+  total: number;
+  destination_matched: string | null;
+};
+
 function QuoteQueue() {
   const [quotes, setQuotes] = useState<AdminQuoteRow[]>([]);
   const [qLoading, setQLoading] = useState(true);
@@ -224,6 +245,10 @@ function QuoteQueue() {
   // Assignment panel
   const [assignment, setAssignment] = useState<AssignmentResult | null>(null);
   const [assignBusy, setAssignBusy] = useState(false);
+
+  // Estimate breakdown
+  const [estimate, setEstimate] = useState<EstimateBreakdown | null>(null);
+  const [estimateBusy, setEstimateBusy] = useState(false);
 
   useEffect(() => {
     // Two-step fetch: quotes first, then versions — avoids PostgREST FK ambiguity
@@ -258,8 +283,13 @@ function QuoteQueue() {
       });
   }, []);
 
-  // Clear assignment panel when switching quotes
-  useEffect(() => { setAssignment(null); setConfirmedTrip(null); setActionError(null); }, [selected]);
+  // Clear panels when switching quotes
+  useEffect(() => {
+    setAssignment(null);
+    setConfirmedTrip(null);
+    setActionError(null);
+    setEstimate(null);
+  }, [selected]);
 
   async function handleApprove(quoteId: string) {
     setActionBusy("approve"); setActionError(null);
@@ -293,6 +323,20 @@ function QuoteQueue() {
     setAssignBusy(false);
     if (error) { setActionError(error.message); return; }
     setAssignment(data as AssignmentResult);
+  }
+
+  async function handleEstimate(quoteId: string) {
+    setEstimateBusy(true); setActionError(null); setEstimate(null);
+    const { data, error } = await supabase.rpc("calculate_estimate" as never, { p_quote_id: quoteId } as never);
+    setEstimateBusy(false);
+    if (error) { setActionError(error.message); return; }
+    const result = data as EstimateBreakdown;
+    setEstimate(result);
+    setQuotes((prev) => prev.map((q) =>
+      q.id === quoteId && q.quote_versions
+        ? { ...q, quote_versions: { ...q.quote_versions, total: result.total } }
+        : q
+    ));
   }
 
   async function handleConfirmTrip(quoteId: string, driverId: string, busId: string) {
@@ -407,10 +451,47 @@ function QuoteQueue() {
 
         {/* Estimate card */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h4 className="text-sm font-semibold text-foreground">Estimate</h4>
-          <div className="mt-3 grid gap-2 text-sm">
-            <Kv label="Estimated total" value={ver?.total != null ? `$${Number(ver.total).toFixed(2)}` : "Pending calculation"} />
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-foreground">Estimate</h4>
+            <button
+              disabled={estimateBusy || isCancelled}
+              onClick={() => handleEstimate(quote.id)}
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
+            >
+              {estimateBusy ? "Calculating…" : "Calculate →"}
+            </button>
           </div>
+
+          {estimate ? (
+            <div className="mt-3 space-y-1.5">
+              <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
+                {estimate.bus_count}× {estimate.bench_count}-bench bus · {estimate.customer_type.replace("_", " ")} · ${estimate.hourly_rate}/hr
+                {estimate.destination_matched && (
+                  <span className="ml-2 text-primary">· matched: {estimate.destination_matched}</span>
+                )}
+              </div>
+              <div className="grid gap-1.5 text-sm">
+                <Kv label="Trip hours" value={`${estimate.trip_hours}h`} />
+                <Kv label="Driver yard travel" value={`+${estimate.driver_pre_hours}h / +${estimate.driver_post_hours}h`} />
+                <Kv label="Billable hours" value={`${estimate.billable_hours}h (min ${estimate.min_hours}h)`} />
+                <Kv label="Base cost" value={`$${estimate.base_cost.toFixed(2)}`} />
+                <Kv label="Fuel surcharge" value={`$${estimate.fuel_surcharge.toFixed(2)}`} />
+                {estimate.overtime_charge > 0 && (
+                  <Kv label="Overtime" value={`$${estimate.overtime_charge.toFixed(2)}`} />
+                )}
+                <Kv label="Subtotal" value={`$${estimate.subtotal.toFixed(2)}`} />
+                <Kv label={`GST (${estimate.gst_pct}%)`} value={`$${estimate.gst.toFixed(2)}`} />
+                <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-semibold">
+                  <span className="text-xs uppercase tracking-wide text-primary">Total</span>
+                  <span className="text-sm text-primary">${estimate.total.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-2 text-sm">
+              <Kv label="Estimated total" value={ver?.total != null ? `$${Number(ver.total).toFixed(2)}` : "Click Calculate →"} />
+            </div>
+          )}
 
           {/* Confirmed trip banner */}
           {confirmedTrip && (
