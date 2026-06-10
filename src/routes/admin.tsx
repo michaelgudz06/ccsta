@@ -309,7 +309,7 @@ function QuoteQueue() {
             (versions ?? []).map((v: AdminVersionDetail & { id: string }) => [v.id, v])
           );
         }
-        const merged: AdminQuoteRow[] = rows.map((r: AdminQuoteRow) => ({
+        const merged: AdminQuoteRow[] = rows.map((r) => ({
           ...r,
           quote_versions: r.current_version_id ? (versionMap[r.current_version_id] ?? null) : null,
         }));
