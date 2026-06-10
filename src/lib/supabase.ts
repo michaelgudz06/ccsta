@@ -7,9 +7,15 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    "Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Add them to .env.local.",
+  // Don't throw at module load — that crashes the whole route into the error
+  // boundary ("This page didn't load") the instant any component imports this.
+  // Log loudly instead; calls will fail with a clear network error.
+  console.error(
+    "Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Set them in .env (committed, public values) or .env.local.",
   );
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient<Database>(
+  supabaseUrl ?? "",
+  supabaseAnonKey ?? "",
+);
