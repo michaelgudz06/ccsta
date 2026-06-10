@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 
-const KEY = "fvb-banner-dismissed";
+const KEY = "ccsta-banner-dismissed";
 
 export function AnnouncementBanner() {
   const [show, setShow] = useState(false);

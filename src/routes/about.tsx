@@ -6,10 +6,10 @@ import { COMPANY } from "@/lib/company";
 export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
-      { title: "About — School Field Trip Busing" },
-      { name: "description", content: "Surrey-based student transportation serving schools across the Lower Mainland and beyond. Safe, reliable field-trip busing built around the school calendar." },
-      { property: "og:title", content: "About — School Field Trip Busing" },
-      { property: "og:description", content: "Surrey-based student transportation serving schools across the Lower Mainland and beyond." },
+      { title: `About — ${COMPANY.name}` },
+      { name: "description", content: "Combined Christian Schools Transportation Association — Surrey-based student transportation serving member schools across the Lower Mainland and beyond." },
+      { property: "og:title", content: `About — ${COMPANY.name}` },
+      { property: "og:description", content: "Surrey-based student transportation serving Christian schools across the Lower Mainland and beyond." },
     ],
   }),
   component: AboutPage,

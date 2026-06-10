@@ -107,7 +107,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "@context": "https://schema.org",
           "@type": "WebSite",
           name: "CCSTA",
-          url: "https://ccsta-test.lovable.app",
+          url: "https://ccsta.ca",
         }),
       },
       {
@@ -117,7 +117,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "@type": "Organization",
           name: "Combined Christian Schools Transportation Association",
           alternateName: "CCSTA",
-          url: "https://ccsta-test.lovable.app",
+          url: "https://ccsta.ca",
           areaServed: "Lower Mainland, British Columbia",
         }),
       },

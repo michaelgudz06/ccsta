@@ -43,18 +43,18 @@ type Trip = {
 type Availability = Record<string, "available" | "unavailable" | "unknown">;
 
 function DriverPage() {
-  const { role, loading } = useAuth();
+  const { role, loading, session } = useAuth();
   const [driver, setDriver] = useState<DriverRow | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [availability, setAvailability] = useState<Availability>({});
   const [dataLoading, setDataLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (userId: string) => {
     setDataLoading(true);
     const { data: d } = await supabase
       .from("drivers")
       .select("id, first_name, last_name")
-      .limit(1)
+      .eq("profile_id", userId)
       .maybeSingle();
     if (!d) { setDataLoading(false); return; }
     setDriver(d as DriverRow);
@@ -75,9 +75,9 @@ function DriverPage() {
   }, []);
 
   useEffect(() => {
-    if (loading || role !== "driver") return;
-    load();
-  }, [loading, role, load]);
+    if (loading || role !== "driver" || !session?.user?.id) return;
+    load(session.user.id);
+  }, [loading, role, session, load]);
 
   async function toggleCheck(trip: Trip, item: string) {
     const current = (trip.pretrip_checklist as Record<string, boolean>) ?? {};

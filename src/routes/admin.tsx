@@ -84,7 +84,7 @@ function Notifications() {
     <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-soft">
       <Bell className="h-4 w-4 text-primary" />
       <span className="text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">Notifications</span> · Queue ready · SMTP/SMS keys pending
+        <span className="font-semibold text-foreground">Notifications</span> · No new alerts
       </span>
     </div>
   );
@@ -1073,8 +1073,8 @@ function Documents() {
           </div>
           <h4 className="mt-4 text-base font-semibold text-foreground">{d.title}</h4>
           <p className="mt-1 text-sm text-muted-foreground">{d.desc}</p>
-          <button className="mt-4 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground hover:brightness-105">
-            Generate (Phase 4)
+          <button disabled className="mt-4 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-not-allowed" title="Document generation coming in a future update">
+            Coming soon
           </button>
         </div>
       ))}

@@ -55,7 +55,7 @@ export const Route = createFileRoute("/")({
           },
           telephone: ["+1-778-986-8811", "+1-778-986-9011"],
           areaServed: "Lower Mainland, British Columbia",
-          url: "https://ccsta-test.lovable.app/",
+          url: "https://ccsta.ca/",
         }),
       },
     ],
@@ -232,30 +232,19 @@ function WhyUs() {
 }
 
 function Reviews() {
-  const reviews = [
-    { name: "Test", school: "Example school", rating: 5, quote: "Test review — coming soon." },
-    { name: "Test", school: "Example school", rating: 5, quote: "Test review — coming soon." },
-    { name: "Test", school: "Example school", rating: 5, quote: "Test review — coming soon." },
-  ];
   return (
     <section id="reviews" className="py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader eyebrow="Reviews" title="What schools are saying." subtitle="Reviews will appear here once trips begin." />
-        <div className="mt-14 grid gap-6 md:grid-cols-3">
-          {reviews.map((r, i) => (
-            <div key={i} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-              <div className="flex gap-0.5">
-                {Array.from({ length: r.rating }).map((_, idx) => (
-                  <Star key={idx} className="h-4 w-4 fill-accent text-accent" />
-                ))}
-              </div>
-              <p className="mt-4 text-sm text-foreground">"{r.quote}"</p>
-              <div className="mt-5 border-t border-border pt-4">
-                <div className="text-sm font-semibold text-foreground">{r.name}</div>
-                <div className="text-xs text-muted-foreground">{r.school}</div>
-              </div>
+        <SectionHeader eyebrow="Reviews" title="What schools are saying." subtitle="We're just getting started — reviews from member schools will appear here after our first trips." />
+        <div className="mt-10 flex items-center justify-center rounded-3xl border border-dashed border-border bg-card px-8 py-16 text-center">
+          <div>
+            <div className="flex justify-center gap-1">
+              {[1,2,3,4,5].map((i) => <Star key={i} className="h-5 w-5 text-border" />)}
             </div>
-          ))}
+            <p className="mt-4 text-sm text-muted-foreground max-w-sm">
+              Once our member schools complete their first trips, their feedback will be shown here.
+            </p>
+          </div>
         </div>
       </div>
     </section>
@@ -263,35 +252,29 @@ function Reviews() {
 }
 
 function Drivers() {
-  const drivers = [
-    { name: "Veteran driver", years: 12, cert: "Air brake certified" },
-    { name: "Field-trip regular", years: 8, cert: "Air brake certified" },
-    { name: "Senior driver", years: 20, cert: "Air brake + First Aid" },
-    { name: "Local driver", years: 5, cert: "Air brake certified" },
-  ];
   return (
     <section className="bg-surface py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeader
-          eyebrow="Meet Our Drivers"
-          title="Friendly faces behind the wheel."
-          subtitle="Some schools like to request a specific driver — here's a preview of who you might ride with."
+          eyebrow="Our Drivers"
+          title="Experienced, certified, and trusted."
+          subtitle="Every CCSTA driver is air-brake certified, background-checked, and trained for student transportation. Some schools prefer to request a regular driver — you can do that in the special requests field."
         />
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {drivers.map((d, i) => (
-            <div key={i} className="rounded-2xl border border-border bg-card p-5 shadow-soft text-center">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                <Users className="h-8 w-8" />
+        <div className="mt-10 grid gap-6 sm:grid-cols-3">
+          {[
+            { icon: ShieldCheck, title: "Background checked", body: "All drivers pass a criminal record check before their first trip." },
+            { icon: ClipboardCheck, title: "Air-brake certified", body: "Certified to operate full-size coaches — required for the 47 and 56-seat buses." },
+            { icon: Users, title: "Student-transportation trained", body: "Experienced with school groups, patient with students, and familiar with Lower Mainland routes." },
+          ].map((c) => (
+            <div key={c.title} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/30 text-primary">
+                <c.icon className="h-5 w-5" />
               </div>
-              <div className="mt-4 text-base font-semibold text-foreground">{d.name}</div>
-              <div className="text-xs text-muted-foreground">{d.years} years driving</div>
-              <span className="mt-3 inline-block rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-medium text-primary">
-                {d.cert}
-              </span>
+              <h3 className="mt-4 text-base font-semibold text-foreground">{c.title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{c.body}</p>
             </div>
           ))}
         </div>
-        <p className="mt-6 text-center text-xs text-muted-foreground">Driver photos and profiles coming soon.</p>
       </div>
     </section>
   );
