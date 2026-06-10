@@ -94,7 +94,7 @@ function Hero() {
             Serving schools across the Lower Mainland & beyond
           </span>
           <h1 className="mt-5 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-            test test
+            {COMPANY.tagline}
           </h1>
           <p className="mt-5 max-w-xl text-lg text-muted-foreground">
             Smart estimates, the right-sized bus, a trusted driver. Serving
