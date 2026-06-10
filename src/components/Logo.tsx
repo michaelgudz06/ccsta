@@ -18,7 +18,7 @@ export function Logo({ className = "" }: { className?: string }) {
           {COMPANY.name}
         </span>
         <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          Lower Mainland field trips
+          Christian School Transportation
         </span>
       </div>
     </Link>

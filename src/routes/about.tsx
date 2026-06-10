@@ -28,9 +28,9 @@ function AboutPage() {
         </h1>
         <div className="mt-8 space-y-5 text-muted-foreground">
           <p>
-            <span className="font-semibold text-foreground">{COMPANY.name}</span> is
-            a Surrey-based student transportation company built around safe and
-            reliable field-trip busing for schools across the Lower Mainland and
+            <span className="font-semibold text-foreground">{COMPANY.fullName} ({COMPANY.name})</span> is
+            a Surrey-based student transportation association built around safe and
+            reliable field-trip busing for member Christian schools across the Lower Mainland and
             beyond. From Vancouver to the Fraser Valley, if your class needs to
             get somewhere, we get them there.
           </p>
@@ -43,9 +43,9 @@ function AboutPage() {
             travel time so the estimate reflects the real trip.
           </p>
           <p>
-            We're a Surrey-based team that has spent years moving students safely
-            around the Lower Mainland. We started this platform because booking a
-            field trip shouldn't mean a week of phone calls — schools deserve a
+            We're a Surrey-based association that has spent years moving students safely
+            around the Lower Mainland. We built this platform because booking a
+            field trip shouldn't mean a week of phone calls — member schools deserve a
             fast, clear quote and a driver they can trust.
           </p>
           <p>
