@@ -1,187 +1,151 @@
-# Fraser Valley School Bus — Data Request for Curtis
+# CCSTA Platform — Remaining Data Request for Curtis
+**Updated:** June 2026  
 **Prepared by:** Michael  
-**Date:** June 2026  
-**Purpose:** Seed the new booking platform with accurate real-world data. Everything marked *(estimated)* is a placeholder I used to build the system — please correct any that are wrong.
+**Purpose:** Track what is still needed to finish the platform. Everything marked ✅ is already confirmed in the system — no action needed on those.
 
 ---
 
-## 1. Bus Yard Locations
+## Already done — no action needed
 
-We need the address and GPS coordinates for each yard. The system uses these to calculate drive time to/from schools and apply out-of-radius surcharges.
+| Section | What's in the system | Source |
+|---|---|---|
+| ✅ Hourly rates | Non-member, member, and church rates for all three bus sizes (2026-2027 season) | Rate sheet / quote template |
+| ✅ Surcharges | Fuel ($50 flat/trip), long-distance ($1/km beyond 200km), overtime ($16/hr beyond 8h), GST 5% (GST# 129645727), 10-min driver buffer | Rate sheet |
+| ✅ Destinations | ~100 pickup/destination locations with pre-calculated drive times from the Surrey yard | Quote template "Destinations" sheet |
+| ✅ Schools & companies | ~100 schools and organisations with contact info and member flags | Quote template "Companies" sheet |
+| ✅ Yard location | Surrey Main — 8888 162 Street, Surrey, BC V4N 3G1 | Confirmed |
+
+---
+
+## Still needed — please provide
+
+### 1. Real bus fleet  *(blocks accurate trip assignments)*
+
+The system currently has 7 placeholder demo buses. Please replace with the real fleet.
+
+One row per bus:
 
 | Field | Format | Example |
 |---|---|---|
-| Yard name | Text | Surrey Main |
-| Street address | Full civic address | 8888 162 Street, Surrey, BC |
-| Postal code | Canadian postal code | V4N 3G1 |
-| Latitude | Decimal degrees | 49.1732 |
-| Longitude | Decimal degrees | -122.7533 |
-| Is this the primary/default yard? | Yes / No | Yes |
+| Fleet / unit number | Text | Bus 14 |
+| Bench count | 18, 47, or 56 | 47 |
+| Requires air-brake certified driver? | Yes / No | Yes |
+| Active / in service? | Yes / No | Yes |
+| Notes | Text | AC unit, wheelchair lift, out for inspection until Jul 1 |
+| Samsara vehicle ID | From Samsara dashboard | veh_abc123 *(Phase 5 — can add later)* |
 
-**Currently in the system (needs confirmation):**
-- Surrey Main — 8888 162 Street, Surrey, BC, V4N 3G1
-
-> **Please provide:** Confirm this address is correct. Add any other yard locations. GPS coordinates can be found by right-clicking the address in Google Maps → "What's here?"
+> **Please send:** A list of all buses currently in service. A simple spreadsheet or email is fine.
 
 ---
 
-## 2. Bus Fleet
+### 2. Driver list  *(blocks accurate trip assignments)*
 
-One row per bus. We use the **bench count** (number of bench seats, not total passenger seats) to match buses to trips.
+The system currently has 2 placeholder demo drivers. Please replace with the real roster.
 
-| Field | Format | Notes |
+One row per driver:
+
+| Field | Format | Example |
 |---|---|---|
-| Fleet / unit number | Text | e.g. Bus 14, Unit 22 |
-| Bench count | Number | 18, 47, or 56 |
-| Requires air-brake certified driver? | Yes / No | Usually yes for 47 & 56 |
-| Serial / VIN | Text | Optional — for records |
-| Samsara vehicle ID | Text | From Samsara dashboard — needed for GPS tracking |
-| Home yard | Yard name from Section 1 | e.g. Surrey Main |
-| Active / in service? | Yes / No | |
-| Notes | Text | e.g. "AC, wheelchair lift, out for inspection until Jul 1" |
+| First name | Text | Barry |
+| Last name | Text | Smith |
+| Email address | Email | barry@ccsta.ca |
+| Phone (cell) | 604-555-0100 format | 604-555-0101 |
+| Air-brake certified? | Yes / No | Yes |
+| Trip types | Route / Field Trip / Both | Both |
+| Samsara driver ID | From Samsara dashboard | drv_xyz789 *(Phase 5 — can add later)* |
 
-**Example format (one row per bus):**
-
-| Fleet # | Bench count | Air brake req | VIN | Samsara ID | Home yard | Active | Notes |
-|---|---|---|---|---|---|---|---|
-| Bus 14 | 18 | No | 1BABNBKA... | abc123 | Surrey Main | Yes | |
-| Bus 22 | 47 | Yes | | | Surrey Main | Yes | AC unit |
+> **Please send:** A list of all active drivers. Email and phone are required so we can create their login accounts and send trip notifications.
 
 ---
 
-## 3. Drivers
+### 3. Driver–bus clearances  *(blocks accurate trip assignments)*
 
-One row per driver.
+Which bus sizes is each driver licensed/cleared to operate?
 
-| Field | Format | Notes |
-|---|---|---|
-| First name | Text | |
-| Last name | Text | |
-| Email | Email address | Used for login and notifications |
-| Phone | 604-555-0100 format | Used for day-of contact and SMS alerts |
-| Air-brake certified? | Yes / No | |
-| Trip types | Route / Field Trip / Both | What types of trips can they do? |
-| Home yard | Yard name from Section 1 | |
-| Samsara driver ID | Text | From Samsara dashboard |
-| Notes | Text | e.g. "First aid certified", "Part-time — 3 days/week" |
-
-**Example format:**
-
-| First | Last | Email | Phone | Air brake | Trip types | Home yard | Samsara ID | Notes |
-|---|---|---|---|---|---|---|---|---|
-| Barry | Smith | barry@example.com | 604-555-0101 | Yes | Both | Surrey Main | drv_abc | |
-| Judy | Lee | judy@example.com | 604-555-0102 | Yes | Route | Surrey Main | drv_def | Part-time |
-
----
-
-## 4. Driver–Bus Clearances
-
-Which bus sizes is each driver cleared/licensed to operate? A driver can be cleared for multiple sizes.
-
-| Driver full name | Bus sizes they are cleared for |
+| Driver full name | Cleared for (circle all that apply) |
 |---|---|
-| Barry Smith | 18, 47, 56 |
-| Judy Lee | 47 |
-| Sam Jones | 18 |
+| e.g. Barry Smith | 18 / 47 / 56 |
+| e.g. Judy Lee | 18 / 47 |
 
-*(Just list all the bench counts: 18, 47, 56)*
+*(Just the bench counts: 18, 47, or 56)*
 
 ---
 
-## 5. Driver Pairing Restrictions
+### 4. Driver pairing restrictions  *(optional — only if applicable)*
 
-Are there any pairs of drivers who **cannot be scheduled on the same day** (e.g. due to personal conflicts, union rules, or company policy)?
+Are there any pairs of drivers who **cannot be scheduled on the same day?**
 
 | Driver A | Driver B | Reason (optional) |
 |---|---|---|
-| Barry Smith | Judy Lee | Personal conflict |
+| | | |
 
-If there are none, just write "None."
-
----
-
-## 6. Member Schools
-
-Schools we have existing relationships with. The booking form creates new schools automatically when a customer types their school name, so this list is for pre-populating the database (so their name auto-matches).
-
-| Field | Format |
-|---|---|
-| School name | Official full name |
-| Street address | Full civic address |
-| City | Text |
-| Postal code | Canadian postal code |
-| School district | e.g. SD36 Surrey |
-| Primary contact name | Text |
-| Primary contact email | Email |
-| Primary contact phone | 604-555-0100 |
-| Member school? | Yes / No |
-| Notes | Any special notes |
+If none, write "None."
 
 ---
 
-## 7. Pricing — Hourly Rates
+### 5. Member school confirmation  *(affects pricing — members get the lower rate)*
 
-We use bench count (18 / 47 / 56) as the bus size tier for pricing.
+The system has ~100 schools pre-loaded. We've made an educated guess at which ones are CCSTA members, but this needs confirmation so the right rate is applied automatically.
 
-**Currently in the system *(estimated — please correct)* :**
+**Currently flagged as member schools:**
+- Abbotsford Christian School
+- B.C. Christian Academy
+- Credo Christian Elementary School
+- Credo Christian High School
+- Delta Christian School
+- John Knox Christian School
+- Langley Christian School
+- Maple Ridge Christian
+- MEI (Mennonite Educational Institute)
+- Pacific Academy
+- Regent Christian Academy
+- Surrey Christian School *(also listed as CCSTA home school)*
+- The Kings School
+- Valley Christian School
+- Vancouver Christian School
+- White Rock Christian Academy
 
-| Bus size | Hourly rate | Minimum hours | Minimum charge |
-|---|---|---|---|
-| 18-bench mini-bus | $95 / hr | 2 hrs | $190 |
-| 47-bench coach | $125 / hr | 2 hrs | $250 |
-| 56-bench coach | $145 / hr | 2 hrs | $290 |
-
-> **Please provide:** The correct hourly rate, minimum hours, and minimum charge for each bus size.
-
----
-
-## 8. Pricing — Surcharges & Config
-
-**Currently in the system *(estimated — please correct)* :**
-
-| Setting | Current value | What it means |
-|---|---|---|
-| Fuel surcharge | 5% | Percentage added to the base fare on every trip |
-| Out-of-radius threshold | 50 km | Distance from the Surrey yard before a per-km charge kicks in |
-| Out-of-radius rate | $2.50 / km | Per-km charge beyond the threshold |
-| Driver pre-trip buffer | 15 min | Extra minutes added to driver hours before each trip (for pre-trip inspection, yard departure, etc.) |
-| Admin buffer | 0% | Optional markup % on estimates (currently off) |
-
-> **Please provide:** Correct values for any of these that are wrong. If there are other fees or surcharges (weekend rates, holiday rates, after-hours, parking reimbursement, etc.) please list them too.
+> **Please confirm:** Is this list correct? Any schools to add or remove?
 
 ---
 
-## 9. API Keys & Credentials
+### 6. Yard address confirmation  *(low priority)*
 
-These are needed to enable specific features. Each one has a placeholder slot already set up in the system.
+The system uses **8888 162 Street, Surrey, BC V4N 3G1** as the main yard — this address also appears as Surrey Christian School in the companies sheet.
 
-| Service | What it's used for | What I need from you | Status |
-|---|---|---|---|
-| **Google Maps** | Calculating driving distance and time between the yard and destination (for accurate hour estimates) | A Google Maps API key (Platform → Directions API enabled) | Needed for Phase 2 estimate engine |
-| **Samsara** | Live bus GPS tracking, geofencing — show dispatchers where buses are in real time | Samsara API token (from Samsara dashboard → Settings → API Tokens) | Needed for Phase 5 |
-| **Email (SMTP)** | Automated emails — quote received confirmation to school, approval notice, trip details | SMTP host, port, username, password, and the "from" email address (e.g. bookings@fraservalleybus.ca) | Needed for Phase 4 |
-| **SMS** | Text message alerts to drivers when a new trip is assigned to them | SMS provider and API key (e.g. Twilio, SimpleTexting, etc. — or let me know what you currently use) | Needed for Phase 4 |
+> **Please confirm:** Is 8888 162 St the actual bus yard address, or is the yard at a different location?
 
 ---
 
-## 10. Existing Quote / Invoice Reference
+### 7. API credentials  *(needed for specific phases)*
 
-If you have sample quote PDFs or confirmation sheets that go out to schools, please send them. The system will eventually generate these documents automatically and I want them to match your current format exactly.
+| # | Service | What it unlocks | What we need | Priority |
+|---|---|---|---|---|
+| A | **Samsara** | Live bus GPS on the dispatch screen; driver hours-of-service sync | Samsara API token (Settings → API Tokens in Samsara dashboard) + vehicle IDs per bus + driver IDs per driver | Phase 5 |
+| B | **Email (SMTP)** | Automated emails — quote confirmation to school, approval notice, trip details to driver | SMTP host, port, username, password, and "from" email (e.g. bookings@ccsta.ca) | Phase 4 |
+| C | **SMS** | Text alerts to drivers when a new trip is assigned | SMS provider + API key (Twilio, SimpleTexting, etc. — or let us know what you use) | Phase 4 |
 
-Similarly, if you have a Sage 50 invoice template or know the exact field layout Sage expects for the import, that will help me build the export correctly.
-
----
-
-## How to Send
-
-The easiest formats:
-- **Spreadsheet** (Excel or Google Sheets) — one tab per section above
-- **Email with the corrections** typed inline — for small things like pricing
-- **PDFs of existing documents** — for quote templates and Sage formats
-
-Send to: **[your email here]**
+> **Note on Google Maps:** The API key is already set up and billing just needs to be enabled on the Google Cloud account. Maps currently work using OpenStreetMap — Google gives more accurate live-traffic routing but is not blocking anything.
 
 ---
 
-*Built with: TanStack Start · Supabase · Vercel*  
+### 8. Quote & invoice document templates  *(needed for document generation)*
+
+- **Sample quote PDF or confirmation sheet** — the document currently sent to schools when a trip is confirmed. Any recent one is fine.
+- **Sage 50 invoice template** — either a sample Sage 50 import CSV, or the expected field layout so we can format the export to match.
+
+---
+
+## How to send
+
+Easiest formats:
+- **Spreadsheet** (Excel or Google Sheets) — one tab per section
+- **Email** with the info typed inline — fine for small confirmations
+- **PDFs** — for quote template and Sage format
+
+Send to **Michael** — he'll enter it into the system.
+
+---
+
+*Platform built with TanStack Start · Supabase · Vercel*  
 *Questions? Michael can explain any field in more detail.*
