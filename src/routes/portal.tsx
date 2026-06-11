@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { dispatchNotifications } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, CheckCircle2, XCircle, Phone } from "lucide-react";
 import { formatTripDate, formatTime, formatMoney } from "@/lib/format";
@@ -58,6 +59,7 @@ type QuoteRow = {
   status: string;
   created_at: string;
   current_version_id: string | null;
+  cancellation_requested_at: string | null;
   schools: { name: string } | null;
   version: VersionDetail | null;
 };
@@ -82,7 +84,7 @@ function PortalPage() {
     setQuotesLoading(true);
     const { data: rows } = await supabase
       .from("quotes")
-      .select("id, quote_number, status, created_at, current_version_id, schools(name)")
+      .select("id, quote_number, status, created_at, current_version_id, cancellation_requested_at, schools(name)")
       .order("created_at", { ascending: false });
     if (!rows) { setQuotesLoading(false); return; }
 
@@ -117,12 +119,17 @@ function PortalPage() {
     load();
   }, [loading, role, load]);
 
-  async function doAction(fn: "cancel_own_quote" | "confirm_own_quote", quoteId: string) {
+  async function doAction(
+    fn: "cancel_own_quote" | "confirm_own_quote" | "request_quote_cancellation",
+    quoteId: string,
+    extraArgs?: Record<string, unknown>,
+  ) {
     setActionBusy(quoteId + fn);
     setActionError(null);
-    const { error } = await supabase.rpc(fn, { p_quote_id: quoteId });
+    const { error } = await supabase.rpc(fn, { p_quote_id: quoteId, ...extraArgs });
     setActionBusy(null);
     if (error) { setActionError(error.message); return; }
+    dispatchNotifications();
     await load();
   }
 
@@ -173,8 +180,13 @@ function PortalPage() {
               quotes.map((q) => {
                 const v = q.version;
                 const open = openId === q.id;
-                const canCancel = ["requested", "in_review", "approved"].includes(q.status);
-                const canAccept = q.status === "approved";
+                const cancelPending = !!q.cancellation_requested_at && q.status !== "cancelled";
+                // Not accepted by the office yet → cancel directly.
+                const canCancel = ["requested", "in_review"].includes(q.status);
+                // Already accepted (priced/booked) → must ask the office to cancel.
+                const canRequestCancel =
+                  ["approved", "confirmed", "scheduled"].includes(q.status) && !cancelPending;
+                const canAccept = q.status === "approved" && !cancelPending;
                 return (
                   <div key={q.id} className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
                     <button
@@ -190,8 +202,8 @@ function PortalPage() {
                           {formatTripDate(v?.trip_date)} · {(v?.student_count ?? 0) + (v?.adults_count ?? 0)} riders
                         </div>
                       </div>
-                      <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
-                        {STATUS_LABEL[q.status] ?? q.status}
+                      <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${cancelPending ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
+                        {cancelPending ? "Cancellation requested" : STATUS_LABEL[q.status] ?? q.status}
                       </span>
                       <div className="text-right">
                         <div className="font-semibold text-foreground">{v?.total != null ? formatMoney(v.total) : "—"}</div>
@@ -234,7 +246,14 @@ function PortalPage() {
                           </div>
                         )}
 
-                        {(canAccept || canCancel) && (
+                        {cancelPending && (
+                          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            We've received your cancellation request — the office will confirm it shortly.
+                            Need it urgently? Call us at {COMPANY.phoneMelody}.
+                          </p>
+                        )}
+
+                        {(canAccept || canCancel || canRequestCancel) && (
                           <div className="mt-4 flex flex-wrap gap-2">
                             {canAccept && (
                               <Button
@@ -254,6 +273,22 @@ function PortalPage() {
                               >
                                 <XCircle className="h-4 w-4" />
                                 {actionBusy === q.id + "cancel_own_quote" ? "Cancelling…" : "Cancel request"}
+                              </Button>
+                            )}
+                            {canRequestCancel && (
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  const reason = prompt(
+                                    "This trip has already been accepted by our office, so cancellation needs their confirmation.\n\nReason for cancelling (optional):",
+                                  );
+                                  if (reason === null) return; // dismissed
+                                  doAction("request_quote_cancellation", q.id, { p_reason: reason });
+                                }}
+                                disabled={actionBusy === q.id + "request_quote_cancellation"}
+                              >
+                                <XCircle className="h-4 w-4" />
+                                {actionBusy === q.id + "request_quote_cancellation" ? "Sending…" : "Request cancellation"}
                               </Button>
                             )}
                           </div>

@@ -4,6 +4,7 @@ import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { dispatchNotifications } from "@/lib/notify";
 import { formatTripDate, formatTime, formatMoney, todayISO, addDaysISO } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 import {
@@ -222,6 +223,8 @@ type AdminQuoteRow = {
   status: string;
   created_at: string;
   current_version_id: string | null;
+  cancellation_requested_at: string | null;
+  cancellation_reason: string | null;
   schools: { name: string } | null;
   quote_versions: AdminVersionDetail | null;
 };
@@ -291,7 +294,7 @@ function QuoteQueue() {
     // Two-step fetch: quotes first, then versions — avoids PostgREST FK ambiguity
     supabase
       .from("quotes")
-      .select("id, quote_number, status, created_at, current_version_id, schools(name)")
+      .select("id, quote_number, status, created_at, current_version_id, cancellation_requested_at, cancellation_reason, schools(name)")
       .order("created_at", { ascending: false })
       .limit(50)
       .then(async ({ data: rows }) => {
@@ -339,6 +342,7 @@ function QuoteQueue() {
     const result = data as { invoice_number: string };
     setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "approved" } : q));
     setInvoiceNos((m) => ({ ...m, [quoteId]: result.invoice_number }));
+    dispatchNotifications();
   }
 
   async function handleReject(quoteId: string) {
@@ -352,6 +356,23 @@ function QuoteQueue() {
     setQuotes((prev) => prev.filter((q) => q.id !== quoteId));
     setShowReject(false); setRejectReason("");
     setSelected((prev) => quotes.find((q) => q.id !== quoteId && q.id !== prev)?.id ?? quotes[0]?.id ?? null);
+    dispatchNotifications();
+  }
+
+  async function handleResolveCancellation(quoteId: string, approve: boolean) {
+    setActionBusy(approve ? "cancel-approve" : "cancel-decline"); setActionError(null);
+    const { error } = await supabase.rpc("resolve_cancellation_request" as never, {
+      p_quote_id: quoteId,
+      p_approve: approve,
+    } as never);
+    setActionBusy(null);
+    if (error) { setActionError(error.message); return; }
+    setQuotes((prev) => prev.map((q) =>
+      q.id === quoteId
+        ? { ...q, status: approve ? "cancelled" : q.status, cancellation_requested_at: null }
+        : q
+    ));
+    dispatchNotifications();
   }
 
   async function handleSuggest(quoteId: string) {
@@ -440,8 +461,8 @@ function QuoteQueue() {
                       : "no date"}
                   </div>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
-                  {STATUS_LABEL[q.status] ?? q.status}
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${q.cancellation_requested_at && q.status !== "cancelled" ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
+                  {q.cancellation_requested_at && q.status !== "cancelled" ? "Cancel requested" : STATUS_LABEL[q.status] ?? q.status}
                 </span>
               </button>
             </li>
@@ -451,6 +472,40 @@ function QuoteQueue() {
 
       {/* ── Detail panel ── */}
       <div className="lg:col-span-3 space-y-4">
+
+        {/* Pending cancellation request */}
+        {quote.cancellation_requested_at && quote.status !== "cancelled" && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-soft">
+            <div className="text-sm font-semibold text-amber-900">
+              ⚠️ Customer asked to cancel this trip
+            </div>
+            <p className="mt-1 text-sm text-amber-800">
+              Requested {new Date(quote.cancellation_requested_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
+              {quote.cancellation_reason ? <> — “{quote.cancellation_reason}”</> : null}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => handleResolveCancellation(quote.id, true)}
+                disabled={actionBusy === "cancel-approve"}
+              >
+                {actionBusy === "cancel-approve" ? "Cancelling…" : "Approve — cancel the trip"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleResolveCancellation(quote.id, false)}
+                disabled={actionBusy === "cancel-decline"}
+              >
+                {actionBusy === "cancel-decline" ? "Declining…" : "Decline — keep the booking"}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-amber-700">
+              Either way the customer gets an email. Declining keeps the trip as-is.
+            </p>
+          </div>
+        )}
 
         {/* Quote header */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">

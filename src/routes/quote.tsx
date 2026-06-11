@@ -7,6 +7,7 @@ import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
 import { Check, Plus, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { dispatchNotifications } from "@/lib/notify";
 import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
 
@@ -204,6 +205,7 @@ function QuotePage() {
     });
     setSubmitting(false);
     if (error) { setSubmitError(error.message); return; }
+    dispatchNotifications();
     setSubmittedQuoteNo((data as { quote_number: string }).quote_number);
   };
 
