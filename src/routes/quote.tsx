@@ -709,7 +709,7 @@ function TimeField({
         </select>
         <select
           value={period}
-          onChange={(e) => onChange History(`${to24Hour(hour || "12", e.target.value as "AM" | "PM")}:${minute || "00"}`)}
+          onChange={(e) => onChange(`${to24Hour(hour || "12", e.target.value as "AM" | "PM")}:${minute || "00"}`)}
           className={baseSelect}
         >
           <option value="AM">AM</option>
