@@ -336,7 +336,7 @@ function QuotePage() {
                     className="h-52 w-full"
                   />
                   <p className="px-4 py-2 text-xs text-muted-foreground">
-                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel from our Surrey yard, your trip, and the return.
+                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
                   </p>
                 </div>
               )}
