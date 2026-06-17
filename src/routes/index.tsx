@@ -162,9 +162,9 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
 function WhyUs() {
   const items = [
     { icon: Users, title: "Grade-aware capacity", body: "Younger students seat 3 per bench, older students seat 2 — the right-sized bus every time." },
-    { icon: Receipt, title: "Transparent estimates", body: "Hourly rates, fuel and distance spelled out up front." },
+    { icon: Receipt, title: "Transparent Pricing", body: "Every cost laid out before you book — no surprises.\n\n\n" },
     { icon: CalendarCheck, title: "Honest invoicing", body: "Final invoice matches the actual trip — no surprises." },
-    { icon: Bus, title: "Built for schools", body: "Designed around the school calendar with simple confirmations." },
+    { icon: Bus, title: "Simple Booking", body: "Easy confirmations that work around your schedule." },
   ];
   return (
     <section id="why" className="bg-surface py-20 sm:py-24">
