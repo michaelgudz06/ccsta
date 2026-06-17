@@ -164,7 +164,6 @@ function WhyUs() {
     { icon: Users, title: "Grade-aware capacity", body: "Younger students seat 3 per bench, older students seat 2 — the right-sized bus every time." },
     { icon: ShieldCheck, title: "Trusted, certified drivers", body: "Professional, vetted drivers with clean records and ongoing training." },
     { icon: Receipt, title: "Transparent estimates", body: "Hourly rates, fuel and distance spelled out up front." },
-    { icon: Gauge, title: "GPS tracking for safety", body: "Every trip is tracked live from departure to drop-off." },
     { icon: CalendarCheck, title: "Honest invoicing", body: "Final invoice matches the actual trip — no surprises." },
     { icon: Bus, title: "Built for schools", body: "Designed around the school calendar with simple confirmations." },
   ];
