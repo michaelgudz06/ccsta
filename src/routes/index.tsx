@@ -130,7 +130,7 @@ function TrustStrip() {
     { value: "18–56", label: "Passenger busses, for any group size." },
     { value: "Minutes", label: "To get an accurate quote." },
     { value: "Coast to Canyon", label: "Whistler to Princeton — And everywhere in between." },
-    { value: "Trusted", label: "Professional, Certified drivers" },
+    { value: "Certified Drivers", label: "Professional and reliable." },
   ];
   return (
     <section className="border-y border-border bg-surface">
