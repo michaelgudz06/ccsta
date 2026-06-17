@@ -17,7 +17,7 @@ import {
   ShieldCheck,
   Star,
   Phone,
-  MapPin,
+  
 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -44,15 +44,7 @@ export const Route = createFileRoute("/")({
           "@type": "LocalBusiness",
           name: COMPANY.name,
           description:
-            "Surrey-based student transportation company providing school field-trip busing across the Lower Mainland.",
-          address: {
-            "@type": "PostalAddress",
-            streetAddress: "8888 162 Street",
-            addressLocality: "Surrey",
-            addressRegion: "BC",
-            postalCode: "V4N 3G1",
-            addressCountry: "CA",
-          },
+            "Student transportation company providing school field-trip busing across the Lower Mainland.",
           telephone: ["+1-778-986-8811", "+1-778-986-9011"],
           areaServed: "Lower Mainland, British Columbia",
           url: "https://ccsta.ca/",
@@ -302,7 +294,6 @@ function Contact() {
           subtitle="Prefer to start a quote? Use the form — it only takes a few minutes."
         />
         <div className="mt-10 grid gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8 sm:grid-cols-2">
-          <ContactRow icon={<MapPin className="h-4 w-4" />} label="Office" value={COMPANY.address} />
           <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
           <ContactRow icon={<Phone className="h-4 w-4" />} label="Alan" value={COMPANY.phoneAlan} />
           <ContactRow icon={<Phone className="h-4 w-4" />} label="Melody" value={COMPANY.phoneMelody} />
@@ -336,7 +327,7 @@ function SiteFooter() {
         <div className="lg:col-span-2">
           <Logo />
           <p className="mt-4 max-w-sm text-sm text-muted-foreground">
-            {COMPANY.name} — Surrey-based student transportation. Serving the
+            {COMPANY.name} — Student transportation. Serving the
             Lower Mainland and beyond.
           </p>
         </div>
