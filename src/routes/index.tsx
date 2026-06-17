@@ -258,7 +258,6 @@ function Contact() {
         <SectionHeader
           eyebrow="Contact"
           title="Get in touch."
-          subtitle="Prefer to start a quote? Use the form — it only takes a few minutes."
         />
         <div className="mt-10 grid gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8 sm:grid-cols-2">
           <ContactRow icon={<Phone className="h-4 w-4" />} label="Alan" value={COMPANY.phoneAlan} />
