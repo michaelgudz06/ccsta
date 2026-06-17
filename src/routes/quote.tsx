@@ -347,13 +347,13 @@ function QuotePage() {
                   value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
                   error={errors.date}
                 />
-                <Field
-                  label="Departure time" type="time" required step={900}
+                <TimeField
+                  label="Departure time" required
                   value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
                   error={errors.departTime}
                 />
-                <Field
-                  label="Pick-up from destination" type="time" required step={900}
+                <TimeField
+                  label="Pick-up from destination" required
                   value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
                   error={errors.returnTime}
                 />
@@ -648,6 +648,46 @@ function Progress({ current, total }: { current: number; total: number }) {
         })}
       </div>
     </div>
+  );
+}
+
+function TimeField({
+  label, value, onChange, error, required,
+}: {
+  label: string; value: string; onChange: (v: string) => void; error?: string; required?: boolean;
+}) {
+  const [hour, minute] = value ? value.split(":") : ["", ""];
+  const minutes = ["00", "15", "30", "45"];
+  return (
+    <label className="block text-sm">
+      <span className="font-medium text-foreground">
+        {label}
+        {required && <span className="ml-0.5 text-destructive">*</span>}
+      </span>
+      <div className="mt-1.5 flex gap-2">
+        <select
+          value={hour}
+          onChange={(e) => onChange(`${e.target.value.padStart(2, "0")}:${minute || "00"}`)}
+          className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
+        >
+          <option value="">Hr</option>
+          {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
+            <option key={h} value={h}>{h}</option>
+          ))}
+        </select>
+        <select
+          value={minute}
+          onChange={(e) => onChange(`${hour || "00"}:${e.target.value}`)}
+          className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
+        >
+          <option value="">Min</option>
+          {minutes.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+      </div>
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </label>
   );
 }
 
