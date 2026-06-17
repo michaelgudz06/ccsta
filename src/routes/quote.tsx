@@ -452,6 +452,9 @@ function QuotePage() {
                   <span className="text-muted-foreground">Equipment, instruments, sports gear, etc.</span>
                 </span>
               </label>
+              <p className="text-xs text-muted-foreground">
+                *Our cargo busses fit 1 airport carry-on baggage per person.
+              </p>
             </StepWrap>
           )}
 
