@@ -5,7 +5,7 @@ export const COMPANY = {
   name: "CCSTA",
   fullName: "Combined Christian Schools Transportation Association",
   tagline: "Field trips across the Lower Mainland, handled.",
-  email: "info@ccsta.net",
+  email: "Admin@ccsta.net",
   phoneAlan: "(778) 986-8811",
   phoneMelody: "(778) 986-9011",
 };
