@@ -88,7 +88,7 @@ function PortalPage() {
       .order("created_at", { ascending: false });
     if (!rows) { setQuotesLoading(false); return; }
 
-    const versionIds = rows.map((r) => r.current_version_id).filter(Boolean) as string[];
+    const versionIds = rows.map((r: any) => r.current_version_id).filter(Boolean) as string[];
     let versionMap: Record<string, VersionDetail> = {};
     if (versionIds.length > 0) {
       const { data: versions } = await supabase
@@ -100,8 +100,8 @@ function PortalPage() {
       );
     }
     setQuotes(
-      rows.map((r) => ({
-        ...(r as unknown as QuoteRow),
+      rows.map((r: any) => ({
+        ...r,
         version: r.current_version_id ? versionMap[r.current_version_id] ?? null : null,
       })),
     );
@@ -120,7 +120,7 @@ function PortalPage() {
   }, [loading, role, load]);
 
   async function doAction(
-    fn: "cancel_own_quote" | "confirm_own_quote" | "request_quote_cancellation",
+    fn: string,
     quoteId: string,
     extraArgs?: Record<string, unknown>,
   ) {

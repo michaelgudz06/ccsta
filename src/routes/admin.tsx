@@ -1,8 +1,9 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
 import { useAuth } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { formatTripDate, formatTime, formatMoney, todayISO, addDaysISO } from "@/lib/format";
@@ -300,7 +301,7 @@ function QuoteQueue() {
       .then(async ({ data: rows }) => {
         if (!rows) { setQLoading(false); return; }
         const versionIds = rows
-          .map((r: { current_version_id: string | null }) => r.current_version_id)
+          .map((r: any) => r.current_version_id)
           .filter(Boolean) as string[];
         let versionMap: Record<string, AdminVersionDetail> = {};
         if (versionIds.length > 0) {
@@ -309,10 +310,10 @@ function QuoteQueue() {
             .select("id, trip_date, student_count, destination_name, destination_address, pickup_address, total, departure_time, special_requests")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
-            (versions ?? []).map((v: AdminVersionDetail & { id: string }) => [v.id, v])
+            (versions ?? []).map((v: any) => [v.id, v])
           );
         }
-        const merged: AdminQuoteRow[] = rows.map((r) => ({
+        const merged: AdminQuoteRow[] = rows.map((r: any) => ({
           ...r,
           quote_versions: r.current_version_id ? (versionMap[r.current_version_id] ?? null) : null,
         }));
