@@ -13,7 +13,6 @@ export function SiteNav() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Logo />
         <nav className="hidden items-center gap-5 md:flex">
-          <a href="/#how" className="text-sm font-medium text-muted-foreground hover:text-foreground">How It Works</a>
           <Link to="/about" className="text-sm font-medium text-muted-foreground hover:text-foreground">About</Link>
           <a href="/#reviews" className="text-sm font-medium text-muted-foreground hover:text-foreground">Reviews</a>
           <a href="/#contact" className="text-sm font-medium text-muted-foreground hover:text-foreground">Contact</a>

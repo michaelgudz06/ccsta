@@ -63,7 +63,6 @@ function Landing() {
       <main>
         <Hero />
         <TrustStrip />
-        <HowItWorks />
         <WhyUs />
         <Reviews />
         <Drivers />
@@ -160,35 +159,6 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
   );
 }
 
-function HowItWorks() {
-  const steps = [
-    { icon: ClipboardCheck, title: "Request a quote", body: "School, destination, date, times, students and grades." },
-    { icon: Gauge, title: "Get an instant estimate", body: "The right-sized bus and a fair price — clearly labeled as an estimate." },
-    { icon: Mail, title: "We confirm the details", body: "Our coordinator reviews logistics and locks in your date." },
-    { icon: Receipt, title: "Ride & get an accurate invoice", body: "Billed on the real trip — not a guess." },
-  ];
-  return (
-    <section id="how" className="py-20 sm:py-24">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader eyebrow="How It Works" title="Four simple steps, from request to ride." />
-        <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {steps.map((s, i) => (
-            <div key={s.title} className="rounded-2xl border border-border bg-card p-6 shadow-soft transition-shadow hover:shadow-elevated">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-                  <s.icon className="h-5 w-5" />
-                </div>
-                <span className="text-xs font-semibold text-muted-foreground">Step {i + 1}</span>
-              </div>
-              <h3 className="mt-4 text-lg font-semibold text-foreground">{s.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{s.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function WhyUs() {
   const items = [
@@ -334,7 +304,7 @@ function SiteFooter() {
         <div>
           <div className="text-sm font-semibold text-foreground">Quick links</div>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-            <li><a href="/#how" className="hover:text-foreground">How It Works</a></li>
+            
             <li><Link to="/about" className="hover:text-foreground">About</Link></li>
             <li><a href="/#reviews" className="hover:text-foreground">Reviews</a></li>
             <li><Link to="/login" className="hover:text-foreground">Log In</Link></li>
