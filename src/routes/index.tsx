@@ -161,7 +161,7 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
 
 function WhyUs() {
   const items = [
-    { icon: Users, title: "Years on the Road", body: "Younger students seat 3 per bench, older students seat 2 — the right-sized bus every time." },
+    { icon: Users, title: "Years on the Road", body: "Over 40 Years of Experience." },
     { icon: Receipt, title: "Transparent Pricing", body: "Every cost laid out before you book — no surprises.\n\n\n" },
     { icon: CalendarCheck, title: "Ready for Every Group", body: "Whatever your group, we're ready to roll." },
     { icon: Bus, title: "Simple Booking", body: "Easy confirmations that work around your schedule." },
