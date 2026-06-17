@@ -98,7 +98,7 @@ function Hero() {
           </h1>
           <p className="mt-5 max-w-xl text-lg text-muted-foreground">
             Smart estimates, the right-sized bus, a trusted driver. Serving
-            schools across the Lower Mainland and beyond.
+            schools across the Lower Mainland.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild variant="accent" size="lg">
