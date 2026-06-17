@@ -5,7 +5,6 @@ export const COMPANY = {
   name: "CCSTA",
   fullName: "Combined Christian Schools Transportation Association",
   tagline: "Field trips across the Lower Mainland, handled.",
-  address: "8888 162 Street, Surrey, BC, V4N 3G1",
   email: "info@ccsta.net",
   phoneAlan: "(778) 986-8811",
   phoneMelody: "(778) 986-9011",
