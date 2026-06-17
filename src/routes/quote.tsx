@@ -695,7 +695,7 @@ function TimeField({
         </select>
         <select
           value={minute}
-          onChange={(e) => onChange(`${to24Hour(hour || "12", period)}:${e.target.value}`)}
+          onChange={(e) => onChange(`${to24Hour(hour || "12", period as "AM" | "PM")}:${e.target.value}`)}
           className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
         >
           <option value="">Min</option>
