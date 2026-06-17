@@ -13,7 +13,7 @@ export function Logo({ className = "" }: { className?: string }) {
           <circle cx="17" cy="18" r="2" />
         </svg>
       </div>
-      <div className="flex flex-col md:flex-row md:items-baseline md:gap-2 leading-none">
+      <div className="flex flex-col leading-none">
         <span className="text-base font-semibold tracking-tight text-foreground">
           {COMPANY.name}
         </span>
