@@ -128,7 +128,7 @@ function Hero() {
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <div className="text-sm">
-                <div className="font-semibold text-foreground">Live-tracked trips</div>
+                <div className="font-semibold text-foreground">GPS tracked trips</div>
                 <div className="text-muted-foreground">Safety first, every ride</div>
               </div>
             </div>
