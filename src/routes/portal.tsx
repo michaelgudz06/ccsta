@@ -120,13 +120,13 @@ function PortalPage() {
   }, [loading, role, load]);
 
   async function doAction(
-    fn: string,
+    fn: any,
     quoteId: string,
     extraArgs?: Record<string, unknown>,
   ) {
     setActionBusy(quoteId + fn);
     setActionError(null);
-    const { error } = await supabase.rpc(fn, { p_quote_id: quoteId, ...extraArgs });
+    const { error } = await supabase.rpc(fn as any, { p_quote_id: quoteId, ...extraArgs });
     setActionBusy(null);
     if (error) { setActionError(error.message); return; }
     dispatchNotifications();
