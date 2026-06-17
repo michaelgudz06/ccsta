@@ -347,13 +347,13 @@ function QuotePage() {
                   value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
                   error={errors.date}
                 />
-                <Field
-                  label="Departure time" type="time" required step={900}
+                <TimeField
+                  label="Departure time" required
                   value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
                   error={errors.departTime}
                 />
-                <Field
-                  label="Pick-up from destination" type="time" required step={900}
+                <TimeField
+                  label="Pick-up from destination" required
                   value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
                   error={errors.returnTime}
                 />
