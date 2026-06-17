@@ -336,7 +336,7 @@ function QuotePage() {
                     className="h-52 w-full"
                   />
                   <p className="px-4 py-2 text-xs text-muted-foreground">
-                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel from our Surrey yard, your trip, and the return.
+                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
                   </p>
                 </div>
               )}
@@ -531,7 +531,7 @@ function QuotePage() {
                   departTime={departTime}
                 />
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Why distance matters: your price covers the driver's full day — travel from our Surrey yard to your school, the trip itself, and the return drive back. Longer routes mean more hours on the clock.
+                  Why distance matters: your price covers the driver's full day — travel to your school, the trip itself, and the return drive back. Longer routes mean more hours on the clock.
                 </p>
               </div>
 
@@ -569,7 +569,6 @@ function QuotePage() {
               <ul className="space-y-1.5 rounded-xl border border-dashed border-border bg-card p-4 text-xs text-muted-foreground">
                 <li>• Estimate only — exact rate confirmed after admin review.</li>
                 <li>• Parking and other destination fees not included.</li>
-                <li>• Based on travel time from Surrey Main yard.</li>
                 <li>• Cancellations: one week notice required.</li>
               </ul>
 

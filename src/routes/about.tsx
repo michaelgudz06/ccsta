@@ -7,9 +7,9 @@ export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
       { title: `About — ${COMPANY.name}` },
-      { name: "description", content: "Combined Christian Schools Transportation Association — Surrey-based student transportation serving member schools across the Lower Mainland and beyond." },
+      { name: "description", content: "Combined Christian Schools Transportation Association — Student transportation serving member schools across the Lower Mainland and beyond." },
       { property: "og:title", content: `About — ${COMPANY.name}` },
-      { property: "og:description", content: "Surrey-based student transportation serving Christian schools across the Lower Mainland and beyond." },
+      { property: "og:description", content: "Student transportation serving Christian schools across the Lower Mainland and beyond." },
     ],
   }),
   component: AboutPage,
@@ -29,7 +29,7 @@ function AboutPage() {
         <div className="mt-8 space-y-5 text-muted-foreground">
           <p>
             <span className="font-semibold text-foreground">{COMPANY.fullName} ({COMPANY.name})</span> is
-            a Surrey-based student transportation association built around safe and
+            a student transportation association built around safe and
             reliable field-trip busing for member Christian schools across the Lower Mainland and
             beyond. From Vancouver to the Fraser Valley, if your class needs to
             get somewhere, we get them there.
@@ -43,7 +43,7 @@ function AboutPage() {
             travel time so the estimate reflects the real trip.
           </p>
           <p>
-            We're a Surrey-based association that has spent years moving students safely
+            We've spent years moving students safely
             around the Lower Mainland. We built this platform because booking a
             field trip shouldn't mean a week of phone calls — member schools deserve a
             fast, clear quote and a driver they can trust.
