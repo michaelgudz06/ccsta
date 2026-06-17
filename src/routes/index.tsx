@@ -141,7 +141,7 @@ function Hero() {
 
 function TrustStrip() {
   const stats = [
-    { value: "18–56", label: "Seats per bus — right-sized to your group" },
+    { value: "18–56", label: "Passenger busses — right-sized to your group" },
     { value: "Minutes", label: "From request to estimate" },
     { value: "Lower Mainland", label: "& beyond" },
     { value: "Trusted", label: "Professional, certified drivers" },
