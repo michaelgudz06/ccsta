@@ -675,7 +675,7 @@ function TimeField({
 }) {
   const { hour, minute, period } = to12Hour(value);
   const minutes = ["00", "15", "30", "45"];
-  const hours = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
+  const hours = ["6", "7", "8", "9", "10", "11", "12", "1", "2", "3", "4", "5"];
   const baseSelect = "flex-1 bg-transparent px-2 py-2 text-sm outline-none appearance-none cursor-pointer";
   const borderCls = error
     ? "border-destructive ring-1 ring-destructive/30"
