@@ -366,6 +366,9 @@ function QuotePage() {
               <p className="text-xs text-muted-foreground">
                 "Pick-up from destination" is when you want us to collect the students and head back to school.
               </p>
+              <p className="text-xs text-muted-foreground">
+                All trips are a minimum of 4 hours.
+              </p>
             </StepWrap>
           )}
 
