@@ -516,7 +516,7 @@ function QuotePage() {
                     rows={6}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Accessibility or special-needs seating, a preferred driver, wheelchair lift required, musical instruments, anything we should know."
+                    placeholder="Accessibility or special-needs seating, a preferred driver, musical instruments, anything we should know."
                     className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
                   />
                 </label>
