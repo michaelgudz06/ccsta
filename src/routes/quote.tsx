@@ -348,12 +348,12 @@ function QuotePage() {
                   error={errors.date}
                 />
                 <Field
-                  label="Departure time" type="time" required
+                  label="Departure time" type="time" required step={900}
                   value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
                   error={errors.departTime}
                 />
                 <Field
-                  label="Pick-up from destination" type="time" required
+                  label="Pick-up from destination" type="time" required step={900}
                   value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
                   error={errors.returnTime}
                 />
