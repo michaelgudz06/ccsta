@@ -372,7 +372,7 @@ function QuotePage() {
           {step === 2 && (
             <StepWrap title="Group details">
               <Field
-                label="Number of students" type="number" required
+                label="Total number of attendees" type="number" required
                 value={students} onChange={(v) => { setStudents(v); setErrors((e) => ({ ...e, students: "" })); }}
                 placeholder="e.g. 48"
                 error={errors.students}
