@@ -299,7 +299,7 @@ function QuotePage() {
           {step === 1 && (
             <StepWrap title="Trip basics">
               <Field
-                label="School name" required
+                label="Organization name" required
                 value={school} onChange={(v) => { setSchool(v); setErrors((e) => ({ ...e, school: "" })); }}
                 placeholder="e.g. Maple Ridge Christian School"
                 error={errors.school}
