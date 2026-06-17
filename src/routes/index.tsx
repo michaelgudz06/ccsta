@@ -143,7 +143,7 @@ function TrustStrip() {
   const stats = [
     { value: "18–56", label: "Passenger busses — right-sized to your group" },
     { value: "Minutes", label: "From request to estimate" },
-    { value: "Lower Mainland", label: "& beyond" },
+    { value: "Lower Mainland", label: "from Whistler to Princeton" },
     { value: "Trusted", label: "Professional, certified drivers" },
   ];
   return (
