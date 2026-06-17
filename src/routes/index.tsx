@@ -138,7 +138,7 @@ function TrustStrip() {
         {stats.map((s) => (
           <div key={s.label} className="rounded-2xl bg-card p-5 shadow-soft border border-border/60">
             <div className="text-3xl font-bold tracking-tight text-primary">{s.value}</div>
-            <div className="mt-1 text-sm text-muted-foreground">{s.label}</div>
+            <div className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{s.label}</div>
           </div>
         ))}
       </div>
