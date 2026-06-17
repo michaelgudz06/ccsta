@@ -676,17 +676,21 @@ function TimeField({
   const { hour, minute, period } = to12Hour(value);
   const minutes = ["00", "15", "30", "45"];
   const hours = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
+  const baseSelect = "flex-1 bg-transparent px-2 py-2 text-sm outline-none appearance-none cursor-pointer";
+  const borderCls = error
+    ? "border-destructive ring-1 ring-destructive/30"
+    : "border-input";
   return (
     <label className="block text-sm">
       <span className="font-medium text-foreground">
         {label}
         {required && <span className="ml-0.5 text-destructive">*</span>}
       </span>
-      <div className="mt-1.5 flex gap-2">
+      <div className={`mt-1.5 flex overflow-hidden rounded-xl border ${borderCls} bg-background shadow-sm focus-within:ring-2 focus-within:ring-ring`}>
         <select
           value={hour}
           onChange={(e) => onChange(`${to24Hour(e.target.value, period as "AM" | "PM")}:${minute || "00"}`)}
-          className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
+          className={`${baseSelect} border-r border-input`}
         >
           <option value="">Hr</option>
           {hours.map((h) => (
@@ -696,7 +700,7 @@ function TimeField({
         <select
           value={minute}
           onChange={(e) => onChange(`${to24Hour(hour || "12", period as "AM" | "PM")}:${e.target.value}`)}
-          className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
+          className={`${baseSelect} border-r border-input`}
         >
           <option value="">Min</option>
           {minutes.map((m) => (
@@ -706,7 +710,7 @@ function TimeField({
         <select
           value={period}
           onChange={(e) => onChange(`${to24Hour(hour || "12", e.target.value as "AM" | "PM")}:${minute || "00"}`)}
-          className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
+          className={baseSelect}
         >
           <option value="AM">AM</option>
           <option value="PM">PM</option>
