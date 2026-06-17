@@ -163,7 +163,7 @@ function WhyUs() {
   const items = [
     { icon: Users, title: "Years on the Road", body: "Younger students seat 3 per bench, older students seat 2 — the right-sized bus every time." },
     { icon: Receipt, title: "Transparent Pricing", body: "Every cost laid out before you book — no surprises.\n\n\n" },
-    { icon: CalendarCheck, title: "Honest invoicing", body: "Final invoice matches the actual trip — no surprises." },
+    { icon: CalendarCheck, title: "Ready for Every Group", body: "Final invoice matches the actual trip — no surprises." },
     { icon: Bus, title: "Simple Booking", body: "Easy confirmations that work around your schedule." },
   ];
   return (
