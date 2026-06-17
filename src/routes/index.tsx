@@ -261,9 +261,11 @@ function Contact() {
           subtitle="Prefer to start a quote? Use the form — it only takes a few minutes."
         />
         <div className="mt-10 grid gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8 sm:grid-cols-2">
-          <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
           <ContactRow icon={<Phone className="h-4 w-4" />} label="Alan" value={COMPANY.phoneAlan} />
           <ContactRow icon={<Phone className="h-4 w-4" />} label="Melody" value={COMPANY.phoneMelody} />
+          <div className="sm:col-span-2 flex justify-center">
+            <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
+          </div>
           <div className="sm:col-span-2 flex justify-center pt-2">
             <Button asChild variant="accent" size="lg">
               <Link to="/quote">Start a quote request</Link>
