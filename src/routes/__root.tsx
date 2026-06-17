@@ -77,14 +77,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "CCSTA — Christian School Transportation" },
+      { title: "CCSTA — Combined Christian School Transportation Association" },
       { name: "description", content: "Combined Christian Schools Transportation Association. Book the right bus for your school field trip in minutes. Serving member schools across the Lower Mainland and beyond." },
-      { property: "og:title", content: "CCSTA — Christian School Transportation" },
+      { property: "og:title", content: "CCSTA — Combined Christian School Transportation Association" },
       { property: "og:description", content: "Smart estimates, the right-sized bus, a trusted driver. Field trips across the Lower Mainland, handled." },
       { property: "og:type", content: "website" },
       { property: "og:site_name", content: "CCSTA" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "CCSTA — Christian School Transportation" },
+      { name: "twitter:title", content: "CCSTA — Combined Christian School Transportation Association" },
       { name: "twitter:description", content: "Smart estimates, the right-sized bus, a trusted driver. Field trips across the Lower Mainland, handled." },
     ],
     links: [
