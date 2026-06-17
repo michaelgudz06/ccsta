@@ -163,7 +163,6 @@ function WhyUs() {
   const items = [
     { icon: RouteIcon, title: "Years on the Road", body: "Over 40 Years of Experience." },
     { icon: Receipt, title: "Transparent Pricing", body: "Every cost laid out before you book — no surprises." },
-    { icon: Users, title: "Ready for Every Group", body: "Whatever your group, we're ready to roll." },
     { icon: Bus, title: "Simple Booking", body: "Easy confirmations that work around your schedule." },
   ];
   return (
