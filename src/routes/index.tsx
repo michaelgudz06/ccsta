@@ -89,10 +89,6 @@ function Hero() {
       <div className="absolute inset-0 -z-10 bg-gradient-to-b from-secondary/60 via-background to-background" />
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-8 lg:px-8 lg:py-24">
         <div className="flex flex-col justify-center">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground shadow-soft">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            Serving schools across the Lower Mainland & beyond
-          </span>
           <h1 className="mt-5 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
             {COMPANY.tagline}
           </h1>
