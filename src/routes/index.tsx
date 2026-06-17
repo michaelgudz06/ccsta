@@ -84,7 +84,7 @@ function Hero() {
             {COMPANY.tagline}
           </h1>
           <p className="mt-5 max-w-xl text-lg text-muted-foreground">
-            Smart estimates, the right-sized bus, a trusted driver. One Field Trip at a Time.
+            Fair Pricing, Trusted Drivers, and the Right Bus
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild variant="accent" size="lg">
@@ -127,7 +127,7 @@ function Hero() {
 
 function TrustStrip() {
   const stats = [
-    { value: "18–56", label: "Passenger busses — right-sized to your group" },
+    { value: "18–56", label: "Passenger busses — For any group size" },
     { value: "Minutes", label: "To get an accurate quote" },
     { value: "Lower Mainland", label: "from Whistler to Princeton" },
     { value: "Trusted", label: "Professional, Certified drivers" },
