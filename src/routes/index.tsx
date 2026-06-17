@@ -33,7 +33,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "Field trips across the Lower Mainland, handled. Smart estimates, the right-sized bus, a trusted driver.",
+          "Adventure Awaits, Your Journey Starts Here. Smart estimates, the right-sized bus, a trusted driver.",
       },
     ],
     scripts: [
@@ -80,12 +80,11 @@ function Hero() {
       <div className="absolute inset-0 -z-10 bg-gradient-to-b from-secondary/60 via-background to-background" />
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-8 lg:px-8 lg:py-24">
         <div className="flex flex-col justify-center">
-          <h1 className="mt-5 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+          <h1 className="mt-5 text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl whitespace-pre-line">
             {COMPANY.tagline}
           </h1>
           <p className="mt-5 max-w-xl text-lg text-muted-foreground">
-            Smart estimates, the right-sized bus, a trusted driver. Serving
-            schools across the Lower Mainland.
+            Smart estimates, the right-sized bus, a trusted driver. One Field Trip at a Time.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild variant="accent" size="lg">
