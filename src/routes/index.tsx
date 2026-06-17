@@ -129,7 +129,7 @@ function TrustStrip() {
   const stats = [
     { value: "18–56", label: "Passenger busses, for any group size." },
     { value: "Minutes", label: "To get an accurate quote." },
-    { value: "Coast to Canyon", label: "Whistler to Princeton — And everywhere in between." },
+    { value: "Coast to Canyon", label: "Whistler to Princeton \n And everywhere in between." },
     { value: "Certified Drivers", label: "Professional and reliable." },
   ];
   return (
@@ -138,7 +138,7 @@ function TrustStrip() {
         {stats.map((s) => (
           <div key={s.label} className="rounded-2xl bg-card p-5 shadow-soft border border-border/60">
             <div className="text-3xl font-bold tracking-tight text-primary">{s.value}</div>
-            <div className="mt-1 text-sm text-muted-foreground">{s.label}</div>
+            <div className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{s.label}</div>
           </div>
         ))}
       </div>
@@ -162,9 +162,9 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
 function WhyUs() {
   const items = [
     { icon: Users, title: "Grade-aware capacity", body: "Younger students seat 3 per bench, older students seat 2 — the right-sized bus every time." },
-    { icon: Receipt, title: "Transparent estimates", body: "Hourly rates, fuel and distance spelled out up front." },
+    { icon: Receipt, title: "Transparent Pricing", body: "Every cost laid out before you book — no surprises.\n\n\n" },
     { icon: CalendarCheck, title: "Honest invoicing", body: "Final invoice matches the actual trip — no surprises." },
-    { icon: Bus, title: "Built for schools", body: "Designed around the school calendar with simple confirmations." },
+    { icon: Bus, title: "Simple Booking", body: "Easy confirmations that work around your schedule." },
   ];
   return (
     <section id="why" className="bg-surface py-20 sm:py-24">
@@ -177,7 +177,7 @@ function WhyUs() {
                 <s.icon className="h-5 w-5" />
               </div>
               <h3 className="mt-4 text-lg font-semibold text-foreground">{s.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{s.body}</p>
+              <p className="mt-2 text-sm text-muted-foreground whitespace-pre-line">{s.body}</p>
             </div>
           ))}
         </div>
