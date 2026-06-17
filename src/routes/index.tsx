@@ -177,7 +177,7 @@ function WhyUs() {
                 <s.icon className="h-5 w-5" />
               </div>
               <h3 className="mt-4 text-lg font-semibold text-foreground">{s.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{s.body}</p>
+              <p className="mt-2 text-sm text-muted-foreground whitespace-pre-line">{s.body}</p>
             </div>
           ))}
         </div>
