@@ -217,7 +217,7 @@ function Drivers() {
         />
         <div className="mt-10 grid gap-6 sm:grid-cols-3">
           {[
-            { icon: ShieldCheck, title: "Background Checked", body: "All drivers pass a criminal record check before their first trip." },
+            { icon: ShieldCheck, title: "Background Checked", body: "Every driver passes a criminal record check before their first trip." },
             { icon: ClipboardCheck, title: "Commercially Licensed", body: "Certified to operate full-size coaches — required for the 47 and 56-seat buses." },
             { icon: Users, title: "Group Travel Trained", body: "Experienced with school groups, patient with students, and familiar with Lower Mainland routes." },
           ].map((c) => (
