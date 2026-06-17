@@ -293,10 +293,6 @@ function SiteFooter() {
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-4 lg:px-8">
         <div className="lg:col-span-2">
           <Logo />
-          <p className="mt-4 max-w-sm text-sm text-muted-foreground">
-            {COMPANY.name} — Student transportation. Serving the
-            Lower Mainland and beyond.
-          </p>
         </div>
         <div>
           <div className="text-sm font-semibold text-foreground">Quick links</div>
