@@ -148,7 +148,7 @@ function TrustStrip() {
 
 function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle?: string }) {
   return (
-    <div className="mx-auto max-w-2xl text-center">
+    <div className="mx-auto max-w-3xl text-center">
       <div className="text-xs font-semibold uppercase tracking-[0.18em]">
         <span className="rounded-full bg-accent/30 px-3 py-1 text-primary">{eyebrow}</span>
       </div>
