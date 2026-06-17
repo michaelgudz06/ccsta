@@ -651,13 +651,31 @@ function Progress({ current, total }: { current: number; total: number }) {
   );
 }
 
+function to12Hour(value: string) {
+  if (!value) return { hour: "", minute: "", period: "AM" as "AM" | "PM" };
+  const [h, m] = value.split(":");
+  let hourNum = parseInt(h, 10);
+  const period = hourNum >= 12 ? "PM" : "AM";
+  hourNum = hourNum % 12;
+  if (hourNum === 0) hourNum = 12;
+  return { hour: String(hourNum), minute: m || "", period };
+}
+
+function to24Hour(hour: string, period: "AM" | "PM") {
+  let h = parseInt(hour, 10);
+  if (period === "PM" && h !== 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return String(h).padStart(2, "0");
+}
+
 function TimeField({
   label, value, onChange, error, required,
 }: {
   label: string; value: string; onChange: (v: string) => void; error?: string; required?: boolean;
 }) {
-  const [hour, minute] = value ? value.split(":") : ["", ""];
+  const { hour, minute, period } = to12Hour(value);
   const minutes = ["00", "15", "30", "45"];
+  const hours = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
   return (
     <label className="block text-sm">
       <span className="font-medium text-foreground">
@@ -667,23 +685,31 @@ function TimeField({
       <div className="mt-1.5 flex gap-2">
         <select
           value={hour}
-          onChange={(e) => onChange(`${e.target.value.padStart(2, "0")}:${minute || "00"}`)}
+          onChange={(e) => onChange(`${to24Hour(e.target.value, period)}:${minute || "00"}`)}
           className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
         >
           <option value="">Hr</option>
-          {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
+          {hours.map((h) => (
             <option key={h} value={h}>{h}</option>
           ))}
         </select>
         <select
           value={minute}
-          onChange={(e) => onChange(`${hour || "00"}:${e.target.value}`)}
+          onChange={(e) => onChange(`${to24Hour(hour || "12", period)}:${e.target.value}`)}
           className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
         >
           <option value="">Min</option>
           {minutes.map((m) => (
             <option key={m} value={m}>{m}</option>
           ))}
+        </select>
+        <select
+          value={period}
+          onChange={(e) => onChange(`${to24Hour(hour || "12", e.target.value as "AM" | "PM")}:${minute || "00"}`)}
+          className={`flex-1 rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
+        >
+          <option value="AM">AM</option>
+          <option value="PM">PM</option>
         </select>
       </div>
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
