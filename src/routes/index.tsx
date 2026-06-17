@@ -352,7 +352,6 @@ function SiteFooter() {
         <div>
           <div className="text-sm font-semibold text-foreground">Contact</div>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-            <li>{COMPANY.address}</li>
             <li>{COMPANY.email}</li>
             <li>Alan: {COMPANY.phoneAlan}</li>
             <li>Melody: {COMPANY.phoneMelody}</li>
