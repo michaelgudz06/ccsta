@@ -261,7 +261,7 @@ function Contact() {
         />
         <div className="mt-10 grid gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8 sm:grid-cols-2">
           <ContactRow icon={<Phone className="h-4 w-4" />} label="ALAN - OPERATIONS MANAGER" value={COMPANY.phoneAlan} />
-          <ContactRow icon={<Phone className="h-4 w-4" />} label="Melody" value={COMPANY.phoneMelody} />
+          <ContactRow icon={<Phone className="h-4 w-4" />} label="MELODY - DISPATCH OFFICE" value={COMPANY.phoneMelody} />
           <div className="sm:col-span-2 flex justify-center">
             <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
           </div>
