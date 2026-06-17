@@ -217,9 +217,9 @@ function Drivers() {
         />
         <div className="mt-10 grid gap-6 sm:grid-cols-3">
           {[
-            { icon: ShieldCheck, title: "Background checked", body: "All drivers pass a criminal record check before their first trip." },
-            { icon: ClipboardCheck, title: "Air-brake certified", body: "Certified to operate full-size coaches — required for the 47 and 56-seat buses." },
-            { icon: Users, title: "Student-transportation trained", body: "Experienced with school groups, patient with students, and familiar with Lower Mainland routes." },
+            { icon: ShieldCheck, title: "Background Checked", body: "All drivers pass a criminal record check before their first trip." },
+            { icon: ClipboardCheck, title: "Commercially Licensed", body: "Certified to operate full-size coaches — required for the 47 and 56-seat buses." },
+            { icon: Users, title: "Group Travel Trained", body: "Experienced with school groups, patient with students, and familiar with Lower Mainland routes." },
           ].map((c) => (
             <div key={c.title} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/30 text-primary">
