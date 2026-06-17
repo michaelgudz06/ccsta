@@ -348,12 +348,12 @@ function QuotePage() {
                   error={errors.date}
                 />
                 <Field
-                  label="Departure time" type="time" required
+                  label="Departure time" type="time" required step={900}
                   value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
                   error={errors.departTime}
                 />
                 <Field
-                  label="Pick-up from destination" type="time" required
+                  label="Pick-up from destination" type="time" required step={900}
                   value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
                   error={errors.returnTime}
                 />
@@ -661,9 +661,9 @@ function StepWrap({ title, children }: { title: string; children: React.ReactNod
 }
 
 function Field({
-  label, value, onChange, type = "text", placeholder, error, required,
+  label, value, onChange, type = "text", placeholder, error, required, step,
 }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean;
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean; step?: number;
 }) {
   const handleChange = (raw: string) => {
     if (type === "number") {
@@ -682,7 +682,8 @@ function Field({
       </span>
       <input
         type={type}
-        {...(type === "number" ? { min: 0, step: 1, inputMode: "numeric" as const } : {})}
+        {...(type === "number" ? { min: 0, step: step ?? 1, inputMode: "numeric" as const } : {})}
+        {...(type === "time" && step !== undefined ? { step } : {})}
         value={value}
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={(e) => { if (type === "number" && (e.key === "-" || e.key === "e")) e.preventDefault(); }}
