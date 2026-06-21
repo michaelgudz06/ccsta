@@ -154,6 +154,14 @@ function QuotePage() {
       if (!c2p.trim()) e.c2p = "Phone is required.";
       if (!dayN.trim()) e.dayN = "Name is required.";
       if (!dayP.trim()) e.dayP = "Phone is required.";
+
+      // Primary and secondary must be two different people.
+      const norm = (str: string) => str.trim().toLowerCase();
+      if (c1e.trim() && c2e.trim() && norm(c1e) === norm(c2e)) {
+        e.c2e = "Use a different email — the secondary contact must be a different person.";
+      } else if (c1n.trim() && c2n.trim() && norm(c1n) === norm(c2n)) {
+        e.c2n = "The secondary contact must be a different person from the primary.";
+      }
     }
     setErrors(e);
     return Object.keys(e).length === 0;

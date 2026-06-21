@@ -433,7 +433,9 @@ function QuoteQueue() {
   // An estimate must exist before approval (the server enforces this too).
   const hasEstimate = ver?.total != null || estimate != null;
   const canApprove = ["requested", "in_review"].includes(quote.status);
-  const canSchedule = quote.status === "approved";
+  // Assign a bus/driver once a quote is approved, and crucially after the
+  // customer accepts (status becomes 'confirmed') — otherwise the trip gets stuck.
+  const canSchedule = quote.status === "approved" || quote.status === "confirmed";
   const isScheduled = quote.status === "scheduled";
   const isCancelled = quote.status === "cancelled";
 
