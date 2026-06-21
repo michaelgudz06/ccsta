@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
+import { PasswordInput } from "@/components/PasswordInput";
 import { COMPANY } from "@/lib/company";
 
 export const Route = createFileRoute("/reset-password")({
@@ -69,19 +70,11 @@ function ResetPasswordPage() {
             <form onSubmit={submit} className="mt-6 space-y-4">
               <label className="block text-sm">
                 <span className="font-medium text-foreground">New password</span>
-                <input
-                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 8 characters" required autoComplete="new-password"
-                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
-                />
+                <PasswordInput value={password} onChange={setPassword} placeholder="At least 8 characters" autoComplete="new-password" />
               </label>
               <label className="block text-sm">
                 <span className="font-medium text-foreground">Confirm new password</span>
-                <input
-                  type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
-                  placeholder="Re-enter password" required autoComplete="new-password"
-                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
-                />
+                <PasswordInput value={confirm} onChange={setConfirm} placeholder="Re-enter password" autoComplete="new-password" />
               </label>
               {error && (
                 <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>

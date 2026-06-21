@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { COMPANY } from "@/lib/company";
+import { PasswordInput } from "@/components/PasswordInput";
 import { User, Bus, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
@@ -39,7 +40,9 @@ function LoginPage() {
   const safeNext = (() => {
     if (typeof window === "undefined") return null;
     const n = new URLSearchParams(window.location.search).get("next");
-    return n && n.startsWith("/") ? n : null;
+    // Same-origin paths only — reject protocol-relative ("//host") to avoid
+    // bouncing to another domain.
+    return n && n.startsWith("/") && !n.startsWith("//") ? n : null;
   })();
 
   async function doSignup(e: { preventDefault(): void }) {
@@ -144,19 +147,11 @@ function LoginPage() {
               </label>
               <label className="block text-sm">
                 <span className="font-medium text-foreground">Password</span>
-                <input
-                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 8 characters" required autoComplete="new-password"
-                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
-                />
+                <PasswordInput value={password} onChange={setPassword} placeholder="At least 8 characters" autoComplete="new-password" />
               </label>
               <label className="block text-sm">
                 <span className="font-medium text-foreground">Confirm password</span>
-                <input
-                  type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
-                  placeholder="Re-enter password" required autoComplete="new-password"
-                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
-                />
+                <PasswordInput value={confirmPw} onChange={setConfirmPw} placeholder="Re-enter password" autoComplete="new-password" />
               </label>
               {error && (
                 <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
@@ -197,15 +192,7 @@ function LoginPage() {
                     Forgot password?
                   </button>
                 </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  autoComplete="current-password"
-                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
-                />
+                <PasswordInput value={password} onChange={setPassword} placeholder="••••••••" autoComplete="current-password" />
               </label>
 
               {error && (
