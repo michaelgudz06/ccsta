@@ -95,7 +95,7 @@ function Hero() {
             </Button>
           </div>
           <p className="mt-6 text-xs text-muted-foreground">
-            No account required to request a quote.
+            Get a free estimate in minutes — no account needed to start.
           </p>
         </div>
         <div className="relative">

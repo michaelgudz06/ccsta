@@ -25,13 +25,43 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const { login, role, loading } = useAuth();
+  const { login, signup, role, loading } = useAuth();
   const navigate = useNavigate();
 
-  // Forgot-password flow
-  const [mode, setMode] = useState<"login" | "forgot">("login");
+  // Forgot-password + signup flow
+  const [mode, setMode] = useState<"login" | "forgot" | "signup">("login");
   const [resetSent, setResetSent] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
+  const [confirmPw, setConfirmPw] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Where to go after auth (e.g. back to /quote to finish a saved quote).
+  const safeNext = (() => {
+    if (typeof window === "undefined") return null;
+    const n = new URLSearchParams(window.location.search).get("next");
+    return n && n.startsWith("/") ? n : null;
+  })();
+
+  async function doSignup(e: { preventDefault(): void }) {
+    e.preventDefault();
+    setError(null); setNotice(null);
+    if (password.length < 8) { setError("Use at least 8 characters for your password."); return; }
+    if (password !== confirmPw) { setError("Those passwords don't match."); return; }
+    setSubmitting(true);
+    try {
+      const { needsConfirmation } = await signup(email, password);
+      if (needsConfirmation) {
+        setNotice("Account created! Check your email to confirm it, then log in here — your quote answers are saved.");
+        setMode("login");
+      }
+      // Otherwise the auth state updates and the redirect effect below takes over.
+    } catch (err: unknown) {
+      const m = err instanceof Error ? err.message : "Could not create your account.";
+      setError(/already|registered/i.test(m) ? "That email already has an account — try logging in instead." : m);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function sendReset(e: { preventDefault(): void }) {
     e.preventDefault();
@@ -47,10 +77,17 @@ function LoginPage() {
   // Redirect once role resolves — covers both "already logged in" and "just logged in"
   useEffect(() => {
     if (!loading && role) {
-      const dest = role === "customer" ? "/portal" : role === "driver" ? "/driver" : "/admin";
-      navigate({ to: dest });
+      const roleDest = role === "customer" ? "/portal" : role === "driver" ? "/driver" : "/admin";
+      navigate({ to: safeNext ?? roleDest });
     }
-  }, [loading, role, navigate]);
+  }, [loading, role, navigate, safeNext]);
+
+  // Arriving from the quote form to create an account → open signup directly.
+  useEffect(() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("new") === "1") {
+      setMode("signup");
+    }
+  }, []);
 
   const submit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
@@ -79,15 +116,63 @@ function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-elevated">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {mode === "login" ? "Log in to your account" : "Reset your password"}
+            {mode === "login" ? "Log in to your account" : mode === "signup" ? "Create your account" : "Reset your password"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "login"
               ? "Enter your email and password to continue."
+              : mode === "signup"
+              ? "Sign up to submit and track your field-trip quotes."
               : "Enter your email and we'll send you a link to set a new password."}
           </p>
 
-          {mode === "login" ? (
+          {notice && (
+            <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {notice}
+            </p>
+          )}
+
+          {mode === "signup" ? (
+            <form onSubmit={doSignup} className="mt-6 space-y-4">
+              <label className="block text-sm">
+                <span className="font-medium text-foreground">Email</span>
+                <input
+                  type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@school.ca" required autoComplete="email"
+                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="font-medium text-foreground">Password</span>
+                <input
+                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters" required autoComplete="new-password"
+                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="font-medium text-foreground">Confirm password</span>
+                <input
+                  type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
+                  placeholder="Re-enter password" required autoComplete="new-password"
+                  className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
+                />
+              </label>
+              {error && (
+                <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+              )}
+              <Button type="submit" variant="hero" size="lg" className="w-full" disabled={submitting}>
+                {submitting ? "Creating account…" : "Create account"}
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setMode("login"); setError(null); }}
+                className="w-full text-center text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Already have an account? Log in
+              </button>
+            </form>
+          ) : mode === "login" ? (
             <form onSubmit={submit} className="mt-6 space-y-4">
               <label className="block text-sm">
                 <span className="font-medium text-foreground">Email</span>
@@ -132,6 +217,13 @@ function LoginPage() {
               <Button type="submit" variant="hero" size="lg" className="w-full" disabled={submitting}>
                 {submitting ? "Logging in…" : "Log In"}
               </Button>
+              <button
+                type="button"
+                onClick={() => { setMode("signup"); setError(null); setNotice(null); }}
+                className="w-full text-center text-sm text-muted-foreground"
+              >
+                New here? <span className="font-semibold text-primary hover:underline">Create an account</span>
+              </button>
             </form>
           ) : resetSent ? (
             <div className="mt-6 space-y-4">

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { Bus, ClipboardList, CalendarDays, Check } from "lucide-react";
+import { Bus, ClipboardList, CalendarDays, Check, Phone } from "lucide-react";
 import { formatTripDate, formatTime, todayISO, toISODate } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 
@@ -28,6 +28,7 @@ const CHECKLIST = [
 ];
 
 type DriverRow = { id: string; first_name: string; last_name: string };
+type DayOfContact = { name?: string; phone?: string };
 type Trip = {
   id: string;
   trip_number: string;
@@ -36,9 +37,13 @@ type Trip = {
   return_time: string | null;
   destination_name: string | null;
   destination_address: string | null;
+  pickup_address: string | null;
+  contact_day_of: DayOfContact | null;
+  special_requests: string | null;
   student_count: number | null;
   status: string;
   pretrip_checklist: Record<string, boolean> | null;
+  buses: { fleet_number: string } | null;
 };
 type Availability = Record<string, "available" | "unavailable" | "unknown">;
 
@@ -48,6 +53,12 @@ function DriverPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [availability, setAvailability] = useState<Availability>({});
   const [dataLoading, setDataLoading] = useState(true);
+  const [saveNote, setSaveNote] = useState<{ text: string; ok: boolean } | null>(null);
+
+  function flash(text: string, ok: boolean) {
+    setSaveNote({ text, ok });
+    window.setTimeout(() => setSaveNote((cur) => (cur && cur.text === text ? null : cur)), 2500);
+  }
 
   const load = useCallback(async (userId: string) => {
     setDataLoading(true);
@@ -61,7 +72,7 @@ function DriverPage() {
 
     const { data: t } = await supabase
       .from("trips")
-      .select("id, trip_number, trip_date, departure_time, return_time, destination_name, destination_address, student_count, status, pretrip_checklist")
+      .select("id, trip_number, trip_date, departure_time, return_time, destination_name, destination_address, pickup_address, contact_day_of, special_requests, student_count, status, pretrip_checklist, buses(fleet_number)")
       .eq("driver_id", d.id)
       .order("trip_date", { ascending: true });
     setTrips((t as unknown as Trip[]) ?? []);
@@ -83,18 +94,31 @@ function DriverPage() {
     const current = (trip.pretrip_checklist as Record<string, boolean>) ?? {};
     const next = { ...current, [item]: !current[item] };
     setTrips((prev) => prev.map((t) => (t.id === trip.id ? { ...t, pretrip_checklist: next } : t)));
-    await supabase.from("trips").update({ pretrip_checklist: next }).eq("id", trip.id);
+    const { error } = await supabase.from("trips").update({ pretrip_checklist: next }).eq("id", trip.id);
+    if (error) {
+      // Revert the on-screen tick so the checklist never shows a false "done".
+      setTrips((prev) => prev.map((t) => (t.id === trip.id ? { ...t, pretrip_checklist: current } : t)));
+      flash("Couldn't save — check your signal and tap again.", false);
+    } else {
+      flash("Saved ✓", true);
+    }
   }
 
   async function cycleAvailability(dateStr: string) {
     if (!driver) return;
     const order: Availability[string][] = ["available", "unavailable", "unknown"];
-    const cur = availability[dateStr] ?? "unknown";
-    const nextStatus = order[(order.indexOf(cur) + 1) % order.length];
+    const prev = availability[dateStr] ?? "unknown";
+    const nextStatus = order[(order.indexOf(prev) + 1) % order.length];
     setAvailability((a) => ({ ...a, [dateStr]: nextStatus }));
-    await supabase
+    const { error } = await supabase
       .from("driver_availability")
       .upsert({ driver_id: driver.id, date: dateStr, status: nextStatus }, { onConflict: "driver_id,date" });
+    if (error) {
+      setAvailability((a) => ({ ...a, [dateStr]: prev }));
+      flash("Couldn't save — check your signal and tap again.", false);
+    } else {
+      flash("Saved ✓", true);
+    }
   }
 
   if (loading) return null;
@@ -107,6 +131,11 @@ function DriverPage() {
   return (
     <div className="min-h-screen bg-surface">
       <AppTopBar />
+      {saveNote && (
+        <div className={`fixed inset-x-0 bottom-4 z-50 mx-auto w-fit rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg ${saveNote.ok ? "bg-emerald-600" : "bg-rose-600"}`}>
+          {saveNote.text}
+        </div>
+      )}
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Driver Dashboard</h1>
@@ -114,6 +143,12 @@ function DriverPage() {
             {driver ? `Hi ${driver.first_name} — here's your day at a glance.` : "Here's your day at a glance."}
           </p>
         </div>
+
+        {!dataLoading && !driver && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Your driver profile isn't set up yet. Please contact the office and we'll get you added.
+          </div>
+        )}
 
         {/* TODAY */}
         <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
@@ -133,18 +168,61 @@ function DriverPage() {
               const done = CHECKLIST.filter((i) => checks[i]).length;
               return (
                 <div key={t.id} className="mt-3 rounded-xl border border-border bg-surface p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-lg font-bold text-foreground">{formatTime(t.departure_time)}</div>
-                    <span className="rounded-full bg-accent/30 px-2 py-0.5 text-[10px] font-semibold text-primary">{t.trip_number}</span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Leave at</div>
+                      <div className="text-2xl font-bold text-foreground">{formatTime(t.departure_time)}</div>
+                    </div>
+                    <div className="text-right">
+                      {t.buses?.fleet_number && (
+                        <div className="rounded-lg bg-primary px-2.5 py-1 text-sm font-bold text-primary-foreground">{t.buses.fleet_number}</div>
+                      )}
+                      <div className="mt-1 text-[10px] font-semibold text-muted-foreground">{t.trip_number}</div>
+                    </div>
                   </div>
-                  <div className="mt-2 text-sm text-foreground">
-                    <span className="font-semibold">{t.destination_name ?? "Field trip"}</span>
+
+                  <div className="mt-3 space-y-2">
+                    <div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pick up students</div>
+                      {t.pickup_address ? (
+                        <a href={`https://maps.google.com/?q=${encodeURIComponent(t.pickup_address)}`} target="_blank" rel="noreferrer" className="font-semibold text-primary underline">{t.pickup_address}</a>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Not provided</span>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Destination</div>
+                      <div className="font-semibold text-foreground">{t.destination_name ?? "Field trip"}</div>
+                      {t.destination_address && (
+                        <a href={`https://maps.google.com/?q=${encodeURIComponent(t.destination_address)}`} target="_blank" rel="noreferrer" className="text-sm text-primary underline">{t.destination_address}</a>
+                      )}
+                    </div>
+                    <div className="flex gap-8">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Students</div>
+                        <div className="text-base font-semibold text-foreground">{t.student_count ?? "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Back by</div>
+                        <div className="text-base font-semibold text-foreground">{formatTime(t.return_time)}</div>
+                      </div>
+                    </div>
                   </div>
-                  {t.destination_address && <div className="text-xs text-muted-foreground">{t.destination_address}</div>}
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    Riders: <span className="font-medium text-foreground">{t.student_count ?? "—"}</span>
-                    {" · "}Return: <span className="font-medium text-foreground">{formatTime(t.return_time)}</span>
-                  </div>
+
+                  {t.contact_day_of?.phone && (
+                    <a
+                      href={`tel:${t.contact_day_of.phone.replace(/[^0-9+]/g, "")}`}
+                      className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-base font-semibold text-white"
+                    >
+                      <Phone className="h-4 w-4" /> Call {t.contact_day_of.name || "coordinator"}: {t.contact_day_of.phone}
+                    </a>
+                  )}
+
+                  {t.special_requests && (
+                    <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      <span className="font-semibold">Notes from the school: </span>{t.special_requests}
+                    </div>
+                  )}
 
                   {/* Per-trip pre-trip checklist (saved as you tap) */}
                   <div className="mt-3 rounded-lg border border-border bg-card p-3">
@@ -183,7 +261,9 @@ function DriverPage() {
                 <li key={u.id} className="flex items-center justify-between rounded-lg border border-border bg-surface p-3 text-sm">
                   <div>
                     <div className="font-semibold text-foreground">{formatTripDate(u.trip_date)} · {formatTime(u.departure_time)}</div>
-                    <div className="text-xs text-muted-foreground">{u.destination_name ?? "Field trip"} · {u.trip_number}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {u.destination_name ?? "Field trip"}{u.buses?.fleet_number ? ` · ${u.buses.fleet_number}` : ""} · {u.trip_number}
+                    </div>
                   </div>
                 </li>
               ))}
@@ -195,7 +275,7 @@ function DriverPage() {
         <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <h2 className="text-sm font-semibold text-foreground">My Availability</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Tap a day to cycle through Available → Away → Not set. Saved automatically.
+            Tap a day to switch between Working and Away. Saved automatically.
           </p>
           <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-xs">
             {Array.from({ length: 14 }).map((_, i) => {
@@ -211,8 +291,8 @@ function DriverPage() {
                 <button key={iso} onClick={() => cycleAvailability(iso)} className={`rounded-lg border px-1 py-2 hover:border-primary ${cls}`}>
                   <div className="font-semibold">{d.toLocaleDateString("en-CA", { weekday: "short" })}</div>
                   <div className="text-[11px]">{d.getDate()}</div>
-                  <div className="mt-0.5 text-[9px] capitalize">
-                    {status === "unknown" ? "—" : status === "available" ? "free" : "away"}
+                  <div className="mt-0.5 text-[10px] font-medium">
+                    {status === "unknown" ? "Tap" : status === "available" ? "Working" : "Away"}
                   </div>
                 </button>
               );

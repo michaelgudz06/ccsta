@@ -79,6 +79,8 @@ function PortalPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [cancelModal, setCancelModal] = useState<{ id: string; mode: "cancel" | "request" } | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   const load = useCallback(async () => {
     setQuotesLoading(true);
@@ -131,6 +133,15 @@ function PortalPage() {
     if (error) { setActionError(error.message); return; }
     dispatchNotifications();
     await load();
+  }
+
+  async function confirmCancel() {
+    if (!cancelModal) return;
+    const { id, mode } = cancelModal;
+    if (mode === "cancel") await doAction("cancel_own_quote", id);
+    else await doAction("request_quote_cancellation", id, { p_reason: cancelReason.trim() });
+    setCancelModal(null);
+    setCancelReason("");
   }
 
   if (loading) return null;
@@ -268,7 +279,7 @@ function PortalPage() {
                             {canCancel && (
                               <Button
                                 variant="outline"
-                                onClick={() => { if (confirm("Cancel this quote request?")) doAction("cancel_own_quote", q.id); }}
+                                onClick={() => setCancelModal({ id: q.id, mode: "cancel" })}
                                 disabled={actionBusy === q.id + "cancel_own_quote"}
                               >
                                 <XCircle className="h-4 w-4" />
@@ -278,13 +289,7 @@ function PortalPage() {
                             {canRequestCancel && (
                               <Button
                                 variant="outline"
-                                onClick={() => {
-                                  const reason = prompt(
-                                    "This trip has already been accepted by our office, so cancellation needs their confirmation.\n\nReason for cancelling (optional):",
-                                  );
-                                  if (reason === null) return; // dismissed
-                                  doAction("request_quote_cancellation", q.id, { p_reason: reason });
-                                }}
+                                onClick={() => { setCancelReason(""); setCancelModal({ id: q.id, mode: "request" }); }}
                                 disabled={actionBusy === q.id + "request_quote_cancellation"}
                               >
                                 <XCircle className="h-4 w-4" />
@@ -301,6 +306,50 @@ function PortalPage() {
             )}
           </div>
         </section>
+
+        {cancelModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCancelModal(null)}>
+            <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-elevated" onClick={(e) => e.stopPropagation()}>
+              {cancelModal.mode === "cancel" ? (
+                <>
+                  <h3 className="text-lg font-bold text-foreground">Cancel this request?</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    This withdraws your quote request. You can always submit a new one later.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-bold text-foreground">Request cancellation</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    This trip has already been accepted by our office, so cancelling needs their confirmation. We'll email you once it's sorted.
+                  </p>
+                  <label className="mt-3 block text-sm">
+                    <span className="font-medium text-foreground">Reason (optional)</span>
+                    <textarea
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      rows={3}
+                      placeholder="Let us know why, if you'd like."
+                      className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
+                    />
+                  </label>
+                </>
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setCancelModal(null)}>
+                  {cancelModal.mode === "cancel" ? "Keep it" : "Never mind"}
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={confirmCancel}
+                  disabled={actionBusy === cancelModal.id + (cancelModal.mode === "cancel" ? "cancel_own_quote" : "request_quote_cancellation")}
+                >
+                  {cancelModal.mode === "cancel" ? "Yes, cancel" : "Send request"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className="mt-10 grid gap-6 lg:grid-cols-2">
           {/* TRIPS */}

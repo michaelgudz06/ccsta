@@ -70,6 +70,43 @@ function QuotePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedQuoteNo, setSubmittedQuoteNo] = useState<string | null>(null);
 
+  // ── Draft autosave ──────────────────────────────────────────────────────────
+  // Keep everything the user types so it survives the signup round-trip:
+  // get a rough estimate → create an account → come back with it all pre-filled.
+  const DRAFT_KEY = "ccsta_quote_draft_v1";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d.school) setSchool(d.school);
+      if (d.pickup) setPickup(d.pickup);
+      if (d.destination) setDestination(d.destination);
+      if (d.destinationAddress) setDestinationAddress(d.destinationAddress);
+      if (d.date) setDate(d.date);
+      if (d.departTime) setDepartTime(d.departTime);
+      if (d.returnTime) setReturnTime(d.returnTime);
+      if (d.students) setStudents(d.students);
+      if (Array.isArray(d.grades) && d.grades.length) setGrades(d.grades);
+      if (d.adults) setAdults(d.adults);
+      if (typeof d.cargo === "boolean") setCargo(d.cargo);
+      if (d.c1n) setC1n(d.c1n); if (d.c1e) setC1e(d.c1e); if (d.c1p) setC1p(d.c1p);
+      if (d.c2n) setC2n(d.c2n); if (d.c2e) setC2e(d.c2e); if (d.c2p) setC2p(d.c2p);
+      if (d.dayN) setDayN(d.dayN); if (d.dayP) setDayP(d.dayP);
+      if (d.notes) setNotes(d.notes);
+      if (d.step) setStep(d.step);
+    } catch { /* ignore malformed draft */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, step };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
+  }, [school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, step]);
+
   // Prefill from previous quote
   useEffect(() => {
     if (!session || prefilled) return;
@@ -189,7 +226,12 @@ function QuotePage() {
   const back = () => setStep((s) => Math.max(s - 1, 1));
 
   const handleSubmit = async () => {
-    if (!session) { navigate({ to: "/login" }); return; }
+    if (!session) {
+      // Their answers are already saved to the draft above. Send them to create
+      // an account, then straight back here to finish — nothing is lost.
+      if (typeof window !== "undefined") window.location.href = "/login?next=/quote&new=1";
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     const { data, error } = await supabase.rpc("submit_quote", {
@@ -214,6 +256,7 @@ function QuotePage() {
     setSubmitting(false);
     if (error) { setSubmitError(error.message); return; }
     dispatchNotifications();
+    if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
     setSubmittedQuoteNo((data as { quote_number: string }).quote_number);
   };
 
@@ -594,17 +637,17 @@ function QuotePage() {
 
               {!session && (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  You need to log in to submit. Your answers are saved — log in and come back here to finish.
+                  Like this estimate? Create a free account to send it to us. Everything you typed is saved — you'll come right back here to finish.
                 </p>
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                 <Button variant="accent" size="lg" onClick={handleSubmit} disabled={submitting}>
-                  {submitting ? "Submitting…" : session ? "Submit request" : "Log in to submit"}
+                  {submitting ? "Submitting…" : session ? "Submit request" : "Create account & send"}
                 </Button>
                 {!session && (
-                  <Button asChild variant="outline" size="lg">
-                    <Link to="/login">Log in / Create account</Link>
+                  <Button variant="outline" size="lg" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login?next=/quote"; }}>
+                    I already have an account
                   </Button>
                 )}
               </div>

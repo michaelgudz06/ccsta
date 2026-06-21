@@ -170,7 +170,7 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <h3 className="text-sm font-semibold text-foreground">Status flow</h3>
           <ol className="mt-3 flex flex-wrap gap-2 text-xs">
-            {["Requested", "In review", "Approved", "Confirmed", "Scheduled", "Completed", "Invoiced"].map((s, i) => (
+            {["Requested", "In review", "Approved", "Accepted", "Scheduled", "Completed", "Invoiced"].map((s, i) => (
               <li key={s} className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-2.5 py-1">
                 <span className="font-bold text-primary">{i + 1}</span>
                 <span className="text-foreground">{s}</span>
@@ -183,11 +183,28 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
   );
 }
 
+// Turn raw Postgres/RPC errors into plain language for non-technical office staff.
+function friendlyError(msg: string): string {
+  const m = (msg || "").toLowerCase();
+  if (m.includes("already booked")) return msg; // confirm_trip already returns friendly text
+  if (m.includes("no rate") || m.includes("rate found") || m.includes("rate_config"))
+    return "There's no price set up for this bus size yet — check the rate settings or call the office admin.";
+  if (m.includes("unauthorized") || m.includes("permission") || m.includes("not allowed"))
+    return "You don't have permission for that. Make sure you're logged in as an admin.";
+  if (m.includes("cannot be approved") || m.includes("must be approved"))
+    return "This quote isn't in the right status for that step — refresh the page and try again.";
+  if (m.includes("not found"))
+    return "We couldn't find that record — try refreshing the page.";
+  if (m.includes("pending cancellation"))
+    return "There's no pending cancellation request on this quote anymore — refresh the page.";
+  return "Something went wrong: " + msg + ". Please try again, or refresh the page.";
+}
+
 const STATUS_LABEL: Record<string, string> = {
   requested: "Requested",
   in_review: "In review",
   approved:  "Approved",
-  confirmed: "Confirmed",
+  confirmed: "Accepted by customer",
   scheduled: "Scheduled",
   in_progress: "In progress",
   completed: "Completed",
@@ -339,7 +356,7 @@ function QuoteQueue() {
       p_invoice_number: invoiceNos[quoteId] ?? null,
     } as never);
     setActionBusy(null);
-    if (error) { setActionError(error.message); return; }
+    if (error) { setActionError(friendlyError(error.message)); return; }
     const result = data as { invoice_number: string };
     setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "approved" } : q));
     setInvoiceNos((m) => ({ ...m, [quoteId]: result.invoice_number }));
@@ -353,7 +370,7 @@ function QuoteQueue() {
       p_reason: rejectReason || null,
     } as never);
     setActionBusy(null);
-    if (error) { setActionError(error.message); return; }
+    if (error) { setActionError(friendlyError(error.message)); return; }
     setQuotes((prev) => prev.filter((q) => q.id !== quoteId));
     setShowReject(false); setRejectReason("");
     setSelected((prev) => quotes.find((q) => q.id !== quoteId && q.id !== prev)?.id ?? quotes[0]?.id ?? null);
@@ -367,7 +384,7 @@ function QuoteQueue() {
       p_approve: approve,
     } as never);
     setActionBusy(null);
-    if (error) { setActionError(error.message); return; }
+    if (error) { setActionError(friendlyError(error.message)); return; }
     setQuotes((prev) => prev.map((q) =>
       q.id === quoteId
         ? { ...q, status: approve ? "cancelled" : q.status, cancellation_requested_at: null }
@@ -380,7 +397,7 @@ function QuoteQueue() {
     setAssignBusy(true); setActionError(null); setAssignment(null);
     const { data, error } = await supabase.rpc("suggest_assignment" as never, { p_quote_id: quoteId } as never);
     setAssignBusy(false);
-    if (error) { setActionError(error.message); return; }
+    if (error) { setActionError(friendlyError(error.message)); return; }
     setAssignment(data as AssignmentResult);
   }
 
@@ -388,7 +405,7 @@ function QuoteQueue() {
     setEstimateBusy(true); setActionError(null); setEstimate(null);
     const { data, error } = await supabase.rpc("calculate_estimate" as never, { p_quote_id: quoteId } as never);
     setEstimateBusy(false);
-    if (error) { setActionError(error.message); return; }
+    if (error) { setActionError(friendlyError(error.message)); return; }
     const result = data as EstimateBreakdown;
     setEstimate(result);
     setQuotes((prev) => prev.map((q) =>
@@ -406,7 +423,7 @@ function QuoteQueue() {
       p_bus_id: busId,
     } as never);
     setActionBusy(null);
-    if (error) { setActionError(error.message); return; }
+    if (error) { setActionError(friendlyError(error.message)); return; }
     const result = data as { trip_number: string };
     setConfirmedTrip(result.trip_number);
     setAssignment(null);

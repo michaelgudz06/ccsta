@@ -74,6 +74,15 @@ export function useAuth() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
     },
+    // Self-serve customer signup. The handle_new_user trigger creates a
+    // 'customer' profile. Returns needsConfirmation=true when the project
+    // requires email confirmation (no session yet); false when the user is
+    // logged in immediately.
+    signup: async (email: string, password: string) => {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+      return { needsConfirmation: !data.session };
+    },
     logout: async () => {
       await supabase.auth.signOut();
     },
