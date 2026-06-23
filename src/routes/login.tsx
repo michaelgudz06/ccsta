@@ -256,7 +256,7 @@ function LoginPage() {
 
           <div className="mt-8 border-t border-border pt-6">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              What you'll see after logging in
+              TRACKING A ROUTE? VISIT OUR PARENT PORTAL
             </p>
             <div className="grid grid-cols-2 gap-2">
               <PortalCard icon={<User className="h-5 w-5" />} title="Customer" desc="Quotes & trips" />
