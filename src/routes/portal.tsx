@@ -386,7 +386,7 @@ function PortalPage() {
               <ProfRow label="Phone" value={profileContact?.phone || "—"} />
               <p className="mt-4 flex items-center gap-2 rounded-xl bg-accent/20 px-3 py-2 text-xs text-primary">
                 <Phone className="h-3.5 w-3.5" />
-                Need help? Call us at {COMPANY.phoneMelody} or {COMPANY.phoneAlan}.
+                Need help? Contact Melody at {COMPANY.phoneMelody}
               </p>
             </div>
           </div>
