@@ -128,7 +128,7 @@ function Hero() {
 
 function TrustStrip() {
   const stats = [
-    { value: "Coast to Canyon", label: "Whistler to Princeton —\u00a0And everywhere in between." },
+    { value: "Greater Vancouver\u00a0", label: "Serving the Lower Mainland and surrounding areas" },
     { value: "Certified Drivers", label: "Professional and reliable." },
     { value: "18–56", label: "Passenger busses, for any group size." },
     { value: "Minutes", label: "To get an accurate quote." },
