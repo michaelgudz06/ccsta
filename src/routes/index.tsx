@@ -163,7 +163,7 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
 function WhyUs() {
   const items = [
     { icon: RouteIcon, title: "Years on the Road", body: "Over 40 Years of Experience." },
-    { icon: Receipt, title: "Transparent Pricing", body: "Every cost laid out before you book — no surprises." },
+    { icon: Receipt, title: "Accurate Billing\u00a0", body: "Real-time invoicing based on trip time." },
     { icon: Bus, title: "Simple Booking", body: "Easy confirmations that work around your schedule." },
   ];
   return (
