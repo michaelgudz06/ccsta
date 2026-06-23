@@ -3,7 +3,8 @@ import { SiteNav } from "@/components/SiteNav";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
-import heroBus from "@/assets/hero-bus.jpg";
+import heroBusAsset from "@/assets/hero-bus-new.png.asset.json";
+const heroBus = heroBusAsset.url;
 import { COMPANY } from "@/lib/company";
 import {
   Bus,
