@@ -85,7 +85,7 @@ function Hero() {
             {COMPANY.tagline}
           </h1>
           <p className="mt-5 max-w-xl text-lg text-muted-foreground">
-            Fair Pricing, Trusted Drivers, and the Right Bus
+            Fair Pricing, Trusted Drivers, and Excellent Customer Service
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild variant="accent" size="lg">
