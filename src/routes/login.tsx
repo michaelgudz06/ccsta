@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { COMPANY } from "@/lib/company";
 import { PasswordInput } from "@/components/PasswordInput";
-import { User, Bus, ShieldCheck } from "lucide-react";
+import { User, Bus } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
