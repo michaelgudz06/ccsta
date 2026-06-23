@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { COMPANY } from "@/lib/company";
 import { PasswordInput } from "@/components/PasswordInput";
-import { User, Bus, ShieldCheck } from "lucide-react";
+import { User, Bus } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -258,10 +258,9 @@ function LoginPage() {
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               What you'll see after logging in
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <PortalCard icon={<User className="h-5 w-5" />} title="Customer" desc="Quotes & trips" />
               <PortalCard icon={<Bus className="h-5 w-5" />} title="Driver" desc="Schedule & checklist" />
-              <PortalCard icon={<ShieldCheck className="h-5 w-5" />} title="Admin" desc="Melody & Alan" />
             </div>
           </div>
         </div>
