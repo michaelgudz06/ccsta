@@ -130,7 +130,7 @@ function TrustStrip() {
   const stats = [
     { value: "Greater Vancouver\u00a0", label: "Serving the Lower Mainland and surrounding areas" },
     { value: "Certified Drivers", label: "Professional and reliable." },
-    { value: "18–56", label: "Passenger busses, for any group size." },
+    { value: "Variety of Busses", label: "To meet all transportation needs" },
     { value: "Minutes", label: "To get an accurate quote." },
   ];
   return (
