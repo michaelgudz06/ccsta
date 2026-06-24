@@ -193,7 +193,7 @@ function Reviews() {
   return (
     <section id="reviews" className="py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader eyebrow="Reviews" title="What schools are saying." subtitle="We're just getting started — reviews from member schools will appear here after our first trips." />
+        <SectionHeader eyebrow="Reviews" title="What schools are saying" subtitle="We're just getting started — reviews from member schools will appear here after our first trips." />
         <div className="mt-10 flex items-center justify-center rounded-3xl border border-dashed border-border bg-card px-8 py-16 text-center">
           <div>
             <div className="flex justify-center gap-1">
