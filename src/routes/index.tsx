@@ -261,14 +261,14 @@ function Contact() {
           eyebrow="Contact"
           title="Get in touch."
         />
-        <div className="mt-10 grid gap-6 lg:grid-cols-[1fr_2fr] items-start">
+        <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr] items-start">
           <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
             <img
               src={scenicBus}
               alt="School bus driving through a scenic British Columbia landscape"
               width={896}
               height={672}
-              className="aspect-[4/3] w-full object-cover"
+              className="aspect-[3/2] w-full object-cover"
               loading="lazy"
             />
           </div>
