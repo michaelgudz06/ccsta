@@ -5,6 +5,8 @@ import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import heroBusAsset from "@/assets/hero-bus-new.png.asset.json";
 const heroBus = heroBusAsset.url;
+import studentsBoardingBusAsset from "@/assets/students-boarding-bus.png.asset.json";
+const studentsBoardingBus = studentsBoardingBusAsset.url;
 import { COMPANY } from "@/lib/company";
 import {
   Bus,
