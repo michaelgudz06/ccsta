@@ -5,6 +5,8 @@ import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import heroBusAsset from "@/assets/hero-bus-new.png.asset.json";
 const heroBus = heroBusAsset.url;
+import studentsBoardingBusAsset from "@/assets/students-boarding-bus.png.asset.json";
+const studentsBoardingBus = studentsBoardingBusAsset.url;
 import { COMPANY } from "@/lib/company";
 import {
   Bus,
@@ -254,21 +256,31 @@ function CTABand() {
 function Contact() {
   return (
     <section id="contact" className="py-20 sm:py-24">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeader
           eyebrow="Contact"
           title="Get in touch."
         />
-        <div className="mt-10 grid gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8 sm:grid-cols-2">
-          <ContactRow icon={<Phone className="h-4 w-4" />} label="ALAN - OPERATIONS MANAGER" value={COMPANY.phoneAlan} />
-          <ContactRow icon={<Phone className="h-4 w-4" />} label="MELODY - DISPATCH OFFICE" value={COMPANY.phoneMelody} />
-          <div className="sm:col-span-2 flex justify-center">
-            <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
+        <div className="mt-10 grid gap-6 lg:grid-cols-2 items-start">
+          <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
+            <img
+              src={studentsBoardingBus}
+              alt="Students boarding a school bus for a field trip"
+              width={1024}
+              height={768}
+              className="aspect-[4/3] w-full object-cover"
+              loading="lazy"
+            />
           </div>
-          <div className="sm:col-span-2 flex justify-center pt-2">
-            <Button asChild variant="accent" size="lg">
-              <Link to="/quote">Start a quote request</Link>
-            </Button>
+          <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
+            <ContactRow icon={<Phone className="h-4 w-4" />} label="ALAN - OPERATIONS MANAGER" value={COMPANY.phoneAlan} />
+            <ContactRow icon={<Phone className="h-4 w-4" />} label="MELODY - DISPATCH OFFICE" value={COMPANY.phoneMelody} />
+            <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
+            <div className="pt-2">
+              <Button asChild variant="accent" size="lg" className="w-full">
+                <Link to="/quote">Start a quote request</Link>
+              </Button>
+            </div>
           </div>
         </div>
       </div>
