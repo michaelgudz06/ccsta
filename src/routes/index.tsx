@@ -197,7 +197,7 @@ function Reviews() {
               {[1,2,3,4,5].map((i) => <Star key={i} className="h-5 w-5 text-border" />)}
             </div>
             <p className="mt-4 text-sm text-muted-foreground max-w-sm">
-              Once our member schools complete their first trips, their feedback will be shown here.
+              Once our customers complete their first trips, their feedback will be shown here.
             </p>
           </div>
         </div>
