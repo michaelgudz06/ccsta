@@ -70,7 +70,6 @@ function Landing() {
         <Reviews />
         <Drivers />
         <CTABand />
-        <ScenicBus />
         <Contact />
       </main>
       <SiteFooter />
@@ -254,37 +253,28 @@ function CTABand() {
   );
 }
 
-function ScenicBus() {
-  return (
-    <section className="bg-surface py-16 sm:py-20">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-elevated">
-          <img
-            src={scenicBus}
-            alt="School bus driving through a scenic British Columbia landscape"
-            width={1200}
-            height={675}
-            className="aspect-[16/9] w-full object-cover"
-            loading="lazy"
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Contact() {
   return (
     <section id="contact" className="py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl">
-          <div className="text-center">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em]">
-              <span className="rounded-full bg-accent/30 px-3 py-1 text-primary">Contact</span>
-            </div>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Get in touch</h2>
+        <div className="text-center">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em]">
+            <span className="rounded-full bg-accent/30 px-3 py-1 text-primary">Contact</span>
           </div>
-          <div className="mt-8 flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
+          <h2 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Get in touch</h2>
+        </div>
+        <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr] items-start">
+          <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
+            <img
+              src={scenicBus}
+              alt="School bus driving through a scenic British Columbia landscape"
+              width={896}
+              height={672}
+              className="aspect-[4/3] w-full object-cover"
+              loading="lazy"
+            />
+          </div>
+          <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
             <ContactRow icon={<Phone className="h-4 w-4" />} label="ALAN - OPERATIONS MANAGER" value={COMPANY.phoneAlan} />
             <ContactRow icon={<Phone className="h-4 w-4" />} label="MELODY - DISPATCH OFFICE" value={COMPANY.phoneMelody} />
             <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
