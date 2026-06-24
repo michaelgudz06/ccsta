@@ -269,7 +269,7 @@ function Contact() {
                 loading="lazy"
               />
             </div>
-            <div>
+            <div className="text-center">
               <div className="text-xs font-semibold uppercase tracking-[0.18em]">
                 <span className="rounded-full bg-accent/30 px-3 py-1 text-primary">Contact</span>
               </div>
