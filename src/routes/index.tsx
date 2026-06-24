@@ -168,12 +168,13 @@ function WhyUs() {
     { icon: RouteIcon, title: "40+ Years on the Road", body: "Decades in, and still the best ride in BC." },
     { icon: Receipt, title: "No Surprise Billing", body: "Every cost upfront, your invoice always matches." },
     { icon: Bus, title: "Service That Stands Out", body: "Come for the ride, stay for the service." },
+    { icon: ShieldCheck, title: "Safety First", body: "Background-checked drivers and GPS-tracked trips, every time." },
   ];
   return (
     <section id="why" className="bg-surface py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeader eyebrow="Why Us" title="We Go the Extra Mile" />
-        <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {items.map((s) => (
             <div key={s.title} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/30 text-primary">
