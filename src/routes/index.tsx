@@ -263,18 +263,18 @@ function Contact() {
           </div>
           <h2 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Get in touch</h2>
         </div>
-        <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr] items-start">
-          <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
+        <div className="mt-10 grid gap-6 items-stretch lg:grid-cols-2">
+          <div className="relative h-full overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
             <img
               src={scenicBus}
               alt="School bus driving through a scenic British Columbia landscape"
               width={896}
               height={672}
-              className="aspect-[4/3] w-full object-cover"
+              className="aspect-[4/3] w-full object-cover lg:aspect-auto lg:h-full"
               loading="lazy"
             />
           </div>
-          <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
+          <div className="flex h-full flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
             <ContactRow icon={<Phone className="h-4 w-4" />} label="ALAN - OPERATIONS MANAGER" value={COMPANY.phoneAlan} />
             <ContactRow icon={<Phone className="h-4 w-4" />} label="MELODY - DISPATCH OFFICE" value={COMPANY.phoneMelody} />
             <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
