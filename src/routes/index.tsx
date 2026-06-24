@@ -168,7 +168,7 @@ function WhyUs() {
     { icon: RouteIcon, title: "40+ Years on the Road", body: "Decades in, and still the best ride in BC." },
     { icon: Receipt, title: "No Surprise Billing", body: "Every cost upfront, your invoice always matches." },
     { icon: Bus, title: "Service That Stands Out", body: "Come for the ride, stay for the service." },
-    { icon: ShieldCheck, title: "Safety First", body: "Background-checked drivers and GPS-tracked trips, every time." },
+    { icon: ShieldCheck, title: "Track Every Invoice With Ease", body: "Track paid and outstanding invoices without the hassle." },
   ];
   return (
     <section id="why" className="bg-surface py-20 sm:py-24">
