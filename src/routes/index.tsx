@@ -169,7 +169,7 @@ function WhyUs() {
   return (
     <section id="why" className="bg-surface py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader eyebrow="Why Us" title="Smarter logistics. Safer trips. Fairer bills." />
+        <SectionHeader eyebrow="Why Us" title="We Go the Extra Mile." />
         <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {items.map((s) => (
             <div key={s.title} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
