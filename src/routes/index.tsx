@@ -164,7 +164,7 @@ function WhyUs() {
   const items = [
     { icon: RouteIcon, title: "Years on the Road", body: "Over 40 Years of Experience." },
     { icon: Receipt, title: "Accurate Billing\u00a0", body: "Real-time invoicing based on trip time." },
-    { icon: Bus, title: "Simple Booking", body: "Easy confirmations that work around your schedule." },
+    { icon: Bus, title: "Service That Stands Out", body: "Easy confirmations that work around your schedule." },
   ];
   return (
     <section id="why" className="bg-surface py-20 sm:py-24">
