@@ -162,9 +162,9 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
 
 function WhyUs() {
   const items = [
-    { icon: RouteIcon, title: "40+ Years on the Road", body: "Over 40 Years of Experience." },
-    { icon: Receipt, title: "No Surprise Billing", body: "Real-time invoicing based on trip time." },
-    { icon: Bus, title: "Service That Stands Out", body: "Easy confirmations that work around your schedule." },
+    { icon: RouteIcon, title: "40+ Years on the Road", body: "Decades of experience and drivers your group will love." },
+    { icon: Receipt, title: "No Surprise Billing", body: "Every cost upfront, your invoice always matches." },
+    { icon: Bus, title: "Service That Stands Out", body: "Come for the ride, stay for the service." },
   ];
   return (
     <section id="why" className="bg-surface py-20 sm:py-24">
