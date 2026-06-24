@@ -163,7 +163,7 @@ function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: s
 
 function WhyUs() {
   const items = [
-    { icon: RouteIcon, title: "40+ Years on the Road", body: "Decades of experience and drivers your group will love." },
+    { icon: RouteIcon, title: "40+ Years on the Road", body: "Decades in, and still the best ride in BC." },
     { icon: Receipt, title: "No Surprise Billing", body: "Every cost upfront, your invoice always matches." },
     { icon: Bus, title: "Service That Stands Out", body: "Come for the ride, stay for the service." },
   ];
