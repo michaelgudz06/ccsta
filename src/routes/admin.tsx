@@ -33,7 +33,7 @@ function AdminPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
-              Admin · Melody & Alan
+              ADMIN · MELODY, ALAN, AND CURTIS
             </span>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">Operations</h1>
           </div>
