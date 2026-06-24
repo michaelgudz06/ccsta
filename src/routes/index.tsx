@@ -5,8 +5,8 @@ import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import heroBusAsset from "@/assets/hero-bus-new.png.asset.json";
 const heroBus = heroBusAsset.url;
-import studentsBoardingBusAsset from "@/assets/students-boarding-bus.png.asset.json";
-const studentsBoardingBus = studentsBoardingBusAsset.url;
+import scenicBusAsset from "@/assets/scenic-bus.png.asset.json";
+const scenicBus = scenicBusAsset.url;
 import { COMPANY } from "@/lib/company";
 import {
   Bus,
@@ -261,14 +261,14 @@ function Contact() {
           eyebrow="Contact"
           title="Get in touch."
         />
-        <div className="mt-10 grid gap-6 lg:grid-cols-2 items-start">
+        <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr] items-start">
           <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
             <img
-              src={studentsBoardingBus}
-              alt="Students boarding a school bus for a field trip"
-              width={1024}
-              height={768}
-              className="aspect-[4/3] w-full object-cover"
+              src={scenicBus}
+              alt="School bus driving through a scenic British Columbia landscape"
+              width={896}
+              height={672}
+              className="aspect-[3/2] w-full object-cover"
               loading="lazy"
             />
           </div>
