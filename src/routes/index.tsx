@@ -128,24 +128,25 @@ function Hero() {
 
 function TrustStrip() {
   const stats = [
-    { value: "Greater Vancouver\u00a0", label: "Serving the Lower Mainland and surrounding areas" },
+    { value: "Greater Vancouver", label: "Serving the Lower Mainland and surrounding areas." },
     { value: "Certified Drivers", label: "Professional and reliable." },
-    { value: "Variety of Busses", label: "To meet all transportation needs" },
+    { value: "Variety of Busses", label: "To meet all transportation needs." },
     { value: "Instant Estimates", label: "Simple, fast, and no obligation." },
   ];
   return (
     <section className="border-y border-border bg-surface">
-      <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-4 py-10 sm:px-6 lg:grid-cols-4 lg:px-8">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-10 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8 items-stretch">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-2xl bg-card p-5 shadow-soft border border-border/60">
-            <div className="text-3xl font-bold tracking-tight text-primary">{s.value}</div>
-            <div className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{s.label}</div>
+          <div key={s.label} className="flex h-full flex-col rounded-2xl bg-card p-5 shadow-soft border border-border/60">
+            <div className="text-2xl font-bold tracking-tight text-primary leading-tight">{s.value}</div>
+            <div className="mt-2 text-sm text-muted-foreground">{s.label}</div>
           </div>
         ))}
       </div>
     </section>
   );
 }
+
 
 function SectionHeader({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle?: string }) {
   return (
