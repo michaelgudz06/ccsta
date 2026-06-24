@@ -70,6 +70,7 @@ function Landing() {
         <Reviews />
         <Drivers />
         <CTABand />
+        <ScenicBus />
         <Contact />
       </main>
       <SiteFooter />
