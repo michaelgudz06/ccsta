@@ -257,20 +257,24 @@ function Contact() {
   return (
     <section id="contact" className="py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeader
-          eyebrow="Contact"
-          title="Get in touch."
-        />
         <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,300px)_1fr] items-start">
-          <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
-            <img
-              src={scenicBus}
-              alt="School bus driving through a scenic British Columbia landscape"
-              width={896}
-              height={672}
-              className="aspect-[4/3] w-full object-cover"
-              loading="lazy"
-            />
+          <div className="flex flex-col gap-6">
+            <div className="relative overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
+              <img
+                src={scenicBus}
+                alt="School bus driving through a scenic British Columbia landscape"
+                width={896}
+                height={672}
+                className="aspect-[4/3] w-full object-cover"
+                loading="lazy"
+              />
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em]">
+                <span className="rounded-full bg-accent/30 px-3 py-1 text-primary">Contact</span>
+              </div>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Get in touch.</h2>
+            </div>
           </div>
           <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
             <ContactRow icon={<Phone className="h-4 w-4" />} label="ALAN - OPERATIONS MANAGER" value={COMPANY.phoneAlan} />
