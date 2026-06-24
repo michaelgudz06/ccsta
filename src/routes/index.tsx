@@ -214,7 +214,6 @@ function Drivers() {
         <SectionHeader
           eyebrow="Our Drivers"
           title="Safe, Skilled, and Ready."
-          subtitle="Every CCSTA driver is certified, background-checked, and trained for group transportation."
         />
         <div className="mt-10 grid gap-6 sm:grid-cols-3">
           {[
