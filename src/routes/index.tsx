@@ -222,7 +222,7 @@ function Drivers() {
           {[
             { icon: ShieldCheck, title: "Background Checked", body: "Every driver passes a criminal record check before their first trip." },
             { icon: ClipboardCheck, title: "Commercially Licensed", body: "Fully licensed to operate passenger buses across BC." },
-            { icon: Users, title: "Group Travel Trained", body: "Experienced with schools, sports teams, churches and more." },
+            { icon: Users, title: "Ready for Any Group", body: "Experienced with schools, sports teams, churches and more." },
           ].map((c) => (
             <div key={c.title} className="rounded-2xl border border-border bg-card p-6 shadow-soft">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/30 text-primary">
