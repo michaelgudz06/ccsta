@@ -233,6 +233,7 @@ type AdminVersionDetail = {
   total: number | null;
   departure_time: string | null;
   special_requests: string | null;
+  driver_preference: string | null;
 };
 
 type AdminQuoteRow = {
@@ -324,7 +325,7 @@ function QuoteQueue() {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, destination_name, destination_address, pickup_address, total, departure_time, special_requests")
+            .select("id, trip_date, student_count, destination_name, destination_address, pickup_address, total, departure_time, special_requests, driver_preference")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
             (versions ?? []).map((v: any) => [v.id, v])
@@ -557,6 +558,13 @@ function QuoteQueue() {
           {ver?.special_requests && (
             <div className="mt-3 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">Special requests: </span>{ver.special_requests}
+            </div>
+          )}
+
+          {ver?.driver_preference && (
+            <div className="mt-3 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-foreground">
+              <span className="font-semibold">Requested driver: </span>{ver.driver_preference}
+              <span className="text-muted-foreground"> — honour if available on the trip date; otherwise contact the customer.</span>
             </div>
           )}
         </div>

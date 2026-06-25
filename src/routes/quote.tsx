@@ -59,6 +59,7 @@ function QuotePage() {
 
   // Step 4
   const [notes, setNotes] = useState("");
+  const [driverPref, setDriverPref] = useState("");
 
   // Validation
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -96,6 +97,7 @@ function QuotePage() {
       if (d.c2n) setC2n(d.c2n); if (d.c2e) setC2e(d.c2e); if (d.c2p) setC2p(d.c2p);
       if (d.dayN) setDayN(d.dayN); if (d.dayP) setDayP(d.dayP);
       if (d.notes) setNotes(d.notes);
+      if (d.driverPref) setDriverPref(d.driverPref);
       if (d.step) setStep(d.step);
     } catch { /* ignore malformed draft */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,9 +105,9 @@ function QuotePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, step };
+    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, step]);
+  }, [school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step]);
 
   // Prefill from previous quote
   useEffect(() => {
@@ -152,10 +154,20 @@ function QuotePage() {
   const tripHoursCalc = tripMinutes !== null ? tripMinutes / 60 : null;
 
   // Client-side preview estimate using real 2026-2027 non-member rates.
-  const headcount = (parseInt(students) || 0) + (parseInt(adults) || 0);
-  const benchCount = headcount <= 36 ? 18 : headcount <= 94 ? 47 : 56;
-  const benchCap   = benchCount === 18 ? 36 : benchCount === 47 ? 94 : 112;
-  const busCount   = headcount > 0 ? Math.ceil(headcount / benchCap) : 1;
+  // Seat-based capacity: each bus has bench seats (18->9, 47->23.67, 56->28);
+  // older riders (Gr 5+ & adults) take 2 per seat, younger (K-4) take 3 per seat.
+  const totalStudents = parseInt(students) || 0;
+  const adultsN = parseInt(adults) || 0;
+  const youngN = Math.min(
+    grades.reduce((sum, g) => sum + (["K", "1", "2", "3", "4"].includes(g.grade) ? (parseInt(g.count) || 0) : 0), 0),
+    totalStudents,
+  );
+  const olderN = Math.max(totalStudents - youngN, 0) + adultsN;
+  const seatsNeeded = youngN / 3 + olderN / 2;
+  const BUS_SEATS: Record<number, number> = { 18: 9, 47: 23.67, 56: 28 };
+  const headcount = totalStudents + adultsN;
+  const benchCount = seatsNeeded <= 9 ? 18 : seatsNeeded <= 23.67 ? 47 : 56;
+  const busCount   = seatsNeeded > 0 ? Math.max(1, Math.ceil(seatsNeeded / BUS_SEATS[benchCount])) : 1;
   const hourlyRate = benchCount === 56 ? 105.00 : 92.50;
   const minHours   = 4;
   // Use actual trip duration if entered, otherwise fall back to minimum
@@ -186,9 +198,7 @@ function QuotePage() {
       if (!c1n.trim()) e.c1n = "Name is required.";
       if (!c1e.trim()) e.c1e = "Email is required.";
       if (!c1p.trim()) e.c1p = "Phone is required.";
-      if (!c2n.trim()) e.c2n = "Name is required.";
-      if (!c2e.trim()) e.c2e = "Email is required.";
-      if (!c2p.trim()) e.c2p = "Phone is required.";
+      // Secondary contact is OPTIONAL — no required checks.
       if (!dayN.trim()) e.dayN = "Name is required.";
       if (!dayP.trim()) e.dayP = "Phone is required.";
 
@@ -255,9 +265,14 @@ function QuotePage() {
     });
     setSubmitting(false);
     if (error) { setSubmitError(error.message); return; }
+    const result = data as { quote_number: string; quote_id: string };
+    // Save the optional driver preference onto the new quote (best-effort).
+    if (driverPref.trim() && result.quote_id) {
+      await supabase.rpc("set_quote_driver_preference" as never, { p_quote_id: result.quote_id, p_pref: driverPref.trim() } as never);
+    }
     dispatchNotifications();
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
-    setSubmittedQuoteNo((data as { quote_number: string }).quote_number);
+    setSubmittedQuoteNo(result.quote_number);
   };
 
   // Success screen
@@ -529,15 +544,15 @@ function QuotePage() {
               {/* Secondary contact */}
               <div className="rounded-xl border border-border p-4 space-y-3">
                 <div>
-                  <div className="text-sm font-semibold text-foreground">Secondary contact <span className="text-destructive">*</span></div>
+                  <div className="text-sm font-semibold text-foreground">Secondary contact <span className="font-normal text-muted-foreground">(optional)</span></div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    A backup contact at the school — for example a vice-principal or another administrator. Required so we always have someone to reach.
+                    An optional backup contact — for example a vice-principal or another administrator. Leave blank if you'd rather not add one.
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="Name" required value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
-                  <Field label="Email" type="email" required value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
-                  <Field label="Phone" required value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
+                  <Field label="Name" value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
+                  <Field label="Email" type="email" value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
+                  <Field label="Phone" value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
                 </div>
               </div>
 
@@ -573,6 +588,21 @@ function QuotePage() {
                 </label>
                 <p className="mt-2 text-xs text-muted-foreground">
                   This field is optional. If everything looks good, just click Continue.
+                </p>
+              </div>
+              <div>
+                <label className="text-sm">
+                  <span className="font-medium text-foreground">Preferred driver</span>
+                  <span className="ml-2 text-xs text-muted-foreground">(optional)</span>
+                  <input
+                    value={driverPref}
+                    onChange={(e) => setDriverPref(e.target.value)}
+                    placeholder="If you've had a driver you'd like again, name them here."
+                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  We'll do our best to honour it. If they're not available on your date, we'll reach out so you can choose your date or your driver.
                 </p>
               </div>
             </StepWrap>
