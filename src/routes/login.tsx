@@ -262,6 +262,9 @@ function LoginPage() {
               <PortalCard icon={<User className="h-5 w-5" />} title="Customer" desc="Quotes & trips" />
               <PortalCard icon={<Bus className="h-5 w-5" />} title="Driver" desc="Schedule & checklist" />
             </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Driver or office staff? Log in with the email and password the office gave you — please don't create a new account.
+            </p>
           </div>
         </div>
       </div>

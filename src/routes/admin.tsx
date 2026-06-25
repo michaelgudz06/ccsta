@@ -60,7 +60,7 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     { id: "dashboard", label: "Dashboard" },
     { id: "quotes", label: "Quotes" },
     { id: "schedule", label: "Schedule" },
-    { id: "assets", label: "Assets" },
+    { id: "assets", label: "Buses & Drivers" },
     { id: "availability", label: "Availability" },
     { id: "documents", label: "Documents" },
   ];
@@ -141,7 +141,7 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
         <StatCard icon={Inbox} label="New quote requests" value={String(counts.requested)} onClick={() => onJump("quotes")} />
         <StatCard icon={ClipboardCheck} label="Quotes in review" value={String(counts.in_review)} onClick={() => onJump("quotes")} />
         <StatCard icon={CalendarDays} label="Trips scheduled" value={String(counts.scheduled)} onClick={() => onJump("schedule")} />
-        <StatCard icon={AlertCircle} label="Inactive assets" value={String(counts.inactiveAssets)} onClick={() => onJump("assets")} />
+        <StatCard icon={AlertCircle} label="Buses/drivers out of service" value={String(counts.inactiveAssets)} onClick={() => onJump("assets")} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -215,7 +215,7 @@ const STATUS_LABEL: Record<string, string> = {
 const statusStyle: Record<string, string> = {
   requested: "bg-amber-100 text-amber-800",
   in_review: "bg-blue-100 text-blue-800",
-  approved:  "bg-emerald-100 text-emerald-800",
+  approved:  "bg-orange-100 text-orange-800",
   confirmed: "bg-emerald-100 text-emerald-800",
   scheduled: "bg-purple-100 text-purple-800",
   in_progress: "bg-indigo-100 text-indigo-800",
@@ -232,8 +232,14 @@ type AdminVersionDetail = {
   pickup_address: string | null;
   total: number | null;
   departure_time: string | null;
+  return_time: string | null;
+  adults_count: number | null;
   special_requests: string | null;
   driver_preference: string | null;
+  contact_primary: { name?: string; email?: string; phone?: string } | null;
+  contact_secondary: { name?: string; email?: string; phone?: string } | null;
+  contact_day_of: { name?: string; phone?: string } | null;
+  grade_breakdown: { grade?: string; count?: string }[] | null;
 };
 
 type AdminQuoteRow = {
@@ -300,6 +306,10 @@ function QuoteQueue() {
   // Reject modal
   const [showReject, setShowReject] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  // Confirm step for approving a cancellation request
+  const [confirmCancelTrip, setConfirmCancelTrip] = useState(false);
+  // Full-details popup
+  const [showDetails, setShowDetails] = useState(false);
 
   // Assignment panel
   const [assignment, setAssignment] = useState<AssignmentResult | null>(null);
@@ -325,7 +335,7 @@ function QuoteQueue() {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, destination_name, destination_address, pickup_address, total, departure_time, special_requests, driver_preference")
+            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
             (versions ?? []).map((v: any) => [v.id, v])
@@ -342,16 +352,27 @@ function QuoteQueue() {
       });
   }, []);
 
-  // Clear panels when switching quotes
+  // Clear panels when switching quotes, and auto-calculate the price so Melody
+  // sees it the moment she opens a quote (no separate "Calculate" click).
   useEffect(() => {
     setAssignment(null);
     setConfirmedTrip(null);
     setActionError(null);
     setEstimate(null);
+    setConfirmCancelTrip(false);
+    setShowDetails(false);
+    const q = quotes.find((x) => x.id === selected);
+    if (q && ["requested", "in_review"].includes(q.status) && q.quote_versions?.total == null) {
+      handleEstimate(q.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
   async function handleApprove(quoteId: string) {
     setActionBusy("approve"); setActionError(null);
+    // One step: make sure a fresh price is calculated/persisted, then approve.
+    const { error: calcErr } = await supabase.rpc("calculate_estimate" as never, { p_quote_id: quoteId } as never);
+    if (calcErr) { setActionBusy(null); setActionError(friendlyError(calcErr.message)); return; }
     const { data, error } = await supabase.rpc("approve_quote" as never, {
       p_quote_id: quoteId,
       p_invoice_number: invoiceNos[quoteId] ?? null,
@@ -448,8 +469,6 @@ function QuoteQueue() {
   const invoiceNo = invoiceNos[quote.id] ?? quote.quote_number.replace(/^Q-/, "INV-");
   const tripDate = formatTripDate(ver?.trip_date);
 
-  // An estimate must exist before approval (the server enforces this too).
-  const hasEstimate = ver?.total != null || estimate != null;
   const canApprove = ["requested", "in_review"].includes(quote.status);
   // Assign a bus/driver once a quote is approved, and crucially after the
   // customer accepts (status becomes 'confirmed') — otherwise the trip gets stuck.
@@ -505,22 +524,29 @@ function QuoteQueue() {
               {quote.cancellation_reason ? <> — “{quote.cancellation_reason}”</> : null}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleResolveCancellation(quote.id, true)}
-                disabled={actionBusy === "cancel-approve"}
-              >
-                {actionBusy === "cancel-approve" ? "Cancelling…" : "Approve — cancel the trip"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleResolveCancellation(quote.id, false)}
-                disabled={actionBusy === "cancel-decline"}
-              >
-                {actionBusy === "cancel-decline" ? "Declining…" : "Decline — keep the booking"}
-              </Button>
+              {confirmCancelTrip ? (
+                <>
+                  <Button
+                    variant="destructive" size="sm" disabled={actionBusy === "cancel-approve"}
+                    onClick={() => handleResolveCancellation(quote.id, true)}
+                  >
+                    {actionBusy === "cancel-approve" ? "Cancelling…" : "Yes — cancel the trip & email the customer"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setConfirmCancelTrip(false)}>Back</Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="destructive" size="sm" onClick={() => setConfirmCancelTrip(true)}>
+                    Approve — cancel the trip
+                  </Button>
+                  <Button
+                    variant="outline" size="sm" disabled={actionBusy === "cancel-decline"}
+                    onClick={() => handleResolveCancellation(quote.id, false)}
+                  >
+                    {actionBusy === "cancel-decline" ? "Declining…" : "Decline — keep the booking"}
+                  </Button>
+                </>
+              )}
             </div>
             <p className="mt-2 text-xs text-amber-700">
               Either way the customer gets an email. Declining keeps the trip as-is.
@@ -537,6 +563,12 @@ function QuoteQueue() {
               <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[quote.status] ?? ""}`}>
                 {STATUS_LABEL[quote.status] ?? quote.status}
               </span>
+              <button
+                onClick={() => setShowDetails(true)}
+                className="ml-2 mt-1 inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-0.5 text-xs font-semibold text-foreground hover:bg-accent/20"
+              >
+                ⤢ Full details
+              </button>
             </div>
             <label className="flex flex-col items-end gap-1">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">Invoice # (editable)</span>
@@ -582,13 +614,13 @@ function QuoteQueue() {
         {/* Estimate card */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-foreground">Estimate</h4>
+            <h4 className="text-sm font-semibold text-foreground">Estimate <span className="font-normal text-muted-foreground">(calculated automatically)</span></h4>
             <button
               disabled={estimateBusy || isCancelled}
               onClick={() => handleEstimate(quote.id)}
               className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
             >
-              {estimateBusy ? "Calculating…" : "Calculate →"}
+              {estimateBusy ? "Calculating…" : "Recalculate"}
             </button>
           </div>
 
@@ -619,7 +651,7 @@ function QuoteQueue() {
             </div>
           ) : (
             <div className="mt-3 grid gap-2 text-sm">
-              <Kv label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Click Calculate →"} />
+              <Kv label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Calculating…"} />
             </div>
           )}
 
@@ -638,49 +670,46 @@ function QuoteQueue() {
             </div>
           )}
 
-          {/* Action buttons — context-aware by status */}
-          {!isCancelled && !isScheduled && (
-            <div className="mt-5 flex flex-wrap gap-2">
-              {canApprove && (
-                <div className="flex flex-col gap-1">
-                  <button
-                    disabled={actionBusy === "approve" || !hasEstimate}
-                    onClick={() => handleApprove(quote.id)}
-                    title={hasEstimate ? "" : "Calculate an estimate first"}
-                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {actionBusy === "approve" ? "Approving…" : "Approve · Melody sign-off"}
-                  </button>
-                  {!hasEstimate && (
-                    <span className="text-[11px] text-muted-foreground">Calculate an estimate before approving.</span>
-                  )}
-                </div>
-              )}
-              {canSchedule && (
-                <button
-                  disabled={assignBusy}
-                  onClick={() => handleSuggest(quote.id)}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  {assignBusy ? "Loading…" : "Assign driver & bus →"}
-                </button>
-              )}
-              {!isCancelled && (
-                <button
-                  onClick={() => { setShowReject(true); setActionError(null); }}
-                  className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
-                >
-                  Reject / Cancel
-                </button>
-              )}
-            </div>
-          )}
-
           {isScheduled && (
             <p className="mt-4 text-sm text-emerald-700 font-medium">
               <CheckCircle2 className="inline h-4 w-4 mr-1" />
               Trip scheduled — driver and bus assigned.
             </p>
+          )}
+
+          {/* Action buttons — context-aware by status */}
+          {!isCancelled && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {!isScheduled && canApprove && (
+                <button
+                  disabled={actionBusy === "approve"}
+                  onClick={() => handleApprove(quote.id)}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {actionBusy === "approve" ? "Pricing & approving…" : "Approve & send price"}
+                </button>
+              )}
+              {!isScheduled && canSchedule && (
+                <div className="flex flex-col gap-1">
+                  <button
+                    disabled={assignBusy}
+                    onClick={() => handleSuggest(quote.id)}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    {assignBusy ? "Loading…" : quote.status === "confirmed" ? "Assign driver & bus →" : "Assign early →"}
+                  </button>
+                  {quote.status === "approved" && (
+                    <span className="text-[11px] text-amber-700">Waiting for the school to accept the price — they haven't confirmed yet.</span>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={() => { setShowReject(true); setActionError(null); }}
+                className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+              >
+                {quote.status === "confirmed" || quote.status === "scheduled" ? "Cancel booking" : "Reject quote"}
+              </button>
+            </div>
           )}
         </div>
 
@@ -732,7 +761,18 @@ function QuoteQueue() {
         {/* Reject modal (inline) */}
         {showReject && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5">
-            <h4 className="text-sm font-semibold text-rose-800">Reject / cancel quote {quote.quote_number}</h4>
+            <h4 className="text-sm font-semibold text-rose-800">
+              {quote.status === "confirmed" || quote.status === "scheduled"
+                ? `Cancel booking ${quote.quote_number}?`
+                : `Reject quote ${quote.quote_number}?`}
+            </h4>
+            <p className="mt-1 text-xs text-rose-700">
+              {quote.status === "scheduled"
+                ? "This frees up the booked bus and driver and emails the school that their booking is cancelled."
+                : quote.status === "confirmed"
+                ? "This cancels the accepted booking and emails the school."
+                : "This declines the request and emails the school."}
+            </p>
             <textarea
               rows={3}
               placeholder="Reason (optional — visible in internal notes)"
@@ -757,7 +797,85 @@ function QuoteQueue() {
             </div>
           </div>
         )}
+
+        {/* Full-details popup — everything Melody might need, in one place */}
+        {showDetails && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowDetails(false)}>
+            <div className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-elevated" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setShowDetails(false)}
+                aria-label="Close"
+                className="absolute left-4 top-4 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <h3 className="mb-1 mt-2 text-center text-lg font-bold text-foreground">{quote.quote_number}</h3>
+              <p className="mb-4 text-center text-sm text-muted-foreground">
+                {quote.schools?.name ?? "—"} · {STATUS_LABEL[quote.status] ?? quote.status}
+              </p>
+
+              <DetailSection title="Trip">
+                <DetailRow label="Date" value={tripDate} />
+                <DetailRow label="Departure" value={formatTime(ver?.departure_time ?? null)} />
+                <DetailRow label="Return" value={formatTime(ver?.return_time ?? null)} />
+                <DetailRow label="Pickup" value={ver?.pickup_address || quote.schools?.name || "—"} />
+                <DetailRow label="Destination" value={ver?.destination_name || "—"} />
+                <DetailRow label="Destination address" value={ver?.destination_address || "—"} />
+              </DetailSection>
+
+              <DetailSection title="Group">
+                <DetailRow label="Students" value={ver?.student_count != null ? String(ver.student_count) : "—"} />
+                <DetailRow label="Adults / chaperones" value={ver?.adults_count != null ? String(ver.adults_count) : "—"} />
+                {ver?.grade_breakdown && ver.grade_breakdown.length > 0 && (
+                  <DetailRow label="Grades" value={ver.grade_breakdown.filter((g) => g.grade || g.count).map((g) => `${g.grade || "?"}: ${g.count || "?"}`).join(", ") || "—"} />
+                )}
+              </DetailSection>
+
+              <DetailSection title="Contacts">
+                <DetailRow label="Primary" value={fmtContact(ver?.contact_primary)} />
+                <DetailRow label="Secondary" value={fmtContact(ver?.contact_secondary)} />
+                <DetailRow label="Day-of" value={fmtContact(ver?.contact_day_of)} />
+              </DetailSection>
+
+              {(ver?.special_requests || ver?.driver_preference) && (
+                <DetailSection title="Requests">
+                  {ver?.special_requests && <DetailRow label="Special requests" value={ver.special_requests} />}
+                  {ver?.driver_preference && <DetailRow label="Preferred driver" value={ver.driver_preference} />}
+                </DetailSection>
+              )}
+
+              <DetailSection title="Money">
+                <DetailRow label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Not calculated yet"} />
+                <DetailRow label="Invoice #" value={invoiceNo} />
+              </DetailSection>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function fmtContact(c?: { name?: string; email?: string; phone?: string } | null): string {
+  if (!c) return "—";
+  const parts = [c.name, c.email, c.phone].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-4 first:mt-0">
+      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="space-y-1.5">{children}</div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right font-medium text-foreground">{value}</span>
     </div>
   );
 }

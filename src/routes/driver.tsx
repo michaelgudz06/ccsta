@@ -106,9 +106,10 @@ function DriverPage() {
 
   async function cycleAvailability(dateStr: string) {
     if (!driver) return;
-    const order: Availability[string][] = ["available", "unavailable", "unknown"];
+    // True 2-way toggle: a tap flips Working <-> Away (first tap on an
+    // untouched day sets it Working).
     const prev = availability[dateStr] ?? "unknown";
-    const nextStatus = order[(order.indexOf(prev) + 1) % order.length];
+    const nextStatus: Availability[string] = prev === "available" ? "unavailable" : "available";
     setAvailability((a) => ({ ...a, [dateStr]: nextStatus }));
     const { error } = await supabase
       .from("driver_availability")
@@ -125,7 +126,10 @@ function DriverPage() {
   if (role !== "driver") return <Navigate to="/login" />;
 
   const today = todayISO();
-  const todaysTrips = trips.filter((t) => t.trip_date === today && t.status !== "cancelled");
+  const todayLabel = new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" });
+  const todaysTrips = trips
+    .filter((t) => t.trip_date === today && t.status !== "cancelled")
+    .sort((a, b) => (a.departure_time ?? "").localeCompare(b.departure_time ?? ""));
   const upcoming = trips.filter((t) => t.trip_date > today && t.status !== "cancelled");
 
   return (
@@ -139,9 +143,10 @@ function DriverPage() {
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Driver Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-base text-muted-foreground">
             {driver ? `Hi ${driver.first_name} — here's your day at a glance.` : "Here's your day at a glance."}
           </p>
+          <p className="mt-0.5 text-sm font-semibold text-foreground">Today is {todayLabel}.</p>
         </div>
 
         {!dataLoading && !driver && (
@@ -151,10 +156,10 @@ function DriverPage() {
         )}
 
         {/* TODAY */}
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+        <section className="rounded-2xl border-2 border-primary/40 bg-card p-5 shadow-soft">
           <div className="flex items-center gap-2">
-            <Bus className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold text-foreground">Today's Trips</h2>
+            <Bus className="h-6 w-6 text-primary" />
+            <h2 className="text-lg font-bold text-foreground">Today's Trips</h2>
           </div>
           {dataLoading ? (
             <p className="mt-3 text-sm text-muted-foreground">Loading…</p>
@@ -226,15 +231,15 @@ function DriverPage() {
 
                   {/* Per-trip pre-trip checklist (saved as you tap) */}
                   <div className="mt-3 rounded-lg border border-border bg-card p-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                      <ClipboardList className="h-3.5 w-3.5 text-primary" />
+                    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <ClipboardList className="h-4 w-4 text-primary" />
                       Pre-Trip Checklist ({done}/{CHECKLIST.length})
                     </div>
-                    <ul className="mt-2 space-y-1.5">
+                    <ul className="mt-2 space-y-2">
                       {CHECKLIST.map((item) => (
                         <li key={item}>
-                          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
-                            <input type="checkbox" checked={!!checks[item]} onChange={() => toggleCheck(t, item)} className="h-4 w-4" />
+                          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-surface px-3 py-3 text-base">
+                            <input type="checkbox" checked={!!checks[item]} onChange={() => toggleCheck(t, item)} className="h-6 w-6 shrink-0" />
                             <span className={checks[item] ? "text-muted-foreground line-through" : "text-foreground"}>{item}</span>
                           </label>
                         </li>
@@ -250,8 +255,8 @@ function DriverPage() {
         {/* UPCOMING */}
         <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold text-foreground">My Schedule</h2>
+            <CalendarDays className="h-5 w-5 text-primary" />
+            <h2 className="text-base font-bold text-foreground">My Schedule</h2>
           </div>
           {upcoming.length === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">No upcoming trips assigned yet.</p>
@@ -273,9 +278,9 @@ function DriverPage() {
 
         {/* AVAILABILITY */}
         <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h2 className="text-sm font-semibold text-foreground">My Availability</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Tap a day to switch between Working and Away. Saved automatically.
+          <h2 className="text-base font-bold text-foreground">My Availability</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Let the office know which days you can drive over the next 2 weeks. Tap a day to switch between Working and Away — grey means not answered yet. Saved automatically.
           </p>
           <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-xs">
             {Array.from({ length: 14 }).map((_, i) => {
@@ -288,10 +293,10 @@ function DriverPage() {
                 : status === "unavailable" ? "border-rose-300 bg-rose-50 text-rose-800"
                 : "border-border bg-surface text-muted-foreground";
               return (
-                <button key={iso} onClick={() => cycleAvailability(iso)} className={`rounded-lg border px-1 py-2 hover:border-primary ${cls}`}>
+                <button key={iso} onClick={() => cycleAvailability(iso)} className={`rounded-lg border px-1 py-2.5 hover:border-primary ${cls}`}>
                   <div className="font-semibold">{d.toLocaleDateString("en-CA", { weekday: "short" })}</div>
-                  <div className="text-[11px]">{d.getDate()}</div>
-                  <div className="mt-0.5 text-[10px] font-medium">
+                  <div className="text-xs">{d.getDate()}</div>
+                  <div className="mt-0.5 text-xs font-medium">
                     {status === "unknown" ? "Tap" : status === "available" ? "Working" : "Away"}
                   </div>
                 </button>

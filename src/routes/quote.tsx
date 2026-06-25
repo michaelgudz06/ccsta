@@ -27,7 +27,7 @@ type GradeRow = { id: string; grade: string; count: string };
 
 function QuotePage() {
   const [step, setStep] = useState(1);
-  const totalSteps = 5;
+  const totalSteps = 4;
   const navigate = useNavigate();
   const { session } = useAuth();
   const [prefilled, setPrefilled] = useState(false);
@@ -44,6 +44,7 @@ function QuotePage() {
   // Step 2
   const [students, setStudents] = useState("");
   const [grades, setGrades] = useState<GradeRow[]>([{ id: "g1", grade: "", count: "" }]);
+  const [showGrades, setShowGrades] = useState(false);
   const [adults, setAdults] = useState("");
   const [cargo, setCargo] = useState(false);
 
@@ -199,8 +200,6 @@ function QuotePage() {
       if (!c1e.trim()) e.c1e = "Email is required.";
       if (!c1p.trim()) e.c1p = "Phone is required.";
       // Secondary contact is OPTIONAL — no required checks.
-      if (!dayN.trim()) e.dayN = "Name is required.";
-      if (!dayP.trim()) e.dayP = "Phone is required.";
 
       // Primary and secondary must be two different people.
       const norm = (str: string) => str.trim().toLowerCase();
@@ -446,6 +445,16 @@ function QuotePage() {
                 placeholder="e.g. 48"
                 error={errors.students}
               />
+              {!showGrades && (
+                <button
+                  type="button"
+                  onClick={() => setShowGrades(true)}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                >
+                  <Plus className="h-4 w-4" /> Add grade breakdown (helps us size the bus)
+                </button>
+              )}
+              {showGrades && (
               <div>
                 <div className="text-sm font-medium text-foreground">Grades <span className="font-normal text-muted-foreground">(optional)</span></div>
                 <p className="text-xs text-muted-foreground">
@@ -506,6 +515,7 @@ function QuotePage() {
                   </button>
                 </div>
               </div>
+              )}
               <Field
                 label="Adults / chaperones" type="number"
                 value={adults} onChange={setAdults}
@@ -559,36 +569,30 @@ function QuotePage() {
               {/* Day-of contact */}
               <div className="rounded-xl border border-border p-4 space-y-3">
                 <div>
-                  <div className="text-sm font-semibold text-foreground">Day-of contact <span className="text-destructive">*</span></div>
+                  <div className="text-sm font-semibold text-foreground">Day-of contact <span className="font-normal text-muted-foreground">(optional)</span></div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    The teacher taking the class on the trip — this is who the driver will call on the day if they need to reach someone at the destination.
+                    The teacher taking the class on the trip — who the driver calls on the day. You can add this later if you don't know yet.
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Name" required value={dayN} onChange={(v) => { setDayN(v); setErrors((e) => ({ ...e, dayN: "" })); }} placeholder="Ms. Johnson" error={errors.dayN} />
-                  <Field label="Phone (cell preferred)" required value={dayP} onChange={(v) => { setDayP(v); setErrors((e) => ({ ...e, dayP: "" })); }} placeholder="604-555-0102" error={errors.dayP} />
+                  <Field label="Name" value={dayN} onChange={(v) => { setDayN(v); setErrors((e) => ({ ...e, dayN: "" })); }} placeholder="Ms. Johnson" error={errors.dayN} />
+                  <Field label="Phone (cell preferred)" value={dayP} onChange={(v) => { setDayP(v); setErrors((e) => ({ ...e, dayP: "" })); }} placeholder="604-555-0102" error={errors.dayP} />
                 </div>
               </div>
-            </StepWrap>
-          )}
 
-          {step === 4 && (
-            <StepWrap title="Anything else?">
+              {/* Notes + preferred driver (merged in — no separate step) */}
               <div>
                 <label className="text-sm">
                   <span className="font-medium text-foreground">Special requests</span>
                   <span className="ml-2 text-xs text-muted-foreground">(optional)</span>
                   <textarea
-                    rows={6}
+                    rows={4}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Accessibility or special-needs seating, a preferred driver, musical instruments, anything we should know."
+                    placeholder="Accessibility or special-needs seating, musical instruments, anything we should know."
                     className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
                   />
                 </label>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  This field is optional. If everything looks good, just click Continue.
-                </p>
               </div>
               <div>
                 <label className="text-sm">
@@ -608,7 +612,7 @@ function QuotePage() {
             </StepWrap>
           )}
 
-          {step === 5 && (
+          {step === 4 && (
             <StepWrap title="Your estimate">
               <div>
                 <div className="mb-2 text-sm font-medium text-foreground">Your route</div>
@@ -713,7 +717,7 @@ function Progress({ current, total }: { current: number; total: number }) {
         <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(current / total) * 100}%` }} />
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-xs">
-        {["Trip", "Group", "Contacts", "Notes", "Estimate"].map((label, i) => {
+        {["Trip", "Group", "Contacts", "Estimate"].map((label, i) => {
           const n = i + 1;
           const done = n < current;
           const active = n === current;
