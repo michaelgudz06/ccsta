@@ -30,7 +30,7 @@ ON CONFLICT (bench_count, customer_type) DO UPDATE SET
 -- Real surcharges from 2026-2027 rate sheet
 -- Fuel = $50 flat per trip (NOT a percentage)
 -- Long distance = $1/km beyond first 200km
--- Overtime = $16/hr for driver time beyond 8h
+-- Overtime = $17/hr for driver time beyond 8h
 -- GST = 5%  (GST# 129645727)
 -- Driver buffer = 10 min before pickup (per template formula)
 INSERT INTO public.surcharge_config (key, value, unit, description) VALUES
@@ -38,7 +38,7 @@ INSERT INTO public.surcharge_config (key, value, unit, description) VALUES
   ('long_distance_threshold_km', 200.00, 'km',              'One-way km threshold before per-km charge'),
   ('long_distance_rate_per_km',  1.00,  'dollars_per_km',   'Additional charge per km beyond threshold'),
   ('overtime_threshold_hours',   8.00,  'hours',            'Trip hours before overtime applies'),
-  ('overtime_rate_per_hour',     16.00, 'dollars_per_hour', 'Per-hour charge for driver time beyond 8h'),
+  ('overtime_rate_per_hour',     17.00, 'dollars_per_hour', 'Per-hour charge for driver time beyond 8h'),
   ('gst_rate_pct',               5.00,  'percent',          'GST rate — GST# 129645727'),
   ('driver_buffer_minutes',      10.00, 'minutes',          'Pre-trip buffer before scheduled pickup')
 ON CONFLICT (key) DO UPDATE SET

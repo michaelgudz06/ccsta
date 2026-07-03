@@ -147,7 +147,7 @@ BEGIN
   v_bill_hours   := GREATEST(v_driver_hours, COALESCE(v_min_hours, 4));
 
   IF v_ot_threshold IS NOT NULL AND v_driver_hours > v_ot_threshold THEN
-    v_overtime := (v_driver_hours - v_ot_threshold) * COALESCE(v_overtime_rate, 16) * v_bus_count;
+    v_overtime := (v_driver_hours - v_ot_threshold) * COALESCE(v_overtime_rate, 17) * v_bus_count;
   END IF;
 
   v_base_cost := v_bill_hours * v_rate * v_bus_count;
