@@ -40,6 +40,7 @@ function QuotePage() {
   const [date, setDate] = useState("");
   const [departTime, setDepartTime] = useState("");
   const [returnTime, setReturnTime] = useState("");
+  const [distanceKm, setDistanceKm] = useState<number | null>(null);
 
   // Step 2
   const [students, setStudents] = useState("");
@@ -176,7 +177,12 @@ function QuotePage() {
   const billHours  = Math.max(tripHours, minHours);
   const baseCost   = billHours * hourlyRate * busCount;
   const fuelSurcharge = 50 * busCount;
-  const subtotal   = baseCost + fuelSurcharge;
+  const LONG_DISTANCE_THRESHOLD_KM = 200;
+  const LONG_DISTANCE_RATE_PER_KM = 1;
+  const longDistanceCharge = distanceKm != null && distanceKm > LONG_DISTANCE_THRESHOLD_KM
+    ? (distanceKm - LONG_DISTANCE_THRESHOLD_KM) * LONG_DISTANCE_RATE_PER_KM * busCount
+    : 0;
+  const subtotal   = baseCost + fuelSurcharge + longDistanceCharge;
   const gst        = subtotal * 0.05;
   const estimatedTotal = subtotal + gst;
   const busLabel   = benchCount === 18 ? "18-seat mini-bus" : benchCount === 47 ? "47-seat coach" : "56-seat coach";
@@ -268,6 +274,10 @@ function QuotePage() {
     // Save the optional driver preference onto the new quote (best-effort).
     if (driverPref.trim() && result.quote_id) {
       await supabase.rpc("set_quote_driver_preference" as never, { p_quote_id: result.quote_id, p_pref: driverPref.trim() } as never);
+    }
+    // Save the route distance so the server-side estimate can apply the long-distance surcharge (best-effort).
+    if (distanceKm != null && result.quote_id) {
+      await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: result.quote_id, p_distance_km: distanceKm } as never);
     }
     dispatchNotifications();
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
@@ -398,6 +408,7 @@ function QuotePage() {
                     pickup={pickup || school}
                     destination={destinationAddress}
                     departTime={departTime || undefined}
+                    onResult={(r) => setDistanceKm(r.distanceKm)}
                     className="h-52 w-full"
                   />
                   <p className="px-4 py-2 text-xs text-muted-foreground">
@@ -620,6 +631,7 @@ function QuotePage() {
                   pickup={pickup || school}
                   destination={destinationAddress || destination}
                   departTime={departTime}
+                  onResult={(r) => setDistanceKm(r.distanceKm)}
                 />
                 <p className="mt-2 text-xs text-muted-foreground">
                   Why distance matters: your price covers the driver's full day — travel to your school, the trip itself, and the return drive back. Longer routes mean more hours on the clock.
@@ -647,6 +659,9 @@ function QuotePage() {
                     <Row label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
                     <Row label="Base cost" value={formatMoney(baseCost)} />
                     <Row label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />
+                    {longDistanceCharge > 0 && (
+                      <Row label={`Long-distance (${(distanceKm! - LONG_DISTANCE_THRESHOLD_KM).toFixed(1)} km beyond ${LONG_DISTANCE_THRESHOLD_KM}km)`} value={formatMoney(longDistanceCharge)} />
+                    )}
                     <Row label="Subtotal" value={formatMoney(subtotal)} />
                     <Row label="GST (5%)" value={formatMoney(gst)} />
                     <Row label="Estimated total" value={formatMoney(estimatedTotal)} emphasize />
