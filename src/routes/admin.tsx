@@ -236,6 +236,7 @@ type AdminVersionDetail = {
   adults_count: number | null;
   special_requests: string | null;
   driver_preference: string | null;
+  distance_km: number | null;
   contact_primary: { name?: string; email?: string; phone?: string } | null;
   contact_secondary: { name?: string; email?: string; phone?: string } | null;
   contact_day_of: { name?: string; phone?: string } | null;
@@ -285,6 +286,8 @@ type EstimateBreakdown = {
   base_cost: number;
   fuel_surcharge: number;
   overtime_charge: number;
+  distance_km: number;
+  long_distance_charge: number;
   subtotal: number;
   gst_pct: number;
   gst: number;
@@ -335,7 +338,7 @@ function QuoteQueue() {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
+            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, distance_km, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
             (versions ?? []).map((v: any) => [v.id, v])
@@ -608,6 +611,11 @@ function QuoteQueue() {
             pickup={ver?.pickup_address || quote.schools?.name || ""}
             destination={ver?.destination_address || ver?.destination_name || ""}
             departTime={ver?.departure_time ?? undefined}
+            onResult={(r) => {
+              if (ver && ver.distance_km == null) {
+                supabase.rpc("set_quote_distance_km" as never, { p_quote_id: quote.id, p_distance_km: r.distanceKm } as never);
+              }
+            }}
           />
         </div>
 
@@ -640,6 +648,9 @@ function QuoteQueue() {
                 <Kv label="Fuel surcharge" value={formatMoney(estimate.fuel_surcharge)} />
                 {estimate.overtime_charge > 0 && (
                   <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
+                )}
+                {estimate.long_distance_charge > 0 && (
+                  <Kv label={`Long-distance (${estimate.distance_km}km)`} value={formatMoney(estimate.long_distance_charge)} />
                 )}
                 <Kv label="Subtotal" value={formatMoney(estimate.subtotal)} />
                 <Kv label={`GST (${estimate.gst_pct}%)`} value={formatMoney(estimate.gst)} />
