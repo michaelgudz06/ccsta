@@ -185,7 +185,7 @@ function QuotePage() {
   const subtotal   = baseCost + fuelSurcharge + longDistanceCharge;
   const gst        = subtotal * 0.05;
   const estimatedTotal = subtotal + gst;
-  const busLabel   = benchCount === 18 ? "18-seat mini-bus" : benchCount === 47 ? "47-seat coach" : "56-seat coach";
+  const busLabel   = benchCount === 18 ? "18-passenger mini-bus" : benchCount === 47 ? "47-passenger coach" : "56-passenger coach";
 
   // Validation per step
   const validateStep = (s: number): boolean => {

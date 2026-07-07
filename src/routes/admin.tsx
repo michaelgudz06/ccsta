@@ -635,7 +635,7 @@ function QuoteQueue() {
           {estimate ? (
             <div className="mt-3 space-y-1.5">
               <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
-                {estimate.bus_count}× {estimate.bench_count}-bench bus · {estimate.customer_type.replace("_", " ")} · ${estimate.hourly_rate}/hr
+                {estimate.bus_count}× {estimate.bench_count}-passenger bus · {estimate.customer_type.replace("_", " ")} · ${estimate.hourly_rate}/hr
                 {estimate.destination_matched && (
                   <span className="ml-2 text-primary">· matched: {estimate.destination_matched}</span>
                 )}
@@ -729,7 +729,7 @@ function QuoteQueue() {
           <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-foreground">
-                Available for {assignment.trip_date} · {assignment.headcount} people · {assignment.needed_bench}-bench bus
+                Available for {assignment.trip_date} · {assignment.headcount} people · {assignment.needed_bench}-passenger bus
               </h4>
               <button onClick={() => setAssignment(null)} className="text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
@@ -752,7 +752,7 @@ function QuoteQueue() {
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        Bus {s.bus_fleet} · {s.bus_bench_count}-bench{s.phone ? ` · ${s.phone}` : ""}
+                        Bus {s.bus_fleet} · {s.bus_bench_count}-passenger{s.phone ? ` · ${s.phone}` : ""}
                       </div>
                     </div>
                     <button
@@ -1087,7 +1087,7 @@ function Assets() {
               <li key={b.id} className="flex items-center justify-between px-4 py-3">
                 <div>
                   <div className="text-sm font-semibold text-foreground">{b.fleet_number}</div>
-                  <div className="text-xs text-muted-foreground">{b.bench_count}-bench{b.notes ? ` · ${b.notes}` : ""}</div>
+                  <div className="text-xs text-muted-foreground">{b.bench_count}-passenger{b.notes ? ` · ${b.notes}` : ""}</div>
                 </div>
                 <div className="flex gap-1.5">
                   {b.air_brake_req && (
