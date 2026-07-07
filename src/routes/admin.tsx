@@ -237,6 +237,9 @@ type AdminVersionDetail = {
   special_requests: string | null;
   driver_preference: string | null;
   distance_km: number | null;
+  approved_driver_hours: number | null;
+  system_driver_hours: number | null;
+  fuel_waived: boolean;
   contact_primary: { name?: string; email?: string; phone?: string } | null;
   contact_secondary: { name?: string; email?: string; phone?: string } | null;
   contact_day_of: { name?: string; phone?: string } | null;
@@ -280,11 +283,15 @@ type EstimateBreakdown = {
   trip_hours: number;
   driver_pre_hours: number;
   driver_post_hours: number;
-  total_driver_hours: number;
+  reference_driver_hours: number;
+  system_driver_hours: number;
+  approved_driver_hours: number | null;
+  driver_hours_used: number;
   billable_hours: number;
   min_hours: number;
   base_cost: number;
   fuel_surcharge: number;
+  fuel_waived: boolean;
   overtime_charge: number;
   distance_km: number;
   long_distance_charge: number;
@@ -338,7 +345,7 @@ function QuoteQueue() {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, distance_km, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
+            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
             (versions ?? []).map((v: any) => [v.id, v])
@@ -435,9 +442,37 @@ function QuoteQueue() {
     setEstimate(result);
     setQuotes((prev) => prev.map((q) =>
       q.id === quoteId && q.quote_versions
-        ? { ...q, quote_versions: { ...q.quote_versions, total: result.total } }
+        ? {
+            ...q,
+            quote_versions: {
+              ...q.quote_versions,
+              total: result.total,
+              approved_driver_hours: result.approved_driver_hours,
+              system_driver_hours: result.system_driver_hours,
+              fuel_waived: result.fuel_waived,
+            },
+          }
         : q
     ));
+  }
+
+  // Melody's overrides — persisted immediately (independent of quote status),
+  // then recalculated so she sees the updated total right away.
+  async function handleSetApprovedHours(quoteId: string, raw: string) {
+    const trimmed = raw.trim();
+    const hours = trimmed === "" ? null : Number(trimmed);
+    if (hours !== null && (Number.isNaN(hours) || hours < 0)) return;
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_approved_driver_hours" as never, { p_quote_id: quoteId, p_hours: hours } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId);
+  }
+
+  async function handleToggleFuelWaived(quoteId: string, waived: boolean) {
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_fuel_waived" as never, { p_quote_id: quoteId, p_waived: waived } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId);
   }
 
   async function handleConfirmTrip(quoteId: string, driverId: string, busId: string) {
@@ -478,6 +513,12 @@ function QuoteQueue() {
   const canSchedule = quote.status === "approved" || quote.status === "confirmed";
   const isScheduled = quote.status === "scheduled";
   const isCancelled = quote.status === "cancelled";
+
+  // Melody's overrides — sourced from the latest recalculation if there's
+  // been one this session, otherwise from the persisted column. Editable
+  // regardless of quote status ("anytime, even after approval").
+  const currentApprovedHours = estimate?.approved_driver_hours ?? ver?.approved_driver_hours ?? null;
+  const currentFuelWaived = estimate?.fuel_waived ?? ver?.fuel_waived ?? false;
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
@@ -643,9 +684,15 @@ function QuoteQueue() {
               <div className="grid gap-1.5 text-sm">
                 <Kv label="Trip hours" value={`${estimate.trip_hours}h`} />
                 <Kv label="Driver yard travel" value={`+${estimate.driver_pre_hours}h / +${estimate.driver_post_hours}h`} />
+                <Kv label="Per-location reference (informational)" value={`${estimate.reference_driver_hours}h`} />
+                <Kv label="System estimate (flat 1hr buffer)" value={`${estimate.system_driver_hours}h`} />
+                <Kv
+                  label="Driver time used for billing"
+                  value={`${estimate.driver_hours_used}h ${estimate.approved_driver_hours != null ? "(Melody-approved)" : "(system estimate)"}`}
+                />
                 <Kv label="Billable hours" value={`${estimate.billable_hours}h (min ${estimate.min_hours}h)`} />
                 <Kv label="Base cost" value={formatMoney(estimate.base_cost)} />
-                <Kv label="Fuel surcharge" value={formatMoney(estimate.fuel_surcharge)} />
+                <Kv label="Fuel surcharge" value={estimate.fuel_waived ? "Waived" : formatMoney(estimate.fuel_surcharge)} />
                 {estimate.overtime_charge > 0 && (
                   <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
                 )}
@@ -665,6 +712,34 @@ function QuoteQueue() {
               <Kv label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Calculating…"} />
             </div>
           )}
+
+          {/* Melody's overrides — persisted immediately, editable regardless of
+              quote status. Recalculates on change so the total above stays current. */}
+          <div className="mt-4 grid gap-3 rounded-xl border border-dashed border-border p-3 sm:grid-cols-2">
+            <label className="text-sm">
+              <span className="font-medium text-foreground">Accurate driver time (hrs)</span>
+              <span className="ml-1 text-xs text-muted-foreground">— overrides the system estimate</span>
+              <input
+                key={quote.id}
+                type="number" min={0} step={0.5}
+                disabled={isCancelled}
+                defaultValue={currentApprovedHours ?? ""}
+                placeholder="system estimate"
+                onBlur={(e) => handleSetApprovedHours(quote.id, e.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                disabled={isCancelled}
+                checked={currentFuelWaived}
+                onChange={(e) => handleToggleFuelWaived(quote.id, e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              <span className="font-medium text-foreground">Waive $50 fuel fee</span>
+            </label>
+          </div>
 
           {/* Confirmed trip banner */}
           {confirmedTrip && (
