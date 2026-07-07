@@ -76,40 +76,80 @@ function QuotePage() {
   // ── Draft autosave ──────────────────────────────────────────────────────────
   // Keep everything the user types so it survives the signup round-trip:
   // get a rough estimate → create an account → come back with it all pre-filled.
+  // A returning visitor with a meaningful saved draft is asked to resume or
+  // start fresh (see pendingDraft below) rather than being silently repopulated.
   const DRAFT_KEY = "ccsta_quote_draft_v1";
+
+  const [pendingDraft, setPendingDraft] = useState<Record<string, unknown> | null>(null);
+  // Gates the autosave effect below so it can't fire (and overwrite the saved
+  // draft with the form's blank initial state) before we've checked for one.
+  const [draftReady, setDraftReady] = useState(false);
+
+  const applyDraft = (d: Record<string, unknown>) => {
+    if (d.school) setSchool(d.school as string);
+    if (d.pickup) setPickup(d.pickup as string);
+    if (d.destination) setDestination(d.destination as string);
+    if (d.destinationAddress) setDestinationAddress(d.destinationAddress as string);
+    if (d.date) setDate(d.date as string);
+    if (d.departTime) setDepartTime(d.departTime as string);
+    if (d.returnTime) setReturnTime(d.returnTime as string);
+    if (d.students) setStudents(d.students as string);
+    if (Array.isArray(d.grades) && d.grades.length) setGrades(d.grades as GradeRow[]);
+    if (d.adults) setAdults(d.adults as string);
+    if (typeof d.cargo === "boolean") setCargo(d.cargo);
+    if (d.c1n) setC1n(d.c1n as string); if (d.c1e) setC1e(d.c1e as string); if (d.c1p) setC1p(d.c1p as string);
+    if (d.c2n) setC2n(d.c2n as string); if (d.c2e) setC2e(d.c2e as string); if (d.c2p) setC2p(d.c2p as string);
+    if (d.dayN) setDayN(d.dayN as string); if (d.dayP) setDayP(d.dayP as string);
+    if (d.notes) setNotes(d.notes as string);
+    if (d.driverPref) setDriverPref(d.driverPref as string);
+    if (d.step) setStep(d.step as number);
+  };
+
+  // A draft is only worth asking about if it has some identifying content —
+  // an empty shell (e.g. someone bounced off step 1 having typed nothing)
+  // shouldn't trigger a prompt.
+  const draftHasContent = (d: Record<string, unknown>) =>
+    Boolean(
+      d.school || d.pickup || d.destination || d.destinationAddress || d.date ||
+      d.departTime || d.returnTime || d.students || d.adults ||
+      d.c1n || d.c1e || d.c1p || d.notes || d.driverPref ||
+      (Array.isArray(d.grades) && d.grades.some((g: GradeRow) => g.grade || g.count)),
+    );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
-      if (!raw) return;
+      if (!raw) { setDraftReady(true); return; }
       const d = JSON.parse(raw);
-      if (d.school) setSchool(d.school);
-      if (d.pickup) setPickup(d.pickup);
-      if (d.destination) setDestination(d.destination);
-      if (d.destinationAddress) setDestinationAddress(d.destinationAddress);
-      if (d.date) setDate(d.date);
-      if (d.departTime) setDepartTime(d.departTime);
-      if (d.returnTime) setReturnTime(d.returnTime);
-      if (d.students) setStudents(d.students);
-      if (Array.isArray(d.grades) && d.grades.length) setGrades(d.grades);
-      if (d.adults) setAdults(d.adults);
-      if (typeof d.cargo === "boolean") setCargo(d.cargo);
-      if (d.c1n) setC1n(d.c1n); if (d.c1e) setC1e(d.c1e); if (d.c1p) setC1p(d.c1p);
-      if (d.c2n) setC2n(d.c2n); if (d.c2e) setC2e(d.c2e); if (d.c2p) setC2p(d.c2p);
-      if (d.dayN) setDayN(d.dayN); if (d.dayP) setDayP(d.dayP);
-      if (d.notes) setNotes(d.notes);
-      if (d.driverPref) setDriverPref(d.driverPref);
-      if (d.step) setStep(d.step);
-    } catch { /* ignore malformed draft */ }
+      if (draftHasContent(d)) {
+        setPendingDraft(d);
+      } else {
+        setDraftReady(true);
+      }
+    } catch {
+      setDraftReady(true); // malformed draft — ignore and proceed
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleResumeDraft = () => {
+    if (pendingDraft) applyDraft(pendingDraft);
+    setPendingDraft(null);
+    setDraftReady(true);
+  };
+
+  const handleStartFresh = () => {
+    if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
+    setPendingDraft(null);
+    setDraftReady(true);
+  };
+
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !draftReady) return;
     const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step]);
+  }, [draftReady, school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step]);
 
   // Prefill from previous quote
   useEffect(() => {
@@ -283,6 +323,39 @@ function QuotePage() {
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
     setSubmittedQuoteNo(result.quote_number);
   };
+
+  // Resume-or-start-fresh prompt — shown instead of the form until answered,
+  // so nothing autosaves and no field renders until the user picks one.
+  if (pendingDraft) {
+    return (
+      <div className="min-h-screen bg-surface">
+        {session ? <AppTopBar /> : (
+          <header className="border-b border-border bg-card/80 backdrop-blur">
+            <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+              <Logo />
+              <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Back to site</Link>
+            </div>
+          </header>
+        )}
+        <main className="mx-auto max-w-xl px-4 py-20 sm:px-6">
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+            <h1 className="text-xl font-semibold text-foreground">Resume your quote?</h1>
+            <p className="mt-3 text-sm text-muted-foreground">
+              We found a quote you started earlier but didn't finish.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Button className="flex-1" variant="outline" onClick={handleStartFresh}>
+                Start fresh
+              </Button>
+              <Button className="flex-1" variant="accent" onClick={handleResumeDraft}>
+                Resume where I left off
+              </Button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   // Success screen
   if (submittedQuoteNo) {
