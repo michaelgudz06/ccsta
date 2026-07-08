@@ -137,11 +137,27 @@ on every password field — login, signup, and reset-password.
 - **Google Maps key:** add `ccsta.net` to the allowed referrers.
 - **Samsara token** is stored (`.env.local`); native live tracking is a later phase.
 
+## Recently completed
+- **Admin manual price override after Calculate** — done. Melody can override the
+  system driver-time estimate and waive the $50 fuel fee, both editable any time
+  and persisted separately from the system estimate for audit (migration 034).
+
 ## Still on the backlog (planned, not built)
 - Single-page quote-form redesign (fewer pages, "show more" buttons).
 - Address autofill reliability + a clear "driver time will be added on the invoice" notice.
-- Member 2-hour vs. others 4-hour minimum billing.
+- Member 2-hour vs. others 4-hour minimum billing — **partially done**: server-side
+  pricing (`calculate_estimate`) already applies the correct 2hr/4hr floor by
+  membership. Still open: the customer-facing quote-form estimate (`quote.tsx`'s
+  client-side preview) hardcodes a 4-hour minimum regardless of membership, since
+  it has no way to know the school's member status before submission.
 - Hourly driver availability + bus availability windows.
-- Admin manual price override after Calculate.
 - Parent bus-tracking portal.
 - 5% first-online-quote discount.
+- **Address autofill with saved favorites:** as customers type pickup/destination
+  addresses, show selectable suggestions for accuracy and less manual entry. Seed
+  it with our Excel list of known customer/school/destination addresses as saved
+  favorites, layered on top of a general address-lookup service.
+- **Calendar/availability system:** customers pick a date/time and the system
+  checks it against fleet (buses + drivers) availability, showing color-coded
+  slots — green = available, grey = a trip's already submitted for that slot and
+  under review, red = unavailable (must pick a different day/bus/driver).
