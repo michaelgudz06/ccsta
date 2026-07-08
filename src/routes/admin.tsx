@@ -237,6 +237,9 @@ type AdminVersionDetail = {
   special_requests: string | null;
   driver_preference: string | null;
   distance_km: number | null;
+  approved_driver_hours: number | null;
+  system_driver_hours: number | null;
+  fuel_waived: boolean;
   contact_primary: { name?: string; email?: string; phone?: string } | null;
   contact_secondary: { name?: string; email?: string; phone?: string } | null;
   contact_day_of: { name?: string; phone?: string } | null;
@@ -280,11 +283,15 @@ type EstimateBreakdown = {
   trip_hours: number;
   driver_pre_hours: number;
   driver_post_hours: number;
-  total_driver_hours: number;
+  reference_driver_hours: number;
+  system_driver_hours: number;
+  approved_driver_hours: number | null;
+  driver_hours_used: number;
   billable_hours: number;
   min_hours: number;
   base_cost: number;
   fuel_surcharge: number;
+  fuel_waived: boolean;
   overtime_charge: number;
   distance_km: number;
   long_distance_charge: number;
@@ -311,8 +318,8 @@ function QuoteQueue() {
   const [rejectReason, setRejectReason] = useState("");
   // Confirm step for approving a cancellation request
   const [confirmCancelTrip, setConfirmCancelTrip] = useState(false);
-  // Full-details popup
-  const [showDetails, setShowDetails] = useState(false);
+  // "Adjust" section (driver-time override + fuel waiver) — expanded by default
+  const [adjustExpanded, setAdjustExpanded] = useState(true);
 
   // Assignment panel
   const [assignment, setAssignment] = useState<AssignmentResult | null>(null);
@@ -338,7 +345,7 @@ function QuoteQueue() {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, distance_km, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
+            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
             (versions ?? []).map((v: any) => [v.id, v])
@@ -363,7 +370,7 @@ function QuoteQueue() {
     setActionError(null);
     setEstimate(null);
     setConfirmCancelTrip(false);
-    setShowDetails(false);
+    setAdjustExpanded(true);
     const q = quotes.find((x) => x.id === selected);
     if (q && ["requested", "in_review"].includes(q.status) && q.quote_versions?.total == null) {
       handleEstimate(q.id);
@@ -435,9 +442,37 @@ function QuoteQueue() {
     setEstimate(result);
     setQuotes((prev) => prev.map((q) =>
       q.id === quoteId && q.quote_versions
-        ? { ...q, quote_versions: { ...q.quote_versions, total: result.total } }
+        ? {
+            ...q,
+            quote_versions: {
+              ...q.quote_versions,
+              total: result.total,
+              approved_driver_hours: result.approved_driver_hours,
+              system_driver_hours: result.system_driver_hours,
+              fuel_waived: result.fuel_waived,
+            },
+          }
         : q
     ));
+  }
+
+  // Melody's overrides — persisted immediately (independent of quote status),
+  // then recalculated so she sees the updated total right away.
+  async function handleSetApprovedHours(quoteId: string, raw: string) {
+    const trimmed = raw.trim();
+    const hours = trimmed === "" ? null : Number(trimmed);
+    if (hours !== null && (Number.isNaN(hours) || hours < 0)) return;
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_approved_driver_hours" as never, { p_quote_id: quoteId, p_hours: hours } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId);
+  }
+
+  async function handleToggleFuelWaived(quoteId: string, waived: boolean) {
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_fuel_waived" as never, { p_quote_id: quoteId, p_waived: waived } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId);
   }
 
   async function handleConfirmTrip(quoteId: string, driverId: string, busId: string) {
@@ -478,6 +513,12 @@ function QuoteQueue() {
   const canSchedule = quote.status === "approved" || quote.status === "confirmed";
   const isScheduled = quote.status === "scheduled";
   const isCancelled = quote.status === "cancelled";
+
+  // Melody's overrides — sourced from the latest recalculation if there's
+  // been one this session, otherwise from the persisted column. Editable
+  // regardless of quote status ("anytime, even after approval").
+  const currentApprovedHours = estimate?.approved_driver_hours ?? ver?.approved_driver_hours ?? null;
+  const currentFuelWaived = estimate?.fuel_waived ?? ver?.fuel_waived ?? false;
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
@@ -557,7 +598,7 @@ function QuoteQueue() {
           </div>
         )}
 
-        {/* Quote header */}
+        {/* Quote identity strip */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -566,12 +607,6 @@ function QuoteQueue() {
               <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[quote.status] ?? ""}`}>
                 {STATUS_LABEL[quote.status] ?? quote.status}
               </span>
-              <button
-                onClick={() => setShowDetails(true)}
-                className="ml-2 mt-1 inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-0.5 text-xs font-semibold text-foreground hover:bg-accent/20"
-              >
-                ⤢ Full details
-              </button>
             </div>
             <label className="flex flex-col items-end gap-1">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">Invoice # (editable)</span>
@@ -582,32 +617,36 @@ function QuoteQueue() {
               />
             </label>
           </div>
-
-          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <Kv label="School" value={quote.schools?.name ?? "—"} />
-            <Kv label="Trip date" value={tripDate} />
-            <Kv label="Students" value={ver?.student_count != null ? String(ver.student_count) : "—"} />
-            <Kv label="Destination" value={ver?.destination_name ?? "—"} />
-          </div>
-
-          {ver?.special_requests && (
-            <div className="mt-3 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">Special requests: </span>{ver.special_requests}
-            </div>
-          )}
-
-          {ver?.driver_preference && (
-            <div className="mt-3 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-foreground">
-              <span className="font-semibold">Requested driver: </span>{ver.driver_preference}
-              <span className="text-muted-foreground"> — honour if available on the trip date; otherwise contact the customer.</span>
-            </div>
-          )}
         </div>
 
-        {/* Route map */}
+        {/* Section 1: Trip details */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h4 className="mb-3 text-sm font-semibold text-foreground">Route</h4>
+          <h4 className="mb-3 text-sm font-semibold text-foreground">Trip details</h4>
+          <div className="grid gap-3 text-sm sm:grid-cols-2">
+            <Kv label="School" value={quote.schools?.name ?? "—"} />
+            <Kv label="Trip date" value={tripDate} />
+            <Kv label="Departure" value={formatTime(ver?.departure_time ?? null)} />
+            <Kv label="Return" value={formatTime(ver?.return_time ?? null)} />
+            <Kv label="Pickup address" value={ver?.pickup_address || "—"} />
+            <Kv label="Destination" value={ver?.destination_name || "—"} />
+            <Kv label="Destination address" value={ver?.destination_address || "—"} />
+            {ver?.distance_km != null ? (
+              <Kv label="Distance (one-way)" value={`${ver.distance_km} km`} />
+            ) : (
+              <div className="flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                ⚠ Distance unavailable — estimate may be inaccurate
+              </div>
+            )}
+            <Kv label="Students" value={ver?.student_count != null ? String(ver.student_count) : "—"} />
+            <Kv label="Group size" value={`${ver?.student_count ?? 0} students + ${ver?.adults_count ?? 0} adults`} />
+            <Kv label="Bus needed" value={estimate ? `${estimate.bus_count}× ${estimate.bench_count}-passenger bus` : "Calculating…"} />
+            <Kv label="Primary contact" value={fmtContact(ver?.contact_primary)} />
+          </div>
+
+          {/* Route map — tucked under the distance figure above; onResult also
+              backfills distance_km for quotes that don't have it yet. */}
           <RouteMap
+            className="mt-3"
             pickup={ver?.pickup_address || quote.schools?.name || ""}
             destination={ver?.destination_address || ver?.destination_name || ""}
             departTime={ver?.departure_time ?? undefined}
@@ -617,112 +656,190 @@ function QuoteQueue() {
               }
             }}
           />
+
+          {/* Shown only when they have real content */}
+          {ver?.grade_breakdown && ver.grade_breakdown.filter((g) => g.grade || g.count).length > 0 && (
+            <div className="mt-3">
+              <Kv
+                label="Grade breakdown"
+                value={ver.grade_breakdown.filter((g) => g.grade || g.count).map((g) => `${g.grade || "?"}: ${g.count || "?"}`).join(", ")}
+              />
+            </div>
+          )}
+          {!!ver?.adults_count && (
+            <div className="mt-3">
+              <Kv label="Adults / chaperones" value={String(ver.adults_count)} />
+            </div>
+          )}
+          {fmtContact(ver?.contact_secondary) !== "—" && (
+            <div className="mt-3">
+              <Kv label="Secondary contact" value={fmtContact(ver?.contact_secondary)} />
+            </div>
+          )}
+          {fmtContact(ver?.contact_day_of) !== "—" && (
+            <div className="mt-3">
+              <Kv label="Day-of contact" value={fmtContact(ver?.contact_day_of)} />
+            </div>
+          )}
+          {ver?.special_requests && (
+            <div className="mt-3 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">Special requests: </span>{ver.special_requests}
+            </div>
+          )}
+          {ver?.driver_preference && (
+            <div className="mt-3 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-foreground">
+              <span className="font-semibold">Requested driver: </span>{ver.driver_preference}
+              <span className="text-muted-foreground"> — honour if available on the trip date; otherwise contact the customer.</span>
+            </div>
+          )}
         </div>
 
-        {/* Estimate card */}
+        {/* Section 2: Price — clean, only what the customer sees */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-foreground">Estimate <span className="font-normal text-muted-foreground">(calculated automatically)</span></h4>
-            <button
-              disabled={estimateBusy || isCancelled}
-              onClick={() => handleEstimate(quote.id)}
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
-            >
-              {estimateBusy ? "Calculating…" : "Recalculate"}
-            </button>
-          </div>
-
+          <h4 className="mb-3 text-sm font-semibold text-foreground">Price</h4>
           {estimate ? (
-            <div className="mt-3 space-y-1.5">
-              <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
-                {estimate.bus_count}× {estimate.bench_count}-passenger bus · {estimate.customer_type.replace("_", " ")} · ${estimate.hourly_rate}/hr
-                {estimate.destination_matched && (
-                  <span className="ml-2 text-primary">· matched: {estimate.destination_matched}</span>
-                )}
-              </div>
-              <div className="grid gap-1.5 text-sm">
-                <Kv label="Trip hours" value={`${estimate.trip_hours}h`} />
-                <Kv label="Driver yard travel" value={`+${estimate.driver_pre_hours}h / +${estimate.driver_post_hours}h`} />
-                <Kv label="Billable hours" value={`${estimate.billable_hours}h (min ${estimate.min_hours}h)`} />
-                <Kv label="Base cost" value={formatMoney(estimate.base_cost)} />
-                <Kv label="Fuel surcharge" value={formatMoney(estimate.fuel_surcharge)} />
-                {estimate.overtime_charge > 0 && (
-                  <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
-                )}
-                {estimate.long_distance_charge > 0 && (
-                  <Kv label={`Long-distance (${estimate.distance_km}km)`} value={formatMoney(estimate.long_distance_charge)} />
-                )}
-                <Kv label="Subtotal" value={formatMoney(estimate.subtotal)} />
-                <Kv label={`GST (${estimate.gst_pct}%)`} value={formatMoney(estimate.gst)} />
-                <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-semibold">
-                  <span className="text-xs uppercase tracking-wide text-primary">Total</span>
-                  <span className="text-sm text-primary">{formatMoney(estimate.total)}</span>
-                </div>
+            <div className="grid gap-1.5 text-sm">
+              <Kv
+                label="Base cost"
+                value={`${estimate.bus_count} × $${estimate.hourly_rate}/hr × ${estimate.billable_hours}h = ${formatMoney(estimate.base_cost)}`}
+              />
+              <Kv label="Driver time" value={`${estimate.driver_hours_used}h`} />
+              <Kv label="Fuel fee" value={estimate.fuel_waived ? "Waived" : formatMoney(estimate.fuel_surcharge)} />
+              {estimate.overtime_charge > 0 && (
+                <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
+              )}
+              {estimate.long_distance_charge > 0 && (
+                <Kv label={`Long-distance (${estimate.distance_km}km)`} value={formatMoney(estimate.long_distance_charge)} />
+              )}
+              <Kv label={`GST (${estimate.gst_pct}%)`} value={formatMoney(estimate.gst)} />
+              <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-semibold">
+                <span className="text-xs uppercase tracking-wide text-primary">Total</span>
+                <span className="text-sm text-primary">{formatMoney(estimate.total)}</span>
               </div>
             </div>
           ) : (
-            <div className="mt-3 grid gap-2 text-sm">
+            <div className="grid gap-2 text-sm">
               <Kv label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Calculating…"} />
             </div>
           )}
+        </div>
 
-          {/* Confirmed trip banner */}
-          {confirmedTrip && (
-            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              <CheckCircle2 className="inline h-4 w-4 mr-1.5" />
-              Trip <span className="font-semibold">{confirmedTrip}</span> scheduled successfully.
-            </div>
-          )}
+        {/* Section 3: Adjust — collapsible, expanded by default. Melody's
+            overrides + the pricing-internal working numbers live here. */}
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+          <button onClick={() => setAdjustExpanded((v) => !v)} className="flex w-full items-center justify-between text-left">
+            <h4 className="text-sm font-semibold text-foreground">
+              Adjust <span className="font-normal text-muted-foreground">(overrides &amp; working numbers)</span>
+            </h4>
+            <span className="text-xs text-muted-foreground">{adjustExpanded ? "Hide ▲" : "Show ▼"}</span>
+          </button>
 
-          {/* Error banner */}
-          {actionError && (
-            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              {actionError}
-            </div>
-          )}
+          {adjustExpanded && (
+            <div className="mt-3 space-y-3">
+              <div className="grid gap-3 rounded-xl border border-dashed border-border p-3 sm:grid-cols-2">
+                <label className="text-sm">
+                  <span className="font-medium text-foreground">Accurate driver time (hrs)</span>
+                  <span className="ml-1 text-xs text-muted-foreground">— overrides the system estimate</span>
+                  <input
+                    key={quote.id}
+                    type="number" min={0} step={0.5}
+                    disabled={isCancelled}
+                    defaultValue={currentApprovedHours ?? ""}
+                    placeholder="system estimate"
+                    onBlur={(e) => handleSetApprovedHours(quote.id, e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    disabled={isCancelled}
+                    checked={currentFuelWaived}
+                    onChange={(e) => handleToggleFuelWaived(quote.id, e.target.checked)}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <span className="font-medium text-foreground">Waive $50 fuel fee</span>
+                </label>
+              </div>
 
-          {isScheduled && (
-            <p className="mt-4 text-sm text-emerald-700 font-medium">
-              <CheckCircle2 className="inline h-4 w-4 mr-1" />
-              Trip scheduled — driver and bus assigned.
-            </p>
-          )}
-
-          {/* Action buttons — context-aware by status */}
-          {!isCancelled && (
-            <div className="mt-5 flex flex-wrap gap-2">
-              {!isScheduled && canApprove && (
-                <button
-                  disabled={actionBusy === "approve"}
-                  onClick={() => handleApprove(quote.id)}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {actionBusy === "approve" ? "Pricing & approving…" : "Approve & send price"}
-                </button>
-              )}
-              {!isScheduled && canSchedule && (
-                <div className="flex flex-col gap-1">
-                  <button
-                    disabled={assignBusy}
-                    onClick={() => handleSuggest(quote.id)}
-                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                  >
-                    {assignBusy ? "Loading…" : quote.status === "confirmed" ? "Assign driver & bus →" : "Assign early →"}
-                  </button>
-                  {quote.status === "approved" && (
-                    <span className="text-[11px] text-amber-700">Waiting for the school to accept the price — they haven't confirmed yet.</span>
-                  )}
+              {estimate && (
+                <div className="grid gap-1.5 text-sm">
+                  <Kv label="Per-location reference (informational)" value={`${estimate.reference_driver_hours}h`} />
+                  <Kv label="System estimate (flat 1hr buffer)" value={`${estimate.system_driver_hours}h`} />
+                  <Kv
+                    label="Driver time used for billing"
+                    value={`${estimate.driver_hours_used}h ${estimate.approved_driver_hours != null ? "(Melody-approved)" : "(system estimate)"}`}
+                  />
                 </div>
               )}
+
               <button
-                onClick={() => { setShowReject(true); setActionError(null); }}
-                className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                disabled={estimateBusy || isCancelled}
+                onClick={() => handleEstimate(quote.id)}
+                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
               >
-                {quote.status === "confirmed" || quote.status === "scheduled" ? "Cancel booking" : "Reject quote"}
+                {estimateBusy ? "Calculating…" : "Recalculate"}
               </button>
             </div>
           )}
         </div>
+
+        {/* Confirmed trip banner */}
+        {confirmedTrip && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <CheckCircle2 className="inline h-4 w-4 mr-1.5" />
+            Trip <span className="font-semibold">{confirmedTrip}</span> scheduled successfully.
+          </div>
+        )}
+
+        {/* Error banner */}
+        {actionError && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            {actionError}
+          </div>
+        )}
+
+        {isScheduled && (
+          <p className="text-sm text-emerald-700 font-medium">
+            <CheckCircle2 className="inline h-4 w-4 mr-1" />
+            Trip scheduled — driver and bus assigned.
+          </p>
+        )}
+
+        {/* Action buttons — context-aware by status */}
+        {!isCancelled && (
+          <div className="flex flex-wrap gap-2">
+            {!isScheduled && canApprove && (
+              <button
+                disabled={actionBusy === "approve"}
+                onClick={() => handleApprove(quote.id)}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {actionBusy === "approve" ? "Pricing & approving…" : "Approve & send price"}
+              </button>
+            )}
+            {!isScheduled && canSchedule && (
+              <div className="flex flex-col gap-1">
+                <button
+                  disabled={assignBusy}
+                  onClick={() => handleSuggest(quote.id)}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {assignBusy ? "Loading…" : quote.status === "confirmed" ? "Assign driver & bus →" : "Assign early →"}
+                </button>
+                {quote.status === "approved" && (
+                  <span className="text-[11px] text-amber-700">Waiting for the school to accept the price — they haven't confirmed yet.</span>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => { setShowReject(true); setActionError(null); }}
+              className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+            >
+              {quote.status === "confirmed" || quote.status === "scheduled" ? "Cancel booking" : "Reject quote"}
+            </button>
+          </div>
+        )}
 
         {/* Assignment suggestions panel */}
         {assignment && (
@@ -809,59 +926,6 @@ function QuoteQueue() {
           </div>
         )}
 
-        {/* Full-details popup — everything Melody might need, in one place */}
-        {showDetails && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowDetails(false)}>
-            <div className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-elevated" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => setShowDetails(false)}
-                aria-label="Close"
-                className="absolute left-4 top-4 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <h3 className="mb-1 mt-2 text-center text-lg font-bold text-foreground">{quote.quote_number}</h3>
-              <p className="mb-4 text-center text-sm text-muted-foreground">
-                {quote.schools?.name ?? "—"} · {STATUS_LABEL[quote.status] ?? quote.status}
-              </p>
-
-              <DetailSection title="Trip">
-                <DetailRow label="Date" value={tripDate} />
-                <DetailRow label="Departure" value={formatTime(ver?.departure_time ?? null)} />
-                <DetailRow label="Return" value={formatTime(ver?.return_time ?? null)} />
-                <DetailRow label="Pickup" value={ver?.pickup_address || quote.schools?.name || "—"} />
-                <DetailRow label="Destination" value={ver?.destination_name || "—"} />
-                <DetailRow label="Destination address" value={ver?.destination_address || "—"} />
-              </DetailSection>
-
-              <DetailSection title="Group">
-                <DetailRow label="Students" value={ver?.student_count != null ? String(ver.student_count) : "—"} />
-                <DetailRow label="Adults / chaperones" value={ver?.adults_count != null ? String(ver.adults_count) : "—"} />
-                {ver?.grade_breakdown && ver.grade_breakdown.length > 0 && (
-                  <DetailRow label="Grades" value={ver.grade_breakdown.filter((g) => g.grade || g.count).map((g) => `${g.grade || "?"}: ${g.count || "?"}`).join(", ") || "—"} />
-                )}
-              </DetailSection>
-
-              <DetailSection title="Contacts">
-                <DetailRow label="Primary" value={fmtContact(ver?.contact_primary)} />
-                <DetailRow label="Secondary" value={fmtContact(ver?.contact_secondary)} />
-                <DetailRow label="Day-of" value={fmtContact(ver?.contact_day_of)} />
-              </DetailSection>
-
-              {(ver?.special_requests || ver?.driver_preference) && (
-                <DetailSection title="Requests">
-                  {ver?.special_requests && <DetailRow label="Special requests" value={ver.special_requests} />}
-                  {ver?.driver_preference && <DetailRow label="Preferred driver" value={ver.driver_preference} />}
-                </DetailSection>
-              )}
-
-              <DetailSection title="Money">
-                <DetailRow label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Not calculated yet"} />
-                <DetailRow label="Invoice #" value={invoiceNo} />
-              </DetailSection>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -871,24 +935,6 @@ function fmtContact(c?: { name?: string; email?: string; phone?: string } | null
   if (!c) return "—";
   const parts = [c.name, c.email, c.phone].filter(Boolean);
   return parts.length ? parts.join(" · ") : "—";
-}
-
-function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-4 first:mt-0">
-      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium text-foreground">{value}</span>
-    </div>
-  );
 }
 
 function Kv({ label, value }: { label: string; value: string }) {

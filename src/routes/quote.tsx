@@ -214,7 +214,12 @@ function QuotePage() {
   const minHours   = 4;
   // Use actual trip duration if entered, otherwise fall back to minimum
   const tripHours  = tripHoursCalc !== null ? tripHoursCalc : minHours;
-  const billHours  = Math.max(tripHours, minHours);
+  // System estimate: flat 1hr driver-time buffer (matches calculate_estimate's
+  // driver_time_buffer_hours default — Melody can set a more accurate time
+  // later, but the public preview always shows this flat-buffer figure).
+  const DRIVER_TIME_BUFFER_HOURS = 1;
+  const driverHours = tripHours + DRIVER_TIME_BUFFER_HOURS;
+  const billHours  = Math.max(driverHours, minHours);
   const baseCost   = billHours * hourlyRate * busCount;
   const fuelSurcharge = 50 * busCount;
   const LONG_DISTANCE_THRESHOLD_KM = 200;
