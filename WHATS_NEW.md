@@ -157,7 +157,31 @@ on every password field — login, signup, and reset-password.
   addresses, show selectable suggestions for accuracy and less manual entry. Seed
   it with our Excel list of known customer/school/destination addresses as saved
   favorites, layered on top of a general address-lookup service.
-- **Calendar/availability system:** customers pick a date/time and the system
-  checks it against fleet (buses + drivers) availability, showing color-coded
-  slots — green = available, grey = a trip's already submitted for that slot and
-  under review, red = unavailable (must pick a different day/bus/driver).
+- **Trip types** *(build next, right after the single-page quote redesign is
+  done)*: a trip-type selector at the very top of the quote form, with 4 options:
+  - **Two-way (round trip)** — pickup → destination → back to pickup. This is
+    what the current form already builds; no change for this type.
+  - **One-way** — pickup → drop-off destination only, no return leg. Priced
+    differently. *Note: the driver may still deadhead back empty — pricing
+    needs confirmation with Curtis/Melody.*
+  - **Shuttle** — pickup + drop-off, then the customer picks how many shuttle
+    runs plus pickup/drop-off times for each run (variable number of time
+    slots, not fixed). Pricing needs confirmation.
+  - **Multi-trip** — admin-only. Selecting it shows a popup ("Contact Melody
+    for booking multiple trips") with her email linked; no self-serve form for
+    this type.
+
+  **Approach:** design all four types together up front, build on a shared
+  form skeleton (type selector + swappable fields/time-slot inputs per type),
+  then fill in each type's pricing logic one at a time. Store shuttle/multi
+  time-slot data in a calendar-readable structure from the start, since the
+  calendar/availability system below depends on reading it.
+
+- **Calendar/availability system** *(build last, after trip types)*: customers
+  pick a date/time and the system checks it against fleet (buses + drivers)
+  availability, showing color-coded slots — green = available, grey = a trip's
+  already submitted for that slot and under review, red = unavailable (must
+  pick a different day/bus/driver). **Depends on trip types being defined
+  first** — the trip-type time-slot data structure needs to already be
+  calendar-readable (see above) for this to work, especially for shuttle/
+  multi-trip's variable time slots.
