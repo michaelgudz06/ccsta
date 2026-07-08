@@ -104,7 +104,7 @@ function QuotePage() {
     Boolean(
       d.school || d.pickup || d.destination || d.destinationAddress || d.date ||
       d.departTime || d.returnTime || d.kToFour || d.grade5Plus || d.adults ||
-      d.c1n || d.c1e || d.c1p || d.notes || d.driverPref,
+      d.c1n || d.c1e || d.c1p || d.dayN || d.dayP || d.notes || d.driverPref,
     );
 
   useEffect(() => {
@@ -241,6 +241,9 @@ function QuotePage() {
     if (!c1p.trim()) e.c1p = "Phone is required.";
     // Secondary contact is OPTIONAL — no required checks.
 
+    if (!dayN.trim()) e.dayN = "Name is required.";
+    if (!dayP.trim()) e.dayP = "Phone is required.";
+
     // Primary and secondary must be two different people.
     const norm = (str: string) => str.trim().toLowerCase();
     if (c1e.trim() && c2e.trim() && norm(c1e) === norm(c2e)) {
@@ -251,7 +254,7 @@ function QuotePage() {
 
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "c1n", "c1e", "c1p", "c2e", "c2n"];
+      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "c1n", "c1e", "c1p", "c2e", "c2n", "dayN", "dayP"];
       const firstKey = order.find((k) => e[k]);
       if (firstKey && typeof document !== "undefined") {
         document.getElementById(`field-${firstKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -567,14 +570,14 @@ function QuotePage() {
               {/* Day-of contact */}
               <div className="rounded-xl border border-border p-4 space-y-3">
                 <div>
-                  <div className="text-sm font-semibold text-foreground">Day-of contact <span className="font-normal text-muted-foreground">(optional)</span></div>
+                  <div className="text-sm font-semibold text-foreground">Day-of contact <span className="text-destructive">*</span></div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    The teacher taking the class on the trip — who the driver calls on the day. You can add this later if you don't know yet.
+                    The teacher taking the class on the trip — who the driver calls on the day.
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Name" value={dayN} onChange={(v) => { setDayN(v); setErrors((e) => ({ ...e, dayN: "" })); }} placeholder="Ms. Johnson" error={errors.dayN} />
-                  <Field label="Phone (cell preferred)" value={dayP} onChange={(v) => { setDayP(v); setErrors((e) => ({ ...e, dayP: "" })); }} placeholder="604-555-0102" error={errors.dayP} />
+                  <Field id="field-dayN" label="Name" required value={dayN} onChange={(v) => { setDayN(v); setErrors((e) => ({ ...e, dayN: "" })); }} placeholder="Ms. Johnson" error={errors.dayN} />
+                  <Field id="field-dayP" label="Phone (cell preferred)" required value={dayP} onChange={(v) => { setDayP(v); setErrors((e) => ({ ...e, dayP: "" })); }} placeholder="604-555-0102" error={errors.dayP} />
                 </div>
               </div>
 
