@@ -520,6 +520,18 @@ function QuoteQueue() {
   const currentApprovedHours = estimate?.approved_driver_hours ?? ver?.approved_driver_hours ?? null;
   const currentFuelWaived = estimate?.fuel_waived ?? ver?.fuel_waived ?? false;
 
+  // Passenger breakdown — aggregated the same way calculate_estimate classifies
+  // young (K-4) vs older riders, so it works for both the new calculator's two
+  // fixed buckets and any older quote's per-grade-row data.
+  const K4_GRADES = ["k", "1", "2", "3", "4"];
+  const gradeRows = ver?.grade_breakdown ?? [];
+  const k4Total = gradeRows
+    .filter((g) => K4_GRADES.includes((g.grade ?? "").toLowerCase().trim()))
+    .reduce((sum, g) => sum + (parseInt(g.count ?? "0", 10) || 0), 0);
+  const grade5PlusTotal = gradeRows
+    .filter((g) => g.grade && !K4_GRADES.includes(g.grade.toLowerCase().trim()))
+    .reduce((sum, g) => sum + (parseInt(g.count ?? "0", 10) || 0), 0);
+
   return (
     <div className="grid gap-6 lg:grid-cols-5">
       {/* ── Quote list sidebar ── */}
@@ -658,17 +670,12 @@ function QuoteQueue() {
           />
 
           {/* Shown only when they have real content */}
-          {ver?.grade_breakdown && ver.grade_breakdown.filter((g) => g.grade || g.count).length > 0 && (
+          {(k4Total > 0 || grade5PlusTotal > 0 || !!ver?.adults_count) && (
             <div className="mt-3">
               <Kv
-                label="Grade breakdown"
-                value={ver.grade_breakdown.filter((g) => g.grade || g.count).map((g) => `${g.grade || "?"}: ${g.count || "?"}`).join(", ")}
+                label="Passenger breakdown"
+                value={`K-4: ${k4Total} · Grade 5+: ${grade5PlusTotal} · Adults: ${ver?.adults_count ?? 0}`}
               />
-            </div>
-          )}
-          {!!ver?.adults_count && (
-            <div className="mt-3">
-              <Kv label="Adults / chaperones" value={String(ver.adults_count)} />
             </div>
           )}
           {fmtContact(ver?.contact_secondary) !== "—" && (
