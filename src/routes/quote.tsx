@@ -5,7 +5,7 @@ import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { useAuth } from "@/lib/auth";
@@ -24,8 +24,6 @@ export const Route = createFileRoute("/quote")({
 });
 
 function QuotePage() {
-  const [step, setStep] = useState(1);
-  const totalSteps = 4;
   const navigate = useNavigate();
   const { session } = useAuth();
   const [prefilled, setPrefilled] = useState(false);
@@ -62,8 +60,6 @@ function QuotePage() {
 
   // Validation
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showTimeWarning, setShowTimeWarning] = useState(false);
-  const [pendingNext, setPendingNext] = useState(false);
 
   // Submission
   const [submitting, setSubmitting] = useState(false);
@@ -99,7 +95,6 @@ function QuotePage() {
     if (d.dayN) setDayN(d.dayN as string); if (d.dayP) setDayP(d.dayP as string);
     if (d.notes) setNotes(d.notes as string);
     if (d.driverPref) setDriverPref(d.driverPref as string);
-    if (d.step) setStep(d.step as number);
   };
 
   // A draft is only worth asking about if it has some identifying content —
@@ -143,9 +138,9 @@ function QuotePage() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !draftReady) return;
-    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step };
+    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [draftReady, school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step]);
+  }, [draftReady, school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
 
   // Prefill from previous quote
   useEffect(() => {
@@ -226,60 +221,48 @@ function QuotePage() {
   const estimatedTotal = subtotal + gst;
   const busLabel   = benchCount === 18 ? "18-passenger mini-bus" : benchCount === 47 ? "47-passenger coach" : "56-passenger coach";
 
-  // Validation per step
-  const validateStep = (s: number): boolean => {
+  // Validation — the whole page at once, run on submit. Scrolls to and
+  // highlights the first error, in the same top-to-bottom order the
+  // sections render in (passenger calculator → trip details → contacts).
+  const validateAll = (): boolean => {
     const e: Record<string, string> = {};
-    if (s === 1) {
-      if (!school.trim())            e.school = "Please enter your school name.";
-      if (!destination.trim())       e.destination = "Please enter the destination name.";
-      if (!destinationAddress.trim()) e.destinationAddress = "Please enter the destination address so we can calculate the route.";
-      if (!date)                     e.date = "Please select the trip date.";
-      if (!departTime)               e.departTime = "Please enter the departure time.";
-      if (!returnTime)               e.returnTime = "Please enter the pick-up time from the destination.";
-    }
-    if (s === 2) {
-      if (totalStudents + adultsN < 1) e.passengers = "Please enter at least 1 passenger.";
-    }
-    if (s === 3) {
-      if (!c1n.trim()) e.c1n = "Name is required.";
-      if (!c1e.trim()) e.c1e = "Email is required.";
-      if (!c1p.trim()) e.c1p = "Phone is required.";
-      // Secondary contact is OPTIONAL — no required checks.
 
-      // Primary and secondary must be two different people.
-      const norm = (str: string) => str.trim().toLowerCase();
-      if (c1e.trim() && c2e.trim() && norm(c1e) === norm(c2e)) {
-        e.c2e = "Use a different email — the secondary contact must be a different person.";
-      } else if (c1n.trim() && c2n.trim() && norm(c1n) === norm(c2n)) {
-        e.c2n = "The secondary contact must be a different person from the primary.";
-      }
+    if (totalStudents + adultsN < 1) e.passengers = "Please enter at least 1 passenger.";
+
+    if (!school.trim())            e.school = "Please enter your school name.";
+    if (!destination.trim())       e.destination = "Please enter the destination name.";
+    if (!destinationAddress.trim()) e.destinationAddress = "Please enter the destination address so we can calculate the route.";
+    if (!date)                     e.date = "Please select the trip date.";
+    if (!departTime)               e.departTime = "Please enter the departure time.";
+    if (!returnTime)               e.returnTime = "Please enter the pick-up time from the destination.";
+
+    if (!c1n.trim()) e.c1n = "Name is required.";
+    if (!c1e.trim()) e.c1e = "Email is required.";
+    if (!c1p.trim()) e.c1p = "Phone is required.";
+    // Secondary contact is OPTIONAL — no required checks.
+
+    // Primary and secondary must be two different people.
+    const norm = (str: string) => str.trim().toLowerCase();
+    if (c1e.trim() && c2e.trim() && norm(c1e) === norm(c2e)) {
+      e.c2e = "Use a different email — the secondary contact must be a different person.";
+    } else if (c1n.trim() && c2n.trim() && norm(c1n) === norm(c2n)) {
+      e.c2n = "The secondary contact must be a different person from the primary.";
     }
+
     setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const next = () => {
-    if (!validateStep(step)) return;
-
-    // Time-gap warning on step 1
-    if (step === 1 && tripMinutes !== null && tripMinutes < 60) {
-      setPendingNext(true);
-      setShowTimeWarning(true);
-      return;
+    if (Object.keys(e).length > 0) {
+      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "c1n", "c1e", "c1p", "c2e", "c2n"];
+      const firstKey = order.find((k) => e[k]);
+      if (firstKey && typeof document !== "undefined") {
+        document.getElementById(`field-${firstKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return false;
     }
-
-    setStep((s) => Math.min(s + 1, totalSteps));
+    return true;
   };
-
-  const confirmTimeAndNext = () => {
-    setShowTimeWarning(false);
-    setPendingNext(false);
-    setStep((s) => Math.min(s + 1, totalSteps));
-  };
-
-  const back = () => setStep((s) => Math.max(s - 1, 1));
 
   const handleSubmit = async () => {
+    if (!validateAll()) return;
     if (!session) {
       // Their answers are already saved to the draft above. Send them to create
       // an account, then straight back here to finish — nothing is lost.
@@ -390,40 +373,11 @@ function QuotePage() {
     );
   }
 
-  // Whether to show the route map preview in step 1
+  // Whether to show the route map preview in the trip details section
   const showMapPreview = !!(pickup || school) && !!destinationAddress;
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Short-trip warning modal */}
-      {showTimeWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-2xl">
-            <div className="flex items-start justify-between">
-              <h3 className="text-lg font-semibold text-foreground">Short trip time — are you sure?</h3>
-              <button onClick={() => { setShowTimeWarning(false); setPendingNext(false); }} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Your departure time and pick-up time are less than 1 hour apart (
-              {tripMinutes} minutes). That's a very short trip — is the pick-up time correct?
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              The "pick-up time" is when we should collect the students <em>from the destination</em>, not the departure time from school.
-            </p>
-            <div className="mt-5 flex gap-3">
-              <Button className="flex-1" variant="outline" onClick={() => { setShowTimeWarning(false); setPendingNext(false); }}>
-                Go back and fix
-              </Button>
-              <Button className="flex-1" variant="accent" onClick={confirmTimeAndNext}>
-                Yes, it's correct
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {session ? <AppTopBar /> : (
         <header className="border-b border-border bg-card/80 backdrop-blur">
           <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
@@ -439,90 +393,11 @@ function QuotePage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Takes about 3 minutes. {session ? "" : "You'll need to log in to submit."}
           </p>
-          <Progress current={step} total={totalSteps} />
         </div>
 
-        <div className="rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
-          {step === 1 && (
-            <StepWrap title="Trip basics">
-              <Field
-                label="Organization name" required
-                value={school} onChange={(v) => { setSchool(v); setErrors((e) => ({ ...e, school: "" })); }}
-                placeholder="e.g. Maple Ridge Christian School"
-                error={errors.school}
-              />
-              <AddressAutocomplete
-                label="Pick-up address (leave blank to use school name)"
-                value={pickup} onChange={(v) => setPickup(v)}
-                placeholder="e.g. 123 Main St, Maple Ridge, BC"
-              />
-              <Field
-                label="Destination name" required
-                value={destination} onChange={(v) => { setDestination(v); setErrors((e) => ({ ...e, destination: "" })); }}
-                placeholder="e.g. Science World"
-                error={errors.destination}
-              />
-              <AddressAutocomplete
-                label="Destination address" required
-                value={destinationAddress}
-                onChange={(v) => { setDestinationAddress(v); setErrors((e) => ({ ...e, destinationAddress: "" })); }}
-                placeholder="e.g. 1455 Quebec St, Vancouver, BC"
-                error={errors.destinationAddress}
-              />
-
-              {/* Route map preview — appears as soon as pickup + destination are filled */}
-              {showMapPreview && (
-                <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-                  <div className="px-4 pt-3 pb-1">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Route preview</p>
-                  </div>
-                  <RouteMap
-                    pickup={pickup || school}
-                    destination={destinationAddress}
-                    departTime={departTime || undefined}
-                    onResult={(r) => setDistanceKm(r.distanceKm)}
-                    className="h-52 w-full"
-                  />
-                  <p className="px-4 py-2 text-xs text-muted-foreground">
-                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
-                  </p>
-                </div>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field
-                  label="Trip date" type="date" required
-                  value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
-                  error={errors.date}
-                />
-                <TimeField
-                  label="Departure time" required
-                  value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
-                  error={errors.departTime}
-                />
-                <TimeField
-                  label="Pick-up from destination" required
-                  value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
-                  error={errors.returnTime}
-                />
-              </div>
-              {departTime && returnTime && tripMinutes !== null && tripMinutes >= 60 && (
-                <p className="text-xs text-muted-foreground">
-                  Trip duration: <span className="font-medium text-foreground">{Math.floor(tripMinutes / 60)}h {tripMinutes % 60 > 0 ? `${tripMinutes % 60}m` : ""}</span>
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                "Pick-up from destination" is when you want us to collect the students and head back to school.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                *All trips are a minimum of 4 hours.
-              </p>
-            </StepWrap>
-          )}
-
-          {step === 2 && (
+        <div className="rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8 space-y-10">
             <StepWrap title="Passenger calculator">
-              <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+              <div id="field-passengers" className="rounded-xl border border-border bg-surface p-4 space-y-3">
                 <div className="text-sm font-medium text-foreground">
                   Kindergarten – Grade 4 <span className="font-normal text-muted-foreground">(3 per seat)</span>
                 </div>
@@ -576,9 +451,88 @@ function QuotePage() {
                 *Our cargo busses fit 1 airport carry-on baggage per person.
               </p>
             </StepWrap>
-          )}
 
-          {step === 3 && (
+            <StepWrap title="Trip basics">
+              <Field
+                id="field-school"
+                label="Organization name" required
+                value={school} onChange={(v) => { setSchool(v); setErrors((e) => ({ ...e, school: "" })); }}
+                placeholder="e.g. Maple Ridge Christian School"
+                error={errors.school}
+              />
+              <AddressAutocomplete
+                label="Pick-up address (leave blank to use school name)"
+                value={pickup} onChange={(v) => setPickup(v)}
+                placeholder="e.g. 123 Main St, Maple Ridge, BC"
+              />
+              <Field
+                id="field-destination"
+                label="Destination name" required
+                value={destination} onChange={(v) => { setDestination(v); setErrors((e) => ({ ...e, destination: "" })); }}
+                placeholder="e.g. Science World"
+                error={errors.destination}
+              />
+              <AddressAutocomplete
+                id="field-destinationAddress"
+                label="Destination address" required
+                value={destinationAddress}
+                onChange={(v) => { setDestinationAddress(v); setErrors((e) => ({ ...e, destinationAddress: "" })); }}
+                placeholder="e.g. 1455 Quebec St, Vancouver, BC"
+                error={errors.destinationAddress}
+              />
+
+              {/* Route map preview — appears as soon as pickup + destination are filled */}
+              {showMapPreview && (
+                <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+                  <div className="px-4 pt-3 pb-1">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Route preview</p>
+                  </div>
+                  <RouteMap
+                    pickup={pickup || school}
+                    destination={destinationAddress}
+                    departTime={departTime || undefined}
+                    onResult={(r) => setDistanceKm(r.distanceKm)}
+                    className="h-52 w-full"
+                  />
+                  <p className="px-4 py-2 text-xs text-muted-foreground">
+                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
+                  </p>
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field
+                  id="field-date"
+                  label="Trip date" type="date" required
+                  value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
+                  error={errors.date}
+                />
+                <TimeField
+                  id="field-departTime"
+                  label="Departure time" required
+                  value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
+                  error={errors.departTime}
+                />
+                <TimeField
+                  id="field-returnTime"
+                  label="Pick-up from destination" required
+                  value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
+                  error={errors.returnTime}
+                />
+              </div>
+              {departTime && returnTime && tripMinutes !== null && tripMinutes >= 60 && (
+                <p className="text-xs text-muted-foreground">
+                  Trip duration: <span className="font-medium text-foreground">{Math.floor(tripMinutes / 60)}h {tripMinutes % 60 > 0 ? `${tripMinutes % 60}m` : ""}</span>
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                "Pick-up from destination" is when you want us to collect the students and head back to school.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                *All trips are a minimum of 4 hours.
+              </p>
+            </StepWrap>
+
             <StepWrap title="Contacts">
               {/* Primary contact */}
               <div className="rounded-xl border border-border p-4 space-y-3">
@@ -589,9 +543,9 @@ function QuotePage() {
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="Name" required value={c1n} onChange={(v) => { setC1n(v); setErrors((e) => ({ ...e, c1n: "" })); }} placeholder="Jane Smith" error={errors.c1n} />
-                  <Field label="Email" type="email" required value={c1e} onChange={(v) => { setC1e(v); setErrors((e) => ({ ...e, c1e: "" })); }} placeholder="jane@school.ca" error={errors.c1e} />
-                  <Field label="Phone" required value={c1p} onChange={(v) => { setC1p(v); setErrors((e) => ({ ...e, c1p: "" })); }} placeholder="604-555-0100" error={errors.c1p} />
+                  <Field id="field-c1n" label="Name" required value={c1n} onChange={(v) => { setC1n(v); setErrors((e) => ({ ...e, c1n: "" })); }} placeholder="Jane Smith" error={errors.c1n} />
+                  <Field id="field-c1e" label="Email" type="email" required value={c1e} onChange={(v) => { setC1e(v); setErrors((e) => ({ ...e, c1e: "" })); }} placeholder="jane@school.ca" error={errors.c1e} />
+                  <Field id="field-c1p" label="Phone" required value={c1p} onChange={(v) => { setC1p(v); setErrors((e) => ({ ...e, c1p: "" })); }} placeholder="604-555-0100" error={errors.c1p} />
                 </div>
               </div>
 
@@ -604,8 +558,8 @@ function QuotePage() {
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="Name" value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
-                  <Field label="Email" type="email" value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
+                  <Field id="field-c2n" label="Name" value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
+                  <Field id="field-c2e" label="Email" type="email" value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
                   <Field label="Phone" value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
                 </div>
               </div>
@@ -624,7 +578,7 @@ function QuotePage() {
                 </div>
               </div>
 
-              {/* Notes + preferred driver (merged in — no separate step) */}
+              {/* Notes + preferred driver */}
               <div>
                 <label className="text-sm">
                   <span className="font-medium text-foreground">Special requests</span>
@@ -654,9 +608,7 @@ function QuotePage() {
                 </p>
               </div>
             </StepWrap>
-          )}
 
-          {step === 4 && (
             <StepWrap title="Your estimate">
               <div>
                 <div className="mb-2 text-sm font-medium text-foreground">Your route</div>
@@ -734,58 +686,8 @@ function QuotePage() {
                 )}
               </div>
             </StepWrap>
-          )}
-
-          <div className="mt-8 flex items-center justify-between">
-            <Button variant="ghost" size="sm" onClick={back} disabled={step === 1}>
-              ← Back
-            </Button>
-            {step < totalSteps ? (
-              <Button variant="hero" size="lg" onClick={next}>
-                Continue →
-              </Button>
-            ) : (
-              <span className="text-xs text-muted-foreground">Step {step} of {totalSteps}</span>
-            )}
-          </div>
         </div>
       </main>
-    </div>
-  );
-}
-
-function Progress({ current, total }: { current: number; total: number }) {
-  return (
-    <div className="mt-5">
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>Step {current} of {total}</span>
-        <span>{Math.round((current / total) * 100)}%</span>
-      </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary">
-        <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(current / total) * 100}%` }} />
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs">
-        {["Trip", "Group", "Contacts", "Estimate"].map((label, i) => {
-          const n = i + 1;
-          const done = n < current;
-          const active = n === current;
-          return (
-            <span
-              key={label}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 ${
-                active
-                  ? "border-primary bg-primary/5 text-primary"
-                  : done
-                    ? "border-accent/40 bg-accent/20 text-primary"
-                    : "border-border bg-card text-muted-foreground"
-              }`}
-            >
-              {done ? <Check className="h-3 w-3" /> : <span className="text-[10px] font-bold">{n}</span>}
-              {label}
-            </span>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -808,9 +710,9 @@ function to24Hour(hour: string, period: "AM" | "PM") {
 }
 
 function TimeField({
-  label, value, onChange, error, required,
+  label, value, onChange, error, required, id,
 }: {
-  label: string; value: string; onChange: (v: string) => void; error?: string; required?: boolean;
+  label: string; value: string; onChange: (v: string) => void; error?: string; required?: boolean; id?: string;
 }) {
   const { hour, minute, period } = to12Hour(value);
   const minutes = ["00", "15", "30", "45"];
@@ -820,7 +722,7 @@ function TimeField({
     ? "border-destructive ring-1 ring-destructive/30"
     : "border-input";
   return (
-    <label className="block text-sm">
+    <label id={id} className="block text-sm">
       <span className="font-medium text-foreground">
         {label}
         {required && <span className="ml-0.5 text-destructive">*</span>}
@@ -870,9 +772,9 @@ function StepWrap({ title, children }: { title: string; children: React.ReactNod
 }
 
 function Field({
-  label, value, onChange, type = "text", placeholder, error, required, step,
+  label, value, onChange, type = "text", placeholder, error, required, step, id,
 }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean; step?: number;
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean; step?: number; id?: string;
 }) {
   const handleChange = (raw: string) => {
     if (type === "number") {
@@ -884,7 +786,7 @@ function Field({
     onChange(raw);
   };
   return (
-    <label className="block text-sm">
+    <label id={id} className="block text-sm">
       <span className="font-medium text-foreground">
         {label}
         {required && <span className="ml-0.5 text-destructive">*</span>}
