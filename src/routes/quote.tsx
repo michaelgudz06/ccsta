@@ -5,7 +5,7 @@ import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
-import { Check, Plus, Trash2, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { useAuth } from "@/lib/auth";
@@ -22,8 +22,6 @@ export const Route = createFileRoute("/quote")({
   }),
   component: QuotePage,
 });
-
-type GradeRow = { id: string; grade: string; count: string };
 
 function QuotePage() {
   const [step, setStep] = useState(1);
@@ -42,10 +40,9 @@ function QuotePage() {
   const [returnTime, setReturnTime] = useState("");
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
 
-  // Step 2
-  const [students, setStudents] = useState("");
-  const [grades, setGrades] = useState<GradeRow[]>([{ id: "g1", grade: "", count: "" }]);
-  const [showGrades, setShowGrades] = useState(false);
+  // Step 2 — passenger calculator (K-4 seat 3-per-bench, Grade 5+ & adults seat 2-per-bench)
+  const [kToFour, setKToFour] = useState("");
+  const [grade5Plus, setGrade5Plus] = useState("");
   const [adults, setAdults] = useState("");
   const [cargo, setCargo] = useState(false);
 
@@ -93,8 +90,8 @@ function QuotePage() {
     if (d.date) setDate(d.date as string);
     if (d.departTime) setDepartTime(d.departTime as string);
     if (d.returnTime) setReturnTime(d.returnTime as string);
-    if (d.students) setStudents(d.students as string);
-    if (Array.isArray(d.grades) && d.grades.length) setGrades(d.grades as GradeRow[]);
+    if (d.kToFour) setKToFour(d.kToFour as string);
+    if (d.grade5Plus) setGrade5Plus(d.grade5Plus as string);
     if (d.adults) setAdults(d.adults as string);
     if (typeof d.cargo === "boolean") setCargo(d.cargo);
     if (d.c1n) setC1n(d.c1n as string); if (d.c1e) setC1e(d.c1e as string); if (d.c1p) setC1p(d.c1p as string);
@@ -111,9 +108,8 @@ function QuotePage() {
   const draftHasContent = (d: Record<string, unknown>) =>
     Boolean(
       d.school || d.pickup || d.destination || d.destinationAddress || d.date ||
-      d.departTime || d.returnTime || d.students || d.adults ||
-      d.c1n || d.c1e || d.c1p || d.notes || d.driverPref ||
-      (Array.isArray(d.grades) && d.grades.some((g: GradeRow) => g.grade || g.count)),
+      d.departTime || d.returnTime || d.kToFour || d.grade5Plus || d.adults ||
+      d.c1n || d.c1e || d.c1p || d.notes || d.driverPref,
     );
 
   useEffect(() => {
@@ -147,9 +143,9 @@ function QuotePage() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !draftReady) return;
-    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step };
+    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [draftReady, school, pickup, destination, destinationAddress, date, departTime, returnTime, students, grades, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step]);
+  }, [draftReady, school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref, step]);
 
   // Prefill from previous quote
   useEffect(() => {
@@ -198,13 +194,11 @@ function QuotePage() {
   // Client-side preview estimate using real 2026-2027 non-member rates.
   // Seat-based capacity: each bus has bench seats (18->9, 47->23.67, 56->28);
   // older riders (Gr 5+ & adults) take 2 per seat, younger (K-4) take 3 per seat.
-  const totalStudents = parseInt(students) || 0;
+  const youngN = parseInt(kToFour) || 0;
+  const olderStudentsN = parseInt(grade5Plus) || 0;
   const adultsN = parseInt(adults) || 0;
-  const youngN = Math.min(
-    grades.reduce((sum, g) => sum + (["K", "1", "2", "3", "4"].includes(g.grade) ? (parseInt(g.count) || 0) : 0), 0),
-    totalStudents,
-  );
-  const olderN = Math.max(totalStudents - youngN, 0) + adultsN;
+  const totalStudents = youngN + olderStudentsN;
+  const olderN = olderStudentsN + adultsN;
   const seatsNeeded = youngN / 3 + olderN / 2;
   const BUS_SEATS: Record<number, number> = { 18: 9, 47: 23.67, 56: 28 };
   const headcount = totalStudents + adultsN;
@@ -244,7 +238,7 @@ function QuotePage() {
       if (!returnTime)               e.returnTime = "Please enter the pick-up time from the destination.";
     }
     if (s === 2) {
-      if (!students || parseInt(students) < 1) e.students = "Please enter the number of students (at least 1).";
+      if (totalStudents + adultsN < 1) e.passengers = "Please enter at least 1 passenger.";
     }
     if (s === 3) {
       if (!c1n.trim()) e.c1n = "Name is required.";
@@ -303,9 +297,9 @@ function QuotePage() {
         trip_date:           date,
         departure_time:      departTime,
         return_time:         returnTime,
-        student_count:       students,
+        student_count:       String(totalStudents),
         adults_count:        adults,
-        grade_breakdown:     grades.filter((g) => g.grade || g.count),
+        grade_breakdown:     [{ grade: "K", count: kToFour }, { grade: "5", count: grade5Plus }],
         cargo_needed:        cargo,
         contact_primary:     { name: c1n, email: c1e, phone: c1p },
         contact_secondary:   { name: c2n, email: c2e, phone: c2p },
@@ -527,89 +521,50 @@ function QuotePage() {
           )}
 
           {step === 2 && (
-            <StepWrap title="Group details">
-              <Field
-                label="Total number of attendees" type="number" required
-                value={students} onChange={(v) => { setStudents(v); setErrors((e) => ({ ...e, students: "" })); }}
-                placeholder="e.g. 48"
-                error={errors.students}
-              />
-              {!showGrades && (
-                <button
-                  type="button"
-                  onClick={() => setShowGrades(true)}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-                >
-                  <Plus className="h-4 w-4" /> Add grade breakdown (helps us size the bus)
-                </button>
-              )}
-              {showGrades && (
-              <div>
-                <div className="text-sm font-medium text-foreground">Grades <span className="font-normal text-muted-foreground">(optional)</span></div>
-                <p className="text-xs text-muted-foreground">
-                  K–4 seat 3 per bench, grades 5+ seat 2 — helps us pick the right bus size.
-                </p>
-                <div className="mt-3 space-y-2">
-                  {grades.map((g, i) => (
-                    <div key={g.id} className="flex gap-2">
-                      <select
-                        value={g.grade}
-                        onChange={(e) =>
-                          setGrades((rows) => rows.map((r, idx) => (idx === i ? { ...r, grade: e.target.value } : r)))
-                        }
-                        className="w-1/2 rounded-xl border border-input bg-background px-3 py-2 text-sm"
-                      >
-                        <option value="">Select grade…</option>
-                        <option value="K">Kindergarten (K)</option>
-                        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                          <option key={n} value={String(n)}>Grade {n} — Elementary</option>
-                        ))}
-                        {[8, 9, 10, 11, 12].map((n) => (
-                          <option key={n} value={String(n)}>Grade {n} — Secondary</option>
-                        ))}
-                      </select>
-                      <input
-                        placeholder="# students"
-                        type="number"
-                        min={0}
-                        step={1}
-                        inputMode="numeric"
-                        value={g.count}
-                        onKeyDown={(e) => { if (e.key === "-" || e.key === "e") e.preventDefault(); }}
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          const val = raw === "" ? "" : String(Math.max(0, Math.floor(Number(raw)) || 0));
-                          setGrades((rows) => rows.map((r, idx) => (idx === i ? { ...r, count: val } : r)));
-                        }}
-                        className="w-1/2 rounded-xl border border-input bg-background px-3 py-2 text-sm"
-                      />
-                      {grades.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setGrades((rows) => rows.filter((_, idx) => idx !== i))}
-                          className="rounded-xl border border-border bg-card px-3 text-muted-foreground hover:text-destructive"
-                          aria-label="Remove"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setGrades((rows) => [...rows, { id: `g${Date.now()}`, grade: "", count: "" }])}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add grade group
-                  </button>
+            <StepWrap title="Passenger calculator">
+              <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+                <div className="text-sm font-medium text-foreground">
+                  Kindergarten – Grade 4 <span className="font-normal text-muted-foreground">(3 per seat)</span>
+                </div>
+                <Field
+                  label="K-4 count" type="number"
+                  value={kToFour}
+                  onChange={(v) => { setKToFour(v); setErrors((e) => ({ ...e, passengers: "" })); }}
+                  placeholder="0"
+                />
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+                <div className="text-sm font-medium text-foreground">
+                  Grade 5+ &amp; Adults <span className="font-normal text-muted-foreground">(2 per seat)</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Grade 5+ students" type="number"
+                    value={grade5Plus}
+                    onChange={(v) => { setGrade5Plus(v); setErrors((e) => ({ ...e, passengers: "" })); }}
+                    placeholder="0"
+                  />
+                  <Field
+                    label="Adults / chaperones" type="number"
+                    value={adults}
+                    onChange={(v) => { setAdults(v); setErrors((e) => ({ ...e, passengers: "" })); }}
+                    placeholder="0"
+                  />
                 </div>
               </div>
+
+              {errors.passengers && (
+                <p className="text-sm text-destructive">{errors.passengers}</p>
               )}
-              <Field
-                label="Adults / chaperones" type="number"
-                value={adults} onChange={setAdults}
-                placeholder="Counted in total capacity"
-              />
+
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
+                <span className="font-medium text-foreground">You'll need: </span>
+                {headcount > 0
+                  ? `${busLabel}${busCount > 1 ? ` × ${busCount}` : ""}`
+                  : "Enter passenger counts above to see the bus size"}
+              </div>
+
               <label className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3">
                 <input type="checkbox" checked={cargo} onChange={(e) => setCargo(e.target.checked)} className="h-4 w-4" />
                 <span className="text-sm">
@@ -722,7 +677,7 @@ function QuotePage() {
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">Destination</div>
                     <div className="text-lg font-semibold text-foreground">{destination || "Your destination"}</div>
                     <div className="text-sm text-muted-foreground">
-                      {date || "—"} · {departTime || "—"} → {returnTime || "—"} · {students || "—"} students
+                      {date || "—"} · {departTime || "—"} → {returnTime || "—"} · {totalStudents || "—"} students
                     </div>
                   </div>
                   <span className="rounded-full bg-accent/30 px-3 py-1 text-xs font-semibold text-primary">
