@@ -185,3 +185,21 @@ on every password field — login, signup, and reset-password.
   first** — the trip-type time-slot data structure needs to already be
   calendar-readable (see above) for this to work, especially for shuttle/
   multi-trip's variable time slots.
+
+- **Customer quote editing** *(its own project — plan separately when picked
+  up)*: let customers edit a quote they already submitted, instead of having
+  to cancel and resubmit.
+  - **Timing rule:** edits allowed anytime, **except** within 1 week of the
+    trip date. Exception to the exception: inside that 1-week window, edits
+    ARE still allowed if the customer is only pushing the trip to a **later**
+    date — moving it out is fine, last-minute changes to an imminent trip are
+    not.
+  - **On any edit:** flag the quote as edited and notify admin/Melody, **and**
+    revoke its current approval — an edit to an already-approved or scheduled
+    quote sends it back to Melody for re-review before it can proceed.
+  - **Open question to resolve when building:** if the quote was already
+    scheduled with a bus/driver assigned, an edit likely needs to unassign
+    them — figure out the right handling for that case.
+  - **Scope:** touches the customer portal (edit UI), quote status logic, the
+    date-rule validation, notifications, and Melody's re-review flow. Big
+    enough to plan as its own project rather than a quick add-on.
