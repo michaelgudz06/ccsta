@@ -234,6 +234,7 @@ type AdminVersionDetail = {
   departure_time: string | null;
   return_time: string | null;
   adults_count: number | null;
+  cargo_needed: boolean | null;
   special_requests: string | null;
   driver_preference: string | null;
   distance_km: number | null;
@@ -345,7 +346,7 @@ function QuoteQueue() {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
+            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, cargo_needed, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
             .in("id", versionIds);
           versionMap = Object.fromEntries(
             (versions ?? []).map((v: any) => [v.id, v])
@@ -678,6 +679,9 @@ function QuoteQueue() {
               />
             </div>
           )}
+          <div className="mt-3">
+            <Kv label="Cargo needed" value={ver?.cargo_needed ? "Yes" : "No"} />
+          </div>
           {fmtContact(ver?.contact_secondary) !== "—" && (
             <div className="mt-3">
               <Kv label="Secondary contact" value={fmtContact(ver?.contact_secondary)} />
