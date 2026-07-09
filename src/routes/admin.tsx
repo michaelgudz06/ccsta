@@ -23,6 +23,12 @@ type Tab = "dashboard" | "quotes" | "schedule" | "assets" | "availability" | "do
 function AdminPage() {
   const { role, loading } = useAuth();
   const [tab, setTab] = useState<Tab>("dashboard");
+  // Set when a "Recent quote activity" row is clicked, so QuoteQueue opens
+  // straight to that quote instead of defaulting to the newest one. Cleared
+  // (set to null) on every other jump (e.g. the stat cards), so a later plain
+  // click on the Quotes tab doesn't re-select a stale quote.
+  const [pendingQuoteId, setPendingQuoteId] = useState<string | null>(null);
+  const jump = (t: Tab, quoteId?: string) => { setTab(t); setPendingQuoteId(quoteId ?? null); };
   if (loading) return null;
   if (role !== "admin") return <Navigate to="/login" />;
 
@@ -43,8 +49,8 @@ function AdminPage() {
         <Tabs tab={tab} setTab={setTab} />
 
         <div className="mt-6">
-          {tab === "dashboard" && <Dashboard onJump={setTab} />}
-          {tab === "quotes" && <QuoteQueue />}
+          {tab === "dashboard" && <Dashboard onJump={jump} />}
+          {tab === "quotes" && <QuoteQueue initialQuoteId={pendingQuoteId} />}
           {tab === "schedule" && <Schedule />}
           {tab === "assets" && <Assets />}
           {tab === "availability" && <Availability />}
@@ -106,9 +112,9 @@ function StatCard({ icon: Icon, label, value, onClick }: { icon: React.ElementTy
   );
 }
 
-type RecentQuote = { quote_number: string; status: string; created_at: string; school: string };
+type RecentQuote = { id: string; quote_number: string; status: string; created_at: string; school: string };
 
-function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
+function Dashboard({ onJump }: { onJump: (t: Tab, quoteId?: string) => void }) {
   const [counts, setCounts] = useState({ requested: 0, in_review: 0, scheduled: 0, inactiveAssets: 0 });
   const [recent, setRecent] = useState<RecentQuote[]>([]);
 
@@ -120,7 +126,7 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
         supabase.from("trips").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
         supabase.from("buses").select("id", { count: "exact", head: true }).eq("active", false),
         supabase.from("drivers").select("id", { count: "exact", head: true }).eq("active", false),
-        supabase.from("quotes").select("quote_number, status, created_at, schools(name)").order("created_at", { ascending: false }).limit(6),
+        supabase.from("quotes").select("id, quote_number, status, created_at, schools(name)").order("created_at", { ascending: false }).limit(6),
       ]);
       setCounts({
         requested: reqRes.count ?? 0,
@@ -129,8 +135,8 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
         inactiveAssets: (busRes.count ?? 0) + (drvRes.count ?? 0),
       });
       setRecent(
-        ((recentRes.data ?? []) as Array<{ quote_number: string; status: string; created_at: string; schools: { name: string } | null }>)
-          .map((r) => ({ quote_number: r.quote_number, status: r.status, created_at: r.created_at, school: r.schools?.name ?? "Unknown school" })),
+        ((recentRes.data ?? []) as Array<{ id: string; quote_number: string; status: string; created_at: string; schools: { name: string } | null }>)
+          .map((r) => ({ id: r.id, quote_number: r.quote_number, status: r.status, created_at: r.created_at, school: r.schools?.name ?? "Unknown school" })),
       );
     })();
   }, []);
@@ -154,14 +160,19 @@ function Dashboard({ onJump }: { onJump: (t: Tab) => void }) {
               </li>
             ) : (
               recent.map((r) => (
-                <li key={r.quote_number} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface p-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-foreground">{r.school}</div>
-                    <div className="text-xs text-muted-foreground">{r.quote_number} · {formatTripDate(r.created_at.slice(0, 10))}</div>
-                  </div>
-                  <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle[r.status] ?? "bg-slate-100 text-slate-700"}`}>
-                    {STATUS_LABEL[r.status] ?? r.status}
-                  </span>
+                <li key={r.id}>
+                  <button
+                    onClick={() => onJump("quotes", r.id)}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-surface p-3 text-left transition-colors hover:bg-primary/5"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-foreground">{r.school}</div>
+                      <div className="text-xs text-muted-foreground">{r.quote_number} · {formatTripDate(r.created_at.slice(0, 10))}</div>
+                    </div>
+                    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle[r.status] ?? "bg-slate-100 text-slate-700"}`}>
+                      {STATUS_LABEL[r.status] ?? r.status}
+                    </span>
+                  </button>
                 </li>
               ))
             )}
@@ -303,7 +314,7 @@ type EstimateBreakdown = {
   destination_matched: string | null;
 };
 
-function QuoteQueue() {
+function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const [quotes, setQuotes] = useState<AdminQuoteRow[]>([]);
   const [qLoading, setQLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -357,10 +368,14 @@ function QuoteQueue() {
           quote_versions: r.current_version_id ? (versionMap[r.current_version_id] ?? null) : null,
         }));
         setQuotes(merged);
-        if (merged.length > 0) setSelected(merged[0].id);
+        const preselect = initialQuoteId && merged.some((q) => q.id === initialQuoteId) ? initialQuoteId : merged[0]?.id;
+        if (preselect) setSelected(preselect);
         setInvoiceNos(Object.fromEntries(merged.map((q) => [q.id, q.quote_number.replace(/^Q-/, "INV-")])));
         setQLoading(false);
       });
+    // Only consult initialQuoteId once, at mount — QuoteQueue fully remounts
+    // on every tab switch, so this can't go stale during its lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Clear panels when switching quotes, and auto-calculate the price so Melody
