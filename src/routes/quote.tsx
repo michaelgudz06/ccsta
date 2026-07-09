@@ -323,7 +323,7 @@ function QuotePage() {
           </header>
         )}
         <main className="mx-auto max-w-xl px-4 py-20 sm:px-6">
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <div className="rounded-3xl border border-border bg-card p-7 shadow-soft">
             <h1 className="text-xl font-semibold text-foreground">Resume your quote?</h1>
             <p className="mt-3 text-sm text-muted-foreground">
               We found a quote you started earlier but didn't finish.
@@ -354,22 +354,24 @@ function QuotePage() {
             </div>
           </header>
         )}
-        <main className="mx-auto max-w-xl px-4 py-20 text-center sm:px-6">
-          <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-primary/10">
-            <Check className="h-8 w-8 text-primary" />
-          </div>
-          <h1 className="mt-6 text-3xl font-bold tracking-tight text-foreground">Request received!</h1>
-          <p className="mt-3 text-muted-foreground">
-            Your quote number is <span className="font-semibold text-foreground">{submittedQuoteNo}</span>.
-            Melody or Alan will review it and send you a confirmed price — usually within one business day.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <Button variant="hero" size="lg" onClick={() => navigate({ to: "/portal" })}>
-              View my quotes →
-            </Button>
-            <Button asChild variant="outline" size="lg">
-              <Link to="/">Back to site</Link>
-            </Button>
+        <main className="mx-auto max-w-xl px-4 py-20 sm:px-6">
+          <div className="rounded-3xl border border-border bg-card p-7 text-center shadow-soft sm:p-10">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+              <Check className="h-7 w-7 text-primary" />
+            </div>
+            <h1 className="mt-5 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Request received!</h1>
+            <p className="mt-3 text-muted-foreground">
+              Your quote number is <span className="font-semibold text-foreground">{submittedQuoteNo}</span>.
+              Melody or Alan will review it and send you a confirmed price — usually within one business day.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <Button variant="hero" size="lg" onClick={() => navigate({ to: "/portal" })}>
+                View my quotes →
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link to="/">Back to site</Link>
+              </Button>
+            </div>
           </div>
         </main>
       </div>
@@ -398,91 +400,113 @@ function QuotePage() {
           </p>
         </div>
 
-        <div className="rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8 space-y-10">
-            <StepWrap title="Passenger calculator">
-              <div id="field-passengers" className="rounded-xl border border-border bg-surface p-4 space-y-3">
-                <div className="text-sm font-medium text-foreground">
-                  Kindergarten – Grade 4 <span className="font-normal text-muted-foreground">(3 per seat)</span>
+        <div className="space-y-5">
+            <SectionCard number={1} title="Contact info">
+              <div>
+                <div className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Primary contact</div>
+                <p className="mb-3.5 text-xs text-muted-foreground">
+                  The person booking this trip — usually the school secretary or administrator. We'll send the confirmed quote to this person.
+                </p>
+                <div className="space-y-3.5">
+                  <Field id="field-c1n" label="Name" required value={c1n} onChange={(v) => { setC1n(v); setErrors((e) => ({ ...e, c1n: "" })); }} placeholder="Jane Smith" error={errors.c1n} />
+                  <div className="grid gap-3.5 sm:grid-cols-2">
+                    <Field id="field-c1e" label="Email" type="email" required value={c1e} onChange={(v) => { setC1e(v); setErrors((e) => ({ ...e, c1e: "" })); }} placeholder="jane@school.ca" error={errors.c1e} />
+                    <Field id="field-c1p" label="Phone" required value={c1p} onChange={(v) => { setC1p(v); setErrors((e) => ({ ...e, c1p: "" })); }} placeholder="604-555-0100" error={errors.c1p} />
+                  </div>
                 </div>
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Day-of contact</div>
+                <p className="mb-3.5 text-xs text-muted-foreground">Who the driver calls on trip day.</p>
+                <div className="grid gap-3.5 sm:grid-cols-2">
+                  <Field id="field-dayN" label="Name" required value={dayN} onChange={(v) => { setDayN(v); setErrors((e) => ({ ...e, dayN: "" })); }} placeholder="Ms. Johnson" error={errors.dayN} />
+                  <Field id="field-dayP" label="Phone (cell preferred)" required value={dayP} onChange={(v) => { setDayP(v); setErrors((e) => ({ ...e, dayP: "" })); }} placeholder="604-555-0102" error={errors.dayP} />
+                </div>
+              </div>
+
+              <Disclosure
+                label="Add secondary contact"
+                openLabel="Hide secondary contact"
+                defaultOpen={!!(c2n || c2e || c2p)}
+              >
+                <p className="text-xs text-muted-foreground">
+                  An optional backup contact — for example a vice-principal or another administrator.
+                </p>
+                <div className="grid gap-3.5 sm:grid-cols-3">
+                  <Field id="field-c2n" label="Name" value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
+                  <Field id="field-c2e" label="Email" type="email" value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
+                  <Field label="Phone" value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
+                </div>
+              </Disclosure>
+            </SectionCard>
+
+            <SectionCard number={2} title="Trip details" hint="We'll size the bus and estimate your route.">
+              <div className="rounded-2xl border border-border p-4 space-y-3.5">
+                <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">School &amp; pickup</div>
                 <Field
-                  label="K-4 count" type="number"
-                  value={kToFour}
-                  onChange={(v) => { setKToFour(v); setErrors((e) => ({ ...e, passengers: "" })); }}
-                  placeholder="0"
+                  id="field-school"
+                  label="Organization name" required
+                  value={school} onChange={(v) => { setSchool(v); setErrors((e) => ({ ...e, school: "" })); }}
+                  placeholder="e.g. Maple Ridge Christian School"
+                  error={errors.school}
+                />
+                <AddressAutocomplete
+                  label="Pick-up address (leave blank to use school name)"
+                  value={pickup} onChange={(v) => setPickup(v)}
+                  placeholder="e.g. 123 Main St, Maple Ridge, BC"
                 />
               </div>
 
-              <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
-                <div className="text-sm font-medium text-foreground">
-                  Grade 5+ &amp; Adults <span className="font-normal text-muted-foreground">(2 per seat)</span>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field
-                    label="Grade 5+ students" type="number"
-                    value={grade5Plus}
-                    onChange={(v) => { setGrade5Plus(v); setErrors((e) => ({ ...e, passengers: "" })); }}
-                    placeholder="0"
-                  />
-                  <Field
-                    label="Adults / chaperones" type="number"
-                    value={adults}
-                    onChange={(v) => { setAdults(v); setErrors((e) => ({ ...e, passengers: "" })); }}
-                    placeholder="0"
-                  />
-                </div>
+              <div className="rounded-2xl border border-border p-4 space-y-3.5">
+                <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Destination</div>
+                <Field
+                  id="field-destination"
+                  label="Destination name" required
+                  value={destination} onChange={(v) => { setDestination(v); setErrors((e) => ({ ...e, destination: "" })); }}
+                  placeholder="e.g. Science World"
+                  error={errors.destination}
+                />
+                <AddressAutocomplete
+                  id="field-destinationAddress"
+                  label="Destination address" required
+                  value={destinationAddress}
+                  onChange={(v) => { setDestinationAddress(v); setErrors((e) => ({ ...e, destinationAddress: "" })); }}
+                  placeholder="e.g. 1455 Quebec St, Vancouver, BC"
+                  error={errors.destinationAddress}
+                />
               </div>
 
-              {errors.passengers && (
-                <p className="text-sm text-destructive">{errors.passengers}</p>
+              <Field
+                id="field-date"
+                label="Trip date" type="date" required
+                value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
+                error={errors.date}
+              />
+
+              <div className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 sm:p-5">
+                <TimeField
+                  id="field-departTime"
+                  label="Departure time" required
+                  value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
+                  error={errors.departTime}
+                />
+                <TimeField
+                  id="field-returnTime"
+                  label="Pick-up from destination" required
+                  value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
+                  error={errors.returnTime}
+                />
+              </div>
+
+              {departTime && returnTime && tripMinutes !== null && (
+                <div className="flex items-center justify-between rounded-xl bg-primary/5 px-4 py-3">
+                  <span className="text-xs font-semibold text-foreground/80">Trip length</span>
+                  <span className="text-sm font-bold text-primary tabular-nums">
+                    {Math.floor(tripMinutes / 60)}h{tripMinutes % 60 > 0 ? ` ${tripMinutes % 60}m` : ""}
+                  </span>
+                </div>
               )}
-
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
-                <span className="font-medium text-foreground">You'll need: </span>
-                {headcount > 0
-                  ? `${busLabel}${busCount > 1 ? ` × ${busCount}` : ""}`
-                  : "Enter passenger counts above to see the bus size"}
-              </div>
-
-              <label className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3">
-                <input type="checkbox" checked={cargo} onChange={(e) => setCargo(e.target.checked)} className="h-4 w-4" />
-                <span className="text-sm">
-                  <span className="font-medium text-foreground">Cargo needed?</span>{" "}
-                  <span className="text-muted-foreground">Equipment, instruments, sports gear, etc.</span>
-                </span>
-              </label>
-              <p className="text-xs text-muted-foreground">
-                *Our cargo busses fit 1 airport carry-on baggage per person.
-              </p>
-            </StepWrap>
-
-            <StepWrap title="Trip basics">
-              <Field
-                id="field-school"
-                label="Organization name" required
-                value={school} onChange={(v) => { setSchool(v); setErrors((e) => ({ ...e, school: "" })); }}
-                placeholder="e.g. Maple Ridge Christian School"
-                error={errors.school}
-              />
-              <AddressAutocomplete
-                label="Pick-up address (leave blank to use school name)"
-                value={pickup} onChange={(v) => setPickup(v)}
-                placeholder="e.g. 123 Main St, Maple Ridge, BC"
-              />
-              <Field
-                id="field-destination"
-                label="Destination name" required
-                value={destination} onChange={(v) => { setDestination(v); setErrors((e) => ({ ...e, destination: "" })); }}
-                placeholder="e.g. Science World"
-                error={errors.destination}
-              />
-              <AddressAutocomplete
-                id="field-destinationAddress"
-                label="Destination address" required
-                value={destinationAddress}
-                onChange={(v) => { setDestinationAddress(v); setErrors((e) => ({ ...e, destinationAddress: "" })); }}
-                placeholder="e.g. 1455 Quebec St, Vancouver, BC"
-                error={errors.destinationAddress}
-              />
 
               {/* Route map preview — appears as soon as pickup + destination are filled */}
               {showMapPreview && (
@@ -499,91 +523,81 @@ function QuotePage() {
                   />
                   <p className="px-4 py-2 text-xs text-muted-foreground">
                     Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
+                    Longer routes mean more hours on the clock.
                   </p>
                 </div>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field
-                  id="field-date"
-                  label="Trip date" type="date" required
-                  value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
-                  error={errors.date}
-                />
-                <TimeField
-                  id="field-departTime"
-                  label="Departure time" required
-                  value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
-                  error={errors.departTime}
-                />
-                <TimeField
-                  id="field-returnTime"
-                  label="Pick-up from destination" required
-                  value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
-                  error={errors.returnTime}
-                />
-              </div>
-              {departTime && returnTime && tripMinutes !== null && tripMinutes >= 60 && (
-                <p className="text-xs text-muted-foreground">
-                  Trip duration: <span className="font-medium text-foreground">{Math.floor(tripMinutes / 60)}h {tripMinutes % 60 > 0 ? `${tripMinutes % 60}m` : ""}</span>
-                </p>
-              )}
               <p className="text-xs text-muted-foreground">
                 "Pick-up from destination" is when you want us to collect the students and head back to school.
               </p>
               <p className="text-xs text-muted-foreground">
                 *All trips are a minimum of 4 hours.
               </p>
-            </StepWrap>
+            </SectionCard>
 
-            <StepWrap title="Contacts">
-              {/* Primary contact */}
-              <div className="rounded-xl border border-border p-4 space-y-3">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">Primary contact <span className="text-destructive">*</span></div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    The person booking this trip — usually the school secretary or administrator. We'll send the confirmed quote to this person.
-                  </p>
+            <SectionCard number={3} title="Who's riding?" hint="We'll size the bus for you.">
+              <Stepper
+                id="field-passengers"
+                label="K–4 students · 3 to a seat"
+                value={kToFour}
+                onChange={(v) => { setKToFour(v); setErrors((e) => ({ ...e, passengers: "" })); }}
+              />
+
+              <div className="rounded-2xl border border-border p-1.5 px-4">
+                <div className="pb-1 pt-2.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Older riders &middot; 2 to a seat
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Field id="field-c1n" label="Name" required value={c1n} onChange={(v) => { setC1n(v); setErrors((e) => ({ ...e, c1n: "" })); }} placeholder="Jane Smith" error={errors.c1n} />
-                  <Field id="field-c1e" label="Email" type="email" required value={c1e} onChange={(v) => { setC1e(v); setErrors((e) => ({ ...e, c1e: "" })); }} placeholder="jane@school.ca" error={errors.c1e} />
-                  <Field id="field-c1p" label="Phone" required value={c1p} onChange={(v) => { setC1p(v); setErrors((e) => ({ ...e, c1p: "" })); }} placeholder="604-555-0100" error={errors.c1p} />
+                <div className="divide-y divide-border">
+                  <Stepper
+                    bare
+                    label="Grade 5+ students"
+                    value={grade5Plus}
+                    onChange={(v) => { setGrade5Plus(v); setErrors((e) => ({ ...e, passengers: "" })); }}
+                  />
+                  <Stepper
+                    bare
+                    label="Adults / chaperones"
+                    value={adults}
+                    onChange={(v) => { setAdults(v); setErrors((e) => ({ ...e, passengers: "" })); }}
+                  />
                 </div>
               </div>
 
-              {/* Secondary contact */}
-              <div className="rounded-xl border border-border p-4 space-y-3">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">Secondary contact <span className="font-normal text-muted-foreground">(optional)</span></div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    An optional backup contact — for example a vice-principal or another administrator. Leave blank if you'd rather not add one.
-                  </p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Field id="field-c2n" label="Name" value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
-                  <Field id="field-c2e" label="Email" type="email" value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
-                  <Field label="Phone" value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
-                </div>
+              {errors.passengers && (
+                <p className="text-sm text-destructive">{errors.passengers}</p>
+              )}
+
+              <div className={`rounded-2xl border p-4 transition-colors ${headcount > 0 ? "border-primary/30 bg-primary/5" : "border-dashed border-border bg-surface"}`}>
+                {headcount > 0 ? (
+                  <>
+                    <div className="text-base font-bold text-foreground">
+                      {busLabel}{busCount > 1 ? ` × ${busCount}` : ""}
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {headcount} passenger{headcount === 1 ? "" : "s"}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm font-medium text-foreground">Add passengers above to see your bus</div>
+                )}
               </div>
 
-              {/* Day-of contact */}
-              <div className="rounded-xl border border-border p-4 space-y-3">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">Day-of contact <span className="text-destructive">*</span></div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    The teacher taking the class on the trip — who the driver calls on the day.
-                  </p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field id="field-dayN" label="Name" required value={dayN} onChange={(v) => { setDayN(v); setErrors((e) => ({ ...e, dayN: "" })); }} placeholder="Ms. Johnson" error={errors.dayN} />
-                  <Field id="field-dayP" label="Phone (cell preferred)" required value={dayP} onChange={(v) => { setDayP(v); setErrors((e) => ({ ...e, dayP: "" })); }} placeholder="604-555-0102" error={errors.dayP} />
-                </div>
-              </div>
-
-              {/* Notes + preferred driver */}
               <div>
-                <label className="text-sm">
+                <label className="flex items-center gap-3 rounded-2xl border border-border p-3.5">
+                  <input type="checkbox" checked={cargo} onChange={(e) => setCargo(e.target.checked)} className="h-[18px] w-[18px] accent-primary" />
+                  <span className="text-sm">
+                    <span className="font-semibold text-foreground">Cargo needed?</span>{" "}
+                    <span className="text-muted-foreground">Equipment, instruments, sports gear, etc.</span>
+                  </span>
+                </label>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  *Our cargo busses fit 1 airport carry-on baggage per person.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm">
                   <span className="font-medium text-foreground">Special requests</span>
                   <span className="ml-2 text-xs text-muted-foreground">(optional)</span>
                   <textarea
@@ -591,76 +605,66 @@ function QuotePage() {
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Accessibility or special-needs seating, musical instruments, anything we should know."
-                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm shadow-sm outline-none ring-ring focus:ring-2"
                   />
                 </label>
               </div>
               <div>
-                <label className="text-sm">
+                <label className="block text-sm">
                   <span className="font-medium text-foreground">Preferred driver</span>
                   <span className="ml-2 text-xs text-muted-foreground">(optional)</span>
                   <input
                     value={driverPref}
                     onChange={(e) => setDriverPref(e.target.value)}
                     placeholder="If you've had a driver you'd like again, name them here."
-                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm shadow-sm outline-none ring-ring focus:ring-2"
                   />
                 </label>
                 <p className="mt-2 text-xs text-muted-foreground">
                   We'll do our best to honour it. If they're not available on your date, we'll reach out so you can choose your date or your driver.
                 </p>
               </div>
-            </StepWrap>
+            </SectionCard>
 
-            <StepWrap title="Your estimate">
-              <div>
-                <div className="mb-2 text-sm font-medium text-foreground">Your route</div>
-                <RouteMap
-                  pickup={pickup || school}
-                  destination={destinationAddress || destination}
-                  departTime={departTime}
-                  onResult={(r) => setDistanceKm(r.distanceKm)}
-                />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Why distance matters: your price covers the driver's full day — travel to your school, the trip itself, and the return drive back. Longer routes mean more hours on the clock.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-border bg-surface p-5">
-                <div className="flex items-center justify-between">
+            <SectionCard number={4} title="Your estimate">
+              <section
+                className="rounded-2xl p-5 text-white shadow-elevated sm:p-6"
+                style={{ background: "linear-gradient(135deg, oklch(0.27 0.07 260), oklch(0.38 0.09 260))" }}
+              >
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Destination</div>
-                    <div className="text-lg font-semibold text-foreground">{destination || "Your destination"}</div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Instant estimate</div>
+                    <div className="mt-1 text-lg font-bold text-white">{destination || "Your destination"}</div>
+                    <div className="text-sm text-white/70">
                       {date || "—"} · {departTime || "—"} → {returnTime || "—"} · {totalStudents || "—"} students
                     </div>
                   </div>
-                  <span className="rounded-full bg-accent/30 px-3 py-1 text-xs font-semibold text-primary">
+                  <span className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white">
                     Estimate
                   </span>
                 </div>
 
                 <table className="mt-5 w-full text-sm">
-                  <tbody className="divide-y divide-border">
-                    <Row label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
-                    <Row label="Hourly rate" value={`${formatMoney(hourlyRate)}/hr`} />
-                    <Row label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
-                    <Row label="Base cost" value={formatMoney(baseCost)} />
-                    <Row label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />
+                  <tbody className="divide-y divide-white/15">
+                    <Row dark label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
+                    <Row dark label="Hourly rate" value={`${formatMoney(hourlyRate)}/hr`} />
+                    <Row dark label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
+                    <Row dark label="Base cost" value={formatMoney(baseCost)} />
+                    <Row dark label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />
                     {longDistanceCharge > 0 && (
-                      <Row label={`Long-distance (${(distanceKm! - LONG_DISTANCE_THRESHOLD_KM).toFixed(1)} km beyond ${LONG_DISTANCE_THRESHOLD_KM}km)`} value={formatMoney(longDistanceCharge)} />
+                      <Row dark label={`Long-distance (${(distanceKm! - LONG_DISTANCE_THRESHOLD_KM).toFixed(1)} km beyond ${LONG_DISTANCE_THRESHOLD_KM}km)`} value={formatMoney(longDistanceCharge)} />
                     )}
-                    <Row label="Subtotal" value={formatMoney(subtotal)} />
-                    <Row label="GST (5%)" value={formatMoney(gst)} />
-                    <Row label="Estimated total" value={formatMoney(estimatedTotal)} emphasize />
+                    <Row dark label="Subtotal" value={formatMoney(subtotal)} />
+                    <Row dark label="GST (5%)" value={formatMoney(gst)} />
+                    <Row dark label="Estimated total" value={formatMoney(estimatedTotal)} emphasize />
                   </tbody>
                 </table>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  This is a ballpark estimate only. Melody or Alan will confirm the exact amount after reviewing your request — it may be higher or lower based on the actual route.
+                <p className="mt-4 text-xs leading-relaxed text-white/50">
+                  Ballpark only, based on bus size and trip length. Melody or Alan will confirm the exact amount after reviewing your request — it may be higher or lower based on the actual route. No surprise billing.
                 </p>
-              </div>
+              </section>
 
-              <ul className="space-y-1.5 rounded-xl border border-dashed border-border bg-card p-4 text-xs text-muted-foreground">
+              <ul className="space-y-1.5 rounded-2xl border border-dashed border-border bg-card p-4 text-xs text-muted-foreground">
                 <li>• Estimate only — exact rate confirmed after admin review.</li>
                 <li>• Parking and other destination fees not included.</li>
                 <li>• Cancellations: one week notice required.</li>
@@ -678,28 +682,32 @@ function QuotePage() {
                 </p>
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <Button variant="accent" size="lg" onClick={handleSubmit} disabled={submitting}>
+              <div className="space-y-3 pt-1">
+                <Button variant="accent" size="xl" className="w-full font-bold" onClick={handleSubmit} disabled={submitting}>
                   {submitting ? "Submitting…" : session ? "Submit request" : "Create account & send"}
                 </Button>
                 {!session && (
-                  <Button variant="outline" size="lg" onClick={() => { if (typeof window !== "undefined") window.location.href = "/login?next=/quote"; }}>
+                  <Button
+                    variant="outline" size="lg" className="w-full"
+                    onClick={() => { if (typeof window !== "undefined") window.location.href = "/login?next=/quote"; }}
+                  >
                     I already have an account
                   </Button>
                 )}
+                <p className="text-center text-xs text-muted-foreground">Free &amp; no obligation · Serving the Lower Mainland &amp; beyond</p>
               </div>
-            </StepWrap>
+            </SectionCard>
         </div>
       </main>
     </div>
   );
 }
 
-function to12Hour(value: string) {
-  if (!value) return { hour: "", minute: "", period: "AM" as "AM" | "PM" };
+function to12Hour(value: string): { hour: string; minute: string; period: "AM" | "PM" } {
+  if (!value) return { hour: "", minute: "", period: "AM" };
   const [h, m] = value.split(":");
   let hourNum = parseInt(h, 10);
-  const period = hourNum >= 12 ? "PM" : "AM";
+  const period: "AM" | "PM" = hourNum >= 12 ? "PM" : "AM";
   hourNum = hourNum % 12;
   if (hourNum === 0) hourNum = 12;
   return { hour: String(hourNum), minute: m || "", period };
@@ -712,53 +720,99 @@ function to24Hour(hour: string, period: "AM" | "PM") {
   return String(h).padStart(2, "0");
 }
 
+function clampHour12(v: string): number | null {
+  const n = parseInt(v, 10);
+  return v.trim() === "" || isNaN(n) || n < 1 || n > 12 ? null : n;
+}
+function clampMinute(v: string): number | null {
+  const n = parseInt(v, 10);
+  return isNaN(n) || n < 0 || n > 59 ? null : n;
+}
+
+// HH:MM text inputs + AM/PM toggle. Internally buffers raw keystrokes so the
+// user can type freely; only resolves and commits a full 24h "HH:MM" string
+// (the same contract the old <select>-based picker used) on blur / period click.
 function TimeField({
   label, value, onChange, error, required, id,
 }: {
   label: string; value: string; onChange: (v: string) => void; error?: string; required?: boolean; id?: string;
 }) {
-  const { hour, minute, period } = to12Hour(value);
-  const minutes = ["00", "15", "30", "45"];
-  const hours = ["5", "6", "7", "8", "9", "10", "11", "12", "1", "2", "3", "4"];
-  const baseSelect = "flex-1 bg-transparent px-2 py-2 text-sm outline-none appearance-none cursor-pointer";
-  const borderCls = error
-    ? "border-destructive ring-1 ring-destructive/30"
-    : "border-input";
+  const parsed = to12Hour(value);
+  const [hourText, setHourText] = useState(parsed.hour);
+  const [minText, setMinText] = useState(parsed.minute);
+
+  useEffect(() => {
+    const p = to12Hour(value);
+    setHourText(p.hour);
+    setMinText(p.minute);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const commit = (hText: string, mText: string, period: "AM" | "PM") => {
+    const hn = clampHour12(hText);
+    const mn = mText.trim() === "" ? 0 : clampMinute(mText);
+    if (hn == null || mn == null) return;
+    onChange(`${to24Hour(String(hn), period)}:${String(mn).padStart(2, "0")}`);
+  };
+
+  const handleHourBlur = () => {
+    const hn = clampHour12(hourText);
+    if (hn == null) { setHourText(parsed.hour); return; }
+    setHourText(String(hn));
+    commit(String(hn), minText, parsed.period);
+  };
+  const handleMinBlur = () => {
+    const mn = minText.trim() === "" ? 0 : clampMinute(minText);
+    if (mn == null) { setMinText(parsed.minute); return; }
+    const padded = String(mn).padStart(2, "0");
+    setMinText(padded);
+    commit(hourText, padded, parsed.period);
+  };
+
+  const borderCls = error ? "border-destructive ring-1 ring-destructive/30" : "border-input";
+
   return (
     <label id={id} className="block text-sm">
       <span className="font-medium text-foreground">
         {label}
         {required && <span className="ml-0.5 text-destructive">*</span>}
       </span>
-      <div className={`mt-1.5 flex overflow-hidden rounded-xl border ${borderCls} bg-background shadow-sm focus-within:ring-2 focus-within:ring-ring`}>
-        <select
-          value={hour}
-          onChange={(e) => onChange(`${to24Hour(e.target.value, period as "AM" | "PM")}:${minute || "00"}`)}
-          className={`${baseSelect} border-r border-input`}
-        >
-          <option value="">Hr</option>
-          {hours.map((h) => (
-            <option key={h} value={h}>{h}</option>
+      <div className="mt-1.5 flex items-center gap-2.5">
+        <div className={`flex h-11 items-center gap-1.5 rounded-xl border ${borderCls} bg-background px-3.5 focus-within:ring-2 focus-within:ring-ring`}>
+          <input
+            type="text" inputMode="numeric" maxLength={2}
+            value={hourText}
+            onChange={(e) => setHourText(e.target.value.replace(/\D/g, "").slice(0, 2))}
+            onBlur={handleHourBlur}
+            placeholder="HH"
+            aria-label={`${label} — hour`}
+            className="w-5 border-0 bg-transparent p-0 text-right text-[15px] font-bold tabular-nums text-foreground outline-none"
+          />
+          <span className="text-[15px] font-bold text-muted-foreground/50">:</span>
+          <input
+            type="text" inputMode="numeric" maxLength={2}
+            value={minText}
+            onChange={(e) => setMinText(e.target.value.replace(/\D/g, "").slice(0, 2))}
+            onBlur={handleMinBlur}
+            placeholder="MM"
+            aria-label={`${label} — minute`}
+            className="w-5 border-0 bg-transparent p-0 text-[15px] font-bold tabular-nums text-foreground outline-none"
+          />
+        </div>
+        <div className="flex h-11 shrink-0 overflow-hidden rounded-xl border border-input">
+          {(["AM", "PM"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => commit(hourText, minText, p)}
+              className={`w-10 text-xs font-semibold transition-colors ${p === "PM" ? "border-l border-input" : ""} ${
+                parsed.period === p ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"
+              }`}
+            >
+              {p}
+            </button>
           ))}
-        </select>
-        <select
-          value={minute}
-          onChange={(e) => onChange(`${to24Hour(hour || "12", period as "AM" | "PM")}:${e.target.value}`)}
-          className={`${baseSelect} border-r border-input`}
-        >
-          <option value="">Min</option>
-          {minutes.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-        <select
-          value={period}
-          onChange={(e) => onChange(`${to24Hour(hour || "12", e.target.value as "AM" | "PM")}:${minute || "00"}`)}
-          className={baseSelect}
-        >
-          <option value="AM">AM</option>
-          <option value="PM">PM</option>
-        </select>
+        </div>
       </div>
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </label>
@@ -770,6 +824,92 @@ function StepWrap({ title, children }: { title: string; children: React.ReactNod
     <div className="space-y-5">
       <h2 className="text-xl font-semibold text-foreground">{title}</h2>
       {children}
+    </div>
+  );
+}
+
+function Stepper({
+  label, value, onChange, bare, id,
+}: {
+  label: string; value: string; onChange: (v: string) => void; bare?: boolean; id?: string;
+}) {
+  const n = parseInt(value, 10) || 0;
+  const set = (next: number) => {
+    const clamped = Math.max(0, next);
+    onChange(clamped === 0 ? "" : String(clamped));
+  };
+  return (
+    <div id={id} className={`flex items-center justify-between gap-4 ${bare ? "py-2.5" : "rounded-2xl border border-border p-3.5"}`}>
+      <div className="text-sm font-semibold text-foreground">{label}</div>
+      <div className="flex h-[42px] shrink-0 items-center overflow-hidden rounded-xl border border-input">
+        <button
+          type="button" onClick={() => set(n - 1)} disabled={n <= 0}
+          aria-label={`Decrease ${label}`}
+          className="flex h-full w-10 items-center justify-center text-xl font-medium text-primary hover:bg-muted disabled:opacity-30"
+        >
+          &minus;
+        </button>
+        <input
+          type="text" inputMode="numeric"
+          value={value === "" ? "0" : value}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/\D/g, "");
+            if (raw === "") { onChange(""); return; }
+            const parsedN = Math.max(0, parseInt(raw, 10));
+            onChange(parsedN === 0 ? "" : String(parsedN));
+          }}
+          aria-label={label}
+          className="h-full w-11 border-0 bg-transparent text-center text-[17px] font-bold tabular-nums text-foreground outline-none"
+        />
+        <button
+          type="button" onClick={() => set(n + 1)}
+          aria-label={`Increase ${label}`}
+          className="flex h-full w-10 items-center justify-center text-xl font-medium text-primary hover:bg-muted"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({
+  number, title, hint, children,
+}: {
+  number: number; title: string; hint?: string; children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-7">
+      <div className={`flex items-center gap-2.5 ${hint ? "mb-1" : "mb-5"}`}>
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-bold text-primary">
+          {number}
+        </span>
+        <h2 className="text-lg font-bold tracking-tight text-foreground">{title}</h2>
+      </div>
+      {hint && <p className="mb-5 pl-[34px] text-sm text-muted-foreground">{hint}</p>}
+      <div className="space-y-5">{children}</div>
+    </section>
+  );
+}
+
+function Disclosure({
+  label, openLabel, defaultOpen, children,
+}: {
+  label: string; openLabel: string; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 border-0 bg-transparent p-0 text-sm font-semibold text-primary hover:text-primary/80"
+      >
+        <span className={`inline-block text-lg leading-none transition-transform ${open ? "rotate-90" : ""}`}>&rsaquo;</span>
+        {open ? openLabel : label}
+      </button>
+      {open && <div className="mt-4 space-y-3.5 border-t border-border pt-5">{children}</div>}
     </div>
   );
 }
@@ -809,11 +949,19 @@ function Field({
   );
 }
 
-function Row({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
+function Row({
+  label, value, emphasize, dark,
+}: {
+  label: string; value: string; emphasize?: boolean; dark?: boolean;
+}) {
+  const labelCls = dark ? "text-white/60" : "text-muted-foreground";
+  const valueCls = dark
+    ? emphasize ? "text-lg font-extrabold text-white" : "text-white/90"
+    : emphasize ? "text-base font-bold text-foreground" : "text-foreground";
   return (
     <tr>
-      <td className="py-2 text-muted-foreground">{label}</td>
-      <td className={`py-2 text-right ${emphasize ? "text-base font-bold text-foreground" : "text-foreground"}`}>{value}</td>
+      <td className={`py-2 ${labelCls}`}>{label}</td>
+      <td className={`py-2 text-right ${valueCls}`}>{value}</td>
     </tr>
   );
 }
