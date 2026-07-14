@@ -35,5 +35,8 @@ dist-ssr
 fvb-test.mjs
 ccsta-test/
 
+# Local-only reference material (pricing templates, etc.) — never shipped
+/reference/
+
 # Build output
 .vercel/
