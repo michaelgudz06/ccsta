@@ -171,6 +171,39 @@ on every password field — login, signup, and reset-password.
   When ready: deploy deliberately during low-traffic time, have a rollback
   plan ready, and verify first if at all possible. Real customers are
   actively using the live site, so this isn't a routine push.
+- **Quote number alignment with the existing Excel system** *(backlog —
+  not urgent, but affects reconciliation with CCSTA's book of record)*.
+  The app auto-generates quote numbers (`Q-YYYY-####`) from a Postgres
+  sequence (`quote_number_seq`, consumed in `submit_quote` — see
+  migrations 011/025/035/037). These numbers need to align with the
+  numbering CCSTA already uses in their existing Excel system, which has
+  real quotes predating the app.
+  - **Note on current state:** `quote_number_seq` is only ever
+    *referenced* (`nextval(...)`) in the migrations that use it — it isn't
+    actually defined (`CREATE SEQUENCE`) anywhere in this repo's migration
+    history, meaning it was created directly against the live database at
+    some point outside version control. Bringing its starting value under
+    proper migration control (rather than a one-off manual
+    `ALTER SEQUENCE`) is part of this work, not just a config tweak.
+  - **Two parts:**
+    1. **Correct starting point** — set/restart the sequence so new
+       quotes continue from wherever the Excel system currently is,
+       instead of restarting at 0001. **Confirm the exact current number
+       with Melody before setting this** — getting it wrong in the wrong
+       direction (e.g. reusing a number already in Excel) is worse than
+       leaving it misaligned a while longer.
+    2. **Admin-only manual edit** of a quote's number, so Melody can
+       hand-align any individual quote that drifts.
+  - **Safeguard (must-have, not optional):** if quote numbers become
+    editable, enforce uniqueness — a duplicate quote number is worse than
+    a mismatched one. Needs a friendly "that number's already in use"
+    error on the edit, not just relying on a raw unique-constraint
+    violation bubbling up.
+  - **Scope when picked up:** find/formalize the sequence definition,
+    make its starting value migration-controlled, add the admin-only edit
+    field with a uniqueness check (likely a `UNIQUE` constraint on
+    `quotes.quote_number` already exists as the enforcement backstop —
+    confirm — plus a pre-check for a clean error message).
 
 ## Still on the backlog (planned, not built)
 - Single-page quote-form redesign (fewer pages, "show more" buttons).
