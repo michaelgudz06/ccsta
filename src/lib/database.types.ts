@@ -503,6 +503,7 @@ export type Database = {
           surcharge_total: number | null
           total: number | null
           trip_date: string | null
+          trip_type: Database["public"]["Enums"]["quote_trip_type"]
           updated_at: string
           version_number: number
         }
@@ -535,6 +536,7 @@ export type Database = {
           surcharge_total?: number | null
           total?: number | null
           trip_date?: string | null
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
           version_number: number
         }
@@ -567,6 +569,7 @@ export type Database = {
           surcharge_total?: number | null
           total?: number | null
           trip_date?: string | null
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
           version_number?: number
         }
@@ -597,6 +600,38 @@ export type Database = {
             columns: ["suggested_driver_id"]
             isOneToOne: false
             referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quote_shuttle_runs: {
+        Row: {
+          dropoff_time: string
+          id: string
+          pickup_time: string
+          quote_version_id: string
+          run_number: number
+        }
+        Insert: {
+          dropoff_time: string
+          id?: string
+          pickup_time: string
+          quote_version_id: string
+          run_number: number
+        }
+        Update: {
+          dropoff_time?: string
+          id?: string
+          pickup_time?: string
+          quote_version_id?: string
+          run_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_shuttle_runs_quote_version_id_fkey"
+            columns: ["quote_version_id"]
+            isOneToOne: false
+            referencedRelation: "quote_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -788,6 +823,7 @@ export type Database = {
           student_count: number | null
           trip_date: string
           trip_number: string
+          trip_type: Database["public"]["Enums"]["quote_trip_type"]
           updated_at: string
         }
         Insert: {
@@ -813,6 +849,7 @@ export type Database = {
           student_count?: number | null
           trip_date: string
           trip_number: string
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
         }
         Update: {
@@ -838,6 +875,7 @@ export type Database = {
           student_count?: number | null
           trip_date?: string
           trip_number?: string
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
         }
         Relationships: [
@@ -968,6 +1006,7 @@ export type Database = {
         | "completed"
         | "invoiced"
         | "cancelled"
+      quote_trip_type: "two_way" | "one_way" | "shuttle" | "multi_trip"
       trip_status: "scheduled" | "in_progress" | "completed" | "cancelled"
     }
     CompositeTypes: {
@@ -1111,6 +1150,7 @@ export const Constants = {
         "invoiced",
         "cancelled",
       ],
+      quote_trip_type: ["two_way", "one_way", "shuttle", "multi_trip"],
       trip_status: ["scheduled", "in_progress", "completed", "cancelled"],
     },
   },
