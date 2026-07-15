@@ -141,6 +141,36 @@ on every password field — login, signup, and reset-password.
 - **Admin manual price override after Calculate** — done. Melody can override the
   system driver-time estimate and waive the $50 fuel fee, both editable any time
   and persisted separately from the system estimate for audit (migration 034).
+- **Trip types** — built (migration `035`, `quote.tsx`, `admin.tsx`): a
+  trip-type selector at the top of the quote form with two-way (unchanged
+  behavior), one-way (drop-off time instead of a return leg), shuttle
+  (customer-defined number of runs, each with its own pickup/drop-off time,
+  billed continuously from first pickup to last drop-off), and multi-trip
+  (admin-only — routes to a "contact Melody" dead end, no self-serve form).
+  Pricing math is unchanged for every type. On the `trip-types` branch.
+  **Not yet deployed** — see "Deploy planning" under Operational items below.
+
+## Operational items raised by Melody
+- **Email notification to Melody on new quotes.** Note: `submit_quote`
+  already queues a "New quote request" email to the office inbox on every
+  submission (`_admin_email()`, reading `app_config.notify_admin_email` —
+  currently `info@ccsta.ca`) using the existing Resend + `notify-send` edge
+  function infrastructure (migrations 025/035) — this predates this session
+  and isn't new work. What's actually unresolved: (a) confirm that inbox is
+  one Melody watches, or point it at her personally instead/as well, and
+  (b) confirm it's actually delivering — depends on `RESEND_API_KEY` being
+  set and the edge function being deployed, both already flagged as
+  outstanding action items above and tied to the undeployed-work item below.
+- **Live reloading bug (investigate).** Melody reports the *currently
+  deployed* site has reloading problems affecting real customers. Diagnose
+  against what's actually live — the deployed version may differ
+  meaningfully from work-in-progress in this repo (see deploy planning
+  below). Priority: affects real bookings in progress right now.
+- **Deploy planning.** A full session's worth of work — new pricing,
+  form rebuild, trip types, several migrations — is built but undeployed.
+  When ready: deploy deliberately during low-traffic time, have a rollback
+  plan ready, and verify first if at all possible. Real customers are
+  actively using the live site, so this isn't a routine push.
 
 ## Still on the backlog (planned, not built)
 - Single-page quote-form redesign (fewer pages, "show more" buttons).
@@ -157,34 +187,39 @@ on every password field — login, signup, and reset-password.
   addresses, show selectable suggestions for accuracy and less manual entry. Seed
   it with our Excel list of known customer/school/destination addresses as saved
   favorites, layered on top of a general address-lookup service.
-- **Trip types** *(build next, right after the single-page quote redesign is
-  done)*: a trip-type selector at the very top of the quote form, with 4 options:
-  - **Two-way (round trip)** — pickup → destination → back to pickup. This is
-    what the current form already builds; no change for this type.
-  - **One-way** — pickup → drop-off destination only, no return leg. Priced
-    differently. *Note: the driver may still deadhead back empty — pricing
-    needs confirmation with Curtis/Melody.*
-  - **Shuttle** — pickup + drop-off, then the customer picks how many shuttle
-    runs plus pickup/drop-off times for each run (variable number of time
-    slots, not fixed). Pricing needs confirmation.
-  - **Multi-trip** — admin-only. Selecting it shows a popup ("Contact Melody
-    for booking multiple trips") with her email linked; no self-serve form for
-    this type.
+- **Calendar/availability system** *(build next, now that trip types is
+  done — see Recently completed)*: customers pick a date/time and the
+  system checks it against fleet (buses + drivers) availability, showing
+  color-coded slots — green = available, grey = a trip's already submitted
+  for that slot and under review, red = unavailable (must pick a different
+  day/bus/driver). The trip-type time-slot data (including shuttle's
+  per-run times in `quote_shuttle_runs`) was built calendar-readable from
+  the start for exactly this.
 
-  **Approach:** design all four types together up front, build on a shared
-  form skeleton (type selector + swappable fields/time-slot inputs per type),
-  then fill in each type's pricing logic one at a time. Store shuttle/multi
-  time-slot data in a calendar-readable structure from the start, since the
-  calendar/availability system below depends on reading it.
-
-- **Calendar/availability system** *(build last, after trip types)*: customers
-  pick a date/time and the system checks it against fleet (buses + drivers)
-  availability, showing color-coded slots — green = available, grey = a trip's
-  already submitted for that slot and under review, red = unavailable (must
-  pick a different day/bus/driver). **Depends on trip types being defined
-  first** — the trip-type time-slot data structure needs to already be
-  calendar-readable (see above) for this to work, especially for shuttle/
-  multi-trip's variable time slots.
+- **Multi-trip → self-serve multi-destination form** *(future — redesign of
+  the current multi-trip dead-end)*: replace the "contact Melody" dead-end
+  with a real self-serve form for **multiple different destinations in one
+  day**. Customer adds a repeatable block per stop, each with its own
+  destination *and* time slot — same repeatable-block shape as shuttle
+  runs, but each entry also carries a destination, not just times.
+  - **Hours pricing confirmed:** hourly, continuous from first pickup to
+    last drop-off — same "bus tied up all day" billing as shuttle, no new
+    pricing logic needed there.
+  - **Open question to resolve before building:** how the $1/km
+    long-distance charge (beyond 200km) works across multiple destinations.
+    Today's logic (`calculate_estimate`, `quote_versions.distance_km`)
+    assumes a single origin→destination route; multi-destination has
+    several legs. Decide: sum km across all legs, or total round-trip
+    distance? Confirm with Curtis/Melody before implementing.
+  - **The "contact Melody" dead-end moves, doesn't disappear:** it becomes
+    the path for customers wanting to plan several trips across *multiple
+    days* (advance/bulk planning) instead of multiple destinations in one
+    day.
+  - **Scope:** new repeatable destination+time form structure, distance
+    handling for multiple routes in `calculate_estimate`, and a storage
+    structure that extends the `quote_shuttle_runs` pattern to include a
+    destination per stop (kept calendar-readable, consistent with the
+    calendar/availability item above).
 
 - **Customer quote editing** *(its own project — plan separately when picked
   up)*: let customers edit a quote they already submitted, instead of having
