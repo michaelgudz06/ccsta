@@ -10,6 +10,17 @@ import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
+import { COMPANY } from "@/lib/company";
+
+type TripType = "two_way" | "one_way" | "shuttle" | "multi_trip";
+type ShuttleRun = { pickup: string; dropoff: string };
+
+const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
+  { value: "two_way", label: "Two-way", hint: "Round trip — we drop off and pick the group back up." },
+  { value: "one_way", label: "One-way", hint: "Drop-off only, no return leg." },
+  { value: "shuttle", label: "Shuttle", hint: "Multiple pickup/drop-off runs the same day." },
+  { value: "multi_trip", label: "Multi-trip", hint: "Booking several separate trips at once." },
+];
 
 export const Route = createFileRoute("/quote")({
   head: () => ({
@@ -34,8 +45,10 @@ function QuotePage() {
   const [destination, setDestination] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [date, setDate] = useState("");
+  const [tripType, setTripType] = useState<TripType>("two_way");
   const [departTime, setDepartTime] = useState("");
   const [returnTime, setReturnTime] = useState("");
+  const [shuttleRuns, setShuttleRuns] = useState<ShuttleRun[]>([{ pickup: "", dropoff: "" }]);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
 
   // Step 2 — passenger calculator (K-4 seat 3-per-bench, Grade 5+ & adults seat 2-per-bench)
@@ -84,8 +97,10 @@ function QuotePage() {
     if (d.destination) setDestination(d.destination as string);
     if (d.destinationAddress) setDestinationAddress(d.destinationAddress as string);
     if (d.date) setDate(d.date as string);
+    if (d.tripType) setTripType(d.tripType as TripType);
     if (d.departTime) setDepartTime(d.departTime as string);
     if (d.returnTime) setReturnTime(d.returnTime as string);
+    if (Array.isArray(d.shuttleRuns) && d.shuttleRuns.length) setShuttleRuns(d.shuttleRuns as ShuttleRun[]);
     if (d.kToFour) setKToFour(d.kToFour as string);
     if (d.grade5Plus) setGrade5Plus(d.grade5Plus as string);
     if (d.adults) setAdults(d.adults as string);
@@ -103,7 +118,10 @@ function QuotePage() {
   const draftHasContent = (d: Record<string, unknown>) =>
     Boolean(
       d.school || d.pickup || d.destination || d.destinationAddress || d.date ||
-      d.departTime || d.returnTime || d.kToFour || d.grade5Plus || d.adults ||
+      (d.tripType && d.tripType !== "two_way") ||
+      d.departTime || d.returnTime ||
+      (Array.isArray(d.shuttleRuns) && d.shuttleRuns.some((r) => (r as ShuttleRun).pickup || (r as ShuttleRun).dropoff)) ||
+      d.kToFour || d.grade5Plus || d.adults ||
       d.c1n || d.c1e || d.c1p || d.dayN || d.dayP || d.notes || d.driverPref,
     );
 
@@ -138,9 +156,9 @@ function QuotePage() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !draftReady) return;
-    const draft = { school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref };
+    const draft = { school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [draftReady, school, pickup, destination, destinationAddress, date, departTime, returnTime, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
+  }, [draftReady, school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
 
   // Prefill from previous quote
   useEffect(() => {
@@ -175,11 +193,23 @@ function QuotePage() {
     })();
   }, [session, prefilled]);
 
+  // Bus-engaged envelope: for two-way/one-way this is just departure->return;
+  // for shuttle it's the first pickup -> last drop-off across all runs (the
+  // bus is tied up continuously, gaps between runs included). "HH:MM" strings
+  // compare lexicographically within a single day, so min/max works directly.
+  const filledRuns = shuttleRuns.filter((r) => r.pickup && r.dropoff);
+  const envelopeDepart = tripType === "shuttle"
+    ? filledRuns.reduce((min, r) => (!min || r.pickup < min ? r.pickup : min), "")
+    : departTime;
+  const envelopeReturn = tripType === "shuttle"
+    ? filledRuns.reduce((max, r) => (r.dropoff > max ? r.dropoff : max), "")
+    : returnTime;
+
   // Trip-duration helper (minutes)
   const tripMinutes = (() => {
-    if (!departTime || !returnTime) return null;
-    const [dh, dm] = departTime.split(":").map(Number);
-    const [rh, rm] = returnTime.split(":").map(Number);
+    if (!envelopeDepart || !envelopeReturn) return null;
+    const [dh, dm] = envelopeDepart.split(":").map(Number);
+    const [rh, rm] = envelopeReturn.split(":").map(Number);
     let diff = (rh * 60 + rm) - (dh * 60 + dm);
     if (diff < 0) diff += 24 * 60;
     return diff;
@@ -233,8 +263,19 @@ function QuotePage() {
     if (!destination.trim())       e.destination = "Please enter the destination name.";
     if (!destinationAddress.trim()) e.destinationAddress = "Please enter the destination address so we can calculate the route.";
     if (!date)                     e.date = "Please select the trip date.";
-    if (!departTime)               e.departTime = "Please enter the departure time.";
-    if (!returnTime)               e.returnTime = "Please enter the pick-up time from the destination.";
+
+    if (tripType === "shuttle") {
+      if (shuttleRuns.length === 0 || shuttleRuns.some((r) => !r.pickup || !r.dropoff)) {
+        e.shuttleRuns = "Please enter pickup and drop-off times for every run.";
+      }
+    } else {
+      if (!departTime) e.departTime = "Please enter the departure time.";
+      if (!returnTime) {
+        e.returnTime = tripType === "one_way"
+          ? "Please enter the drop-off time."
+          : "Please enter the pick-up time from the destination.";
+      }
+    }
 
     if (!c1n.trim()) e.c1n = "Name is required.";
     if (!c1e.trim()) e.c1e = "Email is required.";
@@ -254,7 +295,7 @@ function QuotePage() {
 
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "c1n", "c1e", "c1p", "c2e", "c2n", "dayN", "dayP"];
+      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "shuttleRuns", "c1n", "c1e", "c1p", "c2e", "c2n", "dayN", "dayP"];
       const firstKey = order.find((k) => e[k]);
       if (firstKey && typeof document !== "undefined") {
         document.getElementById(`field-${firstKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -281,8 +322,10 @@ function QuotePage() {
         destination_name:    destination,
         destination_address: destinationAddress,
         trip_date:           date,
-        departure_time:      departTime,
-        return_time:         returnTime,
+        trip_type:           tripType,
+        ...(tripType === "shuttle"
+          ? { shuttle_runs: shuttleRuns.map((r, i) => ({ run_number: i + 1, pickup_time: r.pickup, dropoff_time: r.dropoff })) }
+          : { departure_time: departTime, return_time: returnTime }),
         student_count:       String(totalStudents),
         adults_count:        adults,
         grade_breakdown:     [{ grade: "K", count: kToFour }, { grade: "5", count: grade5Plus }],
@@ -401,7 +444,41 @@ function QuotePage() {
         </div>
 
         <div className="space-y-5">
-            <SectionCard number={1} title="Contact info">
+            <SectionCard number={1} title="Trip type" hint="What kind of trip is this?">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {TRIP_TYPE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setTripType(opt.value)}
+                    className={`rounded-2xl border p-3.5 text-left transition-colors ${
+                      tripType === opt.value ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40"
+                    }`}
+                  >
+                    <div className="text-sm font-bold text-foreground">{opt.label}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{opt.hint}</div>
+                  </button>
+                ))}
+              </div>
+            </SectionCard>
+
+            {tripType === "multi_trip" ? (
+              <div className="rounded-3xl border border-border bg-card p-6 text-center shadow-soft sm:p-7">
+                <h2 className="text-lg font-bold text-foreground">Booking multiple trips?</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                  Multi-trip bookings are arranged directly with our office rather than through this
+                  instant-estimate form. Reach out and Melody will put a custom quote together for you.
+                </p>
+                <a
+                  href={`mailto:${COMPANY.email}`}
+                  className="mt-4 inline-block font-semibold text-primary hover:underline"
+                >
+                  Contact Melody — {COMPANY.email}
+                </a>
+              </div>
+            ) : (
+              <>
+            <SectionCard number={2} title="Contact info">
               <div>
                 <div className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Primary contact</div>
                 <p className="mb-3.5 text-xs text-muted-foreground">
@@ -441,7 +518,7 @@ function QuotePage() {
               </Disclosure>
             </SectionCard>
 
-            <SectionCard number={2} title="Trip details" hint="We'll size the bus and estimate your route.">
+            <SectionCard number={3} title="Trip details" hint="We'll size the bus and estimate your route.">
               <div className="rounded-2xl border border-border p-4 space-y-3.5">
                 <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">School &amp; pickup</div>
                 <Field
@@ -484,24 +561,65 @@ function QuotePage() {
                 error={errors.date}
               />
 
-              <div className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 sm:p-5">
-                <TimeField
-                  id="field-departTime"
-                  label="Departure time" required
-                  value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
-                  error={errors.departTime}
-                />
-                <TimeField
-                  id="field-returnTime"
-                  label="Pick-up from destination" required
-                  value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
-                  error={errors.returnTime}
-                />
-              </div>
+              {tripType === "shuttle" ? (
+                <div id="field-shuttleRuns" className="space-y-4">
+                  <Stepper
+                    label="Number of runs"
+                    value={String(shuttleRuns.length)}
+                    onChange={(v) => {
+                      const n = Math.max(1, parseInt(v || "1", 10) || 1);
+                      setShuttleRuns((runs) => {
+                        if (n === runs.length) return runs;
+                        if (n > runs.length) {
+                          return [...runs, ...Array.from({ length: n - runs.length }, () => ({ pickup: "", dropoff: "" }))];
+                        }
+                        return runs.slice(0, n);
+                      });
+                      setErrors((e) => ({ ...e, shuttleRuns: "" }));
+                    }}
+                  />
+                  {shuttleRuns.map((run, i) => (
+                    <div key={i} className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 sm:p-5">
+                      <TimeField
+                        label={`Run ${i + 1} pickup`} required
+                        value={run.pickup}
+                        onChange={(v) => {
+                          setShuttleRuns((runs) => runs.map((r, ri) => (ri === i ? { ...r, pickup: v } : r)));
+                          setErrors((e) => ({ ...e, shuttleRuns: "" }));
+                        }}
+                      />
+                      <TimeField
+                        label={`Run ${i + 1} drop-off`} required
+                        value={run.dropoff}
+                        onChange={(v) => {
+                          setShuttleRuns((runs) => runs.map((r, ri) => (ri === i ? { ...r, dropoff: v } : r)));
+                          setErrors((e) => ({ ...e, shuttleRuns: "" }));
+                        }}
+                      />
+                    </div>
+                  ))}
+                  {errors.shuttleRuns && <p className="text-xs text-destructive">{errors.shuttleRuns}</p>}
+                </div>
+              ) : (
+                <div className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 sm:p-5">
+                  <TimeField
+                    id="field-departTime"
+                    label="Departure time" required
+                    value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
+                    error={errors.departTime}
+                  />
+                  <TimeField
+                    id="field-returnTime"
+                    label={tripType === "one_way" ? "Drop-off time" : "Pick-up from destination"} required
+                    value={returnTime} onChange={(v) => { setReturnTime(v); setErrors((e) => ({ ...e, returnTime: "" })); }}
+                    error={errors.returnTime}
+                  />
+                </div>
+              )}
 
-              {departTime && returnTime && tripMinutes !== null && (
+              {tripMinutes !== null && (
                 <div className="flex items-center justify-between rounded-xl bg-primary/5 px-4 py-3">
-                  <span className="text-xs font-semibold text-foreground/80">Trip length</span>
+                  <span className="text-xs font-semibold text-foreground/80">{tripType === "shuttle" ? "Bus engaged" : "Trip length"}</span>
                   <span className="text-sm font-bold text-primary tabular-nums">
                     {Math.floor(tripMinutes / 60)}h{tripMinutes % 60 > 0 ? ` ${tripMinutes % 60}m` : ""}
                   </span>
@@ -517,7 +635,7 @@ function QuotePage() {
                   <RouteMap
                     pickup={pickup || school}
                     destination={destinationAddress}
-                    departTime={departTime || undefined}
+                    departTime={envelopeDepart || undefined}
                     onResult={(r) => setDistanceKm(r.distanceKm)}
                     className="h-52 w-full"
                   />
@@ -528,15 +646,27 @@ function QuotePage() {
                 </div>
               )}
 
-              <p className="text-xs text-muted-foreground">
-                "Pick-up from destination" is when you want us to collect the students and head back to school.
-              </p>
+              {tripType === "two_way" && (
+                <p className="text-xs text-muted-foreground">
+                  "Pick-up from destination" is when you want us to collect the students and head back to school.
+                </p>
+              )}
+              {tripType === "one_way" && (
+                <p className="text-xs text-muted-foreground">
+                  We won't be picking the group up again — the bus is done once it drops off.
+                </p>
+              )}
+              {tripType === "shuttle" && (
+                <p className="text-xs text-muted-foreground">
+                  Your bus is booked continuously from the first pickup to the last drop-off, even if there are gaps between runs.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 *All trips are a minimum of 4 hours.
               </p>
             </SectionCard>
 
-            <SectionCard number={3} title="Who's riding?" hint="We'll size the bus for you.">
+            <SectionCard number={4} title="Who's riding?" hint="We'll size the bus for you.">
               <Stepper
                 id="field-passengers"
                 label="K–4 students · 3 to a seat"
@@ -626,7 +756,7 @@ function QuotePage() {
               </div>
             </SectionCard>
 
-            <SectionCard number={4} title="Your estimate">
+            <SectionCard number={5} title="Your estimate">
               <section
                 className="rounded-2xl p-5 text-white shadow-elevated sm:p-6"
                 style={{ background: "linear-gradient(135deg, oklch(0.27 0.07 260), oklch(0.38 0.09 260))" }}
@@ -636,7 +766,7 @@ function QuotePage() {
                     <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Instant estimate</div>
                     <div className="mt-1 text-lg font-bold text-white">{destination || "Your destination"}</div>
                     <div className="text-sm text-white/70">
-                      {date || "—"} · {departTime || "—"} → {returnTime || "—"} · {totalStudents || "—"} students
+                      {date || "—"} · {envelopeDepart || "—"} → {envelopeReturn || "—"} · {totalStudents || "—"} students
                     </div>
                   </div>
                   <span className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white">
@@ -697,6 +827,8 @@ function QuotePage() {
                 <p className="text-center text-xs text-muted-foreground">Free &amp; no obligation · Serving the Lower Mainland &amp; beyond</p>
               </div>
             </SectionCard>
+              </>
+            )}
         </div>
       </main>
     </div>
