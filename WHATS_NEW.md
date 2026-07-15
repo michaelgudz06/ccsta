@@ -72,14 +72,29 @@ on every password field — login, signup, and reset-password.
 - The cancel/confirm dialogs are proper **in-app modals** now (not the old browser pop-ups
   that could silently fail on phones).
 
-## 8. Email notifications (Resend)
+## 8. Email notifications (Resend) — ✅ WORKING
 
 **New (migration `025`, `supabase/functions/notify-send/`, `src/lib/notify.ts`):**
 - Automatic emails are **queued** at key moments: quote received (to customer + office),
   price ready, quote accepted, and cancellation updates.
-- A Supabase **Edge Function (`notify-send`)** delivers them via Resend.
-- *(Action item: set `RESEND_API_KEY` on the function and verify the `ccsta.net` domain in
-  Resend to send from `@ccsta.net`. Until then, emails just queue — nothing breaks.)*
+- A Supabase **Edge Function (`notify-send`)** delivers them via Resend — **confirmed live
+  and sending.**
+
+**Required config (Supabase Project Settings → Edge Functions → Secrets — names are
+CASE-SENSITIVE, all caps):**
+- `RESEND_API_KEY` = the Resend API key.
+- `NOTIFY_FROM_EMAIL` = `CCSTA Bookings <bookings@ccsta.net>` — must be an address on the
+  verified `ccsta.net` domain.
+- `notify_admin_email` in the `app_config` table = `admin@ccsta.net` (the recipient for
+  office-facing notifications, e.g. "new quote received").
+
+**Root causes of the earlier "stuck pending" bug:**
+1. The API key secret had been saved as lowercase `resend_api_key`, but the code reads
+   `Deno.env.get("RESEND_API_KEY")` — secret names are case-sensitive, so it was invisible
+   to the function even though "the secret" looked correctly set in the dashboard.
+2. `NOTIFY_FROM_EMAIL` wasn't set to an address on the verified domain, so the function was
+   falling back to its default value instead of a `ccsta.net` sender — resolved by setting
+   it explicitly as above.
 
 ## 9. Driver dashboard — the day-of essentials
 
@@ -133,7 +148,8 @@ on every password field — login, signup, and reset-password.
 ## Outstanding config / action items (dashboard, not code)
 - **Supabase Auth:** Site URL + Redirect URLs should be `https://ccsta.net` now that DNS is
   live; consider turning off "Confirm email" for smooth signup.
-- **Resend:** set `RESEND_API_KEY` + verify `ccsta.net` to turn on real emails.
+- ~~**Resend:** set `RESEND_API_KEY` + verify `ccsta.net` to turn on real emails.~~ **Done —
+  see "Email notifications (Resend)" above for the working config.**
 - **Google Maps key:** add `ccsta.net` to the allowed referrers.
 - **Samsara token** is stored (`.env.local`); native live tracking is a later phase.
 
