@@ -244,6 +244,8 @@ type AdminVersionDetail = {
   total: number | null;
   departure_time: string | null;
   return_time: string | null;
+  trip_type: "two_way" | "one_way" | "shuttle" | "multi_trip";
+  shuttle_runs: { run_number: number; pickup_time: string; dropoff_time: string }[];
   adults_count: number | null;
   cargo_needed: boolean | null;
   special_requests: string | null;
@@ -357,10 +359,19 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
         if (versionIds.length > 0) {
           const { data: versions } = await supabase
             .from("quote_versions")
-            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, cargo_needed, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
+            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, trip_type, cargo_needed, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
             .in("id", versionIds);
+          const { data: runs } = await supabase
+            .from("quote_shuttle_runs")
+            .select("quote_version_id, run_number, pickup_time, dropoff_time")
+            .in("quote_version_id", versionIds)
+            .order("run_number", { ascending: true });
+          const runsByVersion: Record<string, { run_number: number; pickup_time: string; dropoff_time: string }[]> = {};
+          for (const r of runs ?? []) {
+            (runsByVersion[r.quote_version_id] ??= []).push(r);
+          }
           versionMap = Object.fromEntries(
-            (versions ?? []).map((v: any) => [v.id, v])
+            (versions ?? []).map((v: any) => [v.id, { ...v, shuttle_runs: runsByVersion[v.id] ?? [] }])
           );
         }
         const merged: AdminQuoteRow[] = rows.map((r: any) => ({
@@ -653,8 +664,15 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           <div className="grid gap-3 text-sm sm:grid-cols-2">
             <Kv label="School" value={quote.schools?.name ?? "—"} />
             <Kv label="Trip date" value={tripDate} />
-            <Kv label="Departure" value={formatTime(ver?.departure_time ?? null)} />
-            <Kv label="Return" value={formatTime(ver?.return_time ?? null)} />
+            <Kv label="Trip type" value={formatTripType(ver?.trip_type)} />
+            {ver?.trip_type === "shuttle" ? (
+              <Kv label="Bus engaged" value={`${formatTime(ver?.departure_time ?? null)} → ${formatTime(ver?.return_time ?? null)}`} />
+            ) : (
+              <>
+                <Kv label="Departure" value={formatTime(ver?.departure_time ?? null)} />
+                <Kv label={ver?.trip_type === "one_way" ? "Drop-off" : "Return"} value={formatTime(ver?.return_time ?? null)} />
+              </>
+            )}
             <Kv label="Pickup address" value={ver?.pickup_address || "—"} />
             <Kv label="Destination" value={ver?.destination_name || "—"} />
             <Kv label="Destination address" value={ver?.destination_address || "—"} />
@@ -684,6 +702,19 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
               }
             }}
           />
+
+          {ver?.trip_type === "shuttle" && ver.shuttle_runs.length > 0 && (
+            <div className="mt-3 rounded-xl border border-border bg-surface p-3">
+              <div className="mb-1.5 text-xs font-semibold text-foreground">Shuttle runs</div>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {ver.shuttle_runs.map((r) => (
+                  <li key={r.run_number}>
+                    Run {r.run_number}: {formatTime(r.pickup_time)} → {formatTime(r.dropoff_time)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Shown only when they have real content */}
           {(k4Total > 0 || grade5PlusTotal > 0 || !!ver?.adults_count) && (
@@ -961,6 +992,17 @@ function fmtContact(c?: { name?: string; email?: string; phone?: string } | null
   if (!c) return "—";
   const parts = [c.name, c.email, c.phone].filter(Boolean);
   return parts.length ? parts.join(" · ") : "—";
+}
+
+const TRIP_TYPE_LABELS: Record<string, string> = {
+  two_way: "Two-way",
+  one_way: "One-way",
+  shuttle: "Shuttle",
+  multi_trip: "Multi-trip",
+};
+
+function formatTripType(t?: string | null): string {
+  return t ? (TRIP_TYPE_LABELS[t] ?? t) : "—";
 }
 
 function Kv({ label, value }: { label: string; value: string }) {
