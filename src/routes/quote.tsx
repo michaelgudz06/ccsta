@@ -16,10 +16,10 @@ type TripType = "two_way" | "one_way" | "shuttle" | "multi_trip";
 type ShuttleRun = { pickup: string; dropoff: string };
 
 const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
-  { value: "two_way", label: "Two-way", hint: "Round trip — we drop off and pick the group back up." },
-  { value: "one_way", label: "One-way", hint: "Drop-off only, no return leg." },
-  { value: "shuttle", label: "Shuttle", hint: "Multiple pickup/drop-off runs the same day." },
-  { value: "multi_trip", label: "Multi-trip", hint: "Booking several separate trips at once." },
+  { value: "two_way", label: "Two-way", hint: "Round trip — we drop your group off and pick them back up." },
+  { value: "one_way", label: "One-way", hint: "Drop-off only, no return." },
+  { value: "shuttle", label: "Shuttle", hint: "Repeated runs between your school and ONE destination throughout the day." },
+  { value: "multi_trip", label: "Multi-trip", hint: "Several DIFFERENT destinations in one day — arranged directly with our office." },
 ];
 
 export const Route = createFileRoute("/quote")({
@@ -658,7 +658,8 @@ function QuotePage() {
               )}
               {tripType === "shuttle" && (
                 <p className="text-xs text-muted-foreground">
-                  Your bus is booked continuously from the first pickup to the last drop-off, even if there are gaps between runs.
+                  Runs back and forth between the same pickup and destination all day. Your bus is booked
+                  continuously from the first pickup to the last drop-off, even if there are gaps between runs.
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
