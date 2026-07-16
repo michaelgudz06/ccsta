@@ -270,12 +270,16 @@ function QuotePage() {
   const minHours   = 4;
   // Use actual trip duration if entered, otherwise fall back to minimum
   const tripHours  = tripHoursCalc !== null ? tripHoursCalc : minHours;
+  // Minimum applies to TRIP TIME ONLY (matches calculate_estimate) — the
+  // driver-time buffer always adds on top of the (possibly floored) trip
+  // time, never absorbed into the minimum.
+  const billableTripHours = Math.max(tripHours, minHours);
   // System estimate: flat 1hr driver-time buffer (matches calculate_estimate's
   // driver_time_buffer_hours default — Melody can set a more accurate time
   // later, but the public preview always shows this flat-buffer figure).
   const DRIVER_TIME_BUFFER_HOURS = 1;
-  const driverHours = tripHours + DRIVER_TIME_BUFFER_HOURS;
-  const billHours  = Math.max(driverHours, minHours);
+  const driverHours = billableTripHours + DRIVER_TIME_BUFFER_HOURS;
+  const billHours  = driverHours;
   const baseCost   = billHours * hourlyRate * busCount;
   const fuelSurcharge = 50 * busCount;
   const LONG_DISTANCE_THRESHOLD_KM = 200;
@@ -977,8 +981,8 @@ function QuotePage() {
                   <tbody className="divide-y divide-white/15">
                     <Row dark label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
                     <Row dark label="Hourly rate" value={`${formatMoney(hourlyRate)}/hr`} />
-                    <Row dark label="Trip time" value={`${tripHours.toFixed(1)} hrs`} />
-                    <Row dark label="Driver time" value={`${(billHours - tripHours).toFixed(1)} hrs`} />
+                    <Row dark label="Trip time" value={`${billableTripHours.toFixed(1)} hrs`} />
+                    <Row dark label="Driver time" value={`${(billHours - billableTripHours).toFixed(1)} hrs`} />
                     <Row dark label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
                     <Row dark label="Base cost" value={formatMoney(baseCost)} />
                     <Row dark label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />

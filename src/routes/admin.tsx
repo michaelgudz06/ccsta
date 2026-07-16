@@ -296,6 +296,7 @@ type EstimateBreakdown = {
   customer_type: string;
   hourly_rate: number;
   trip_hours: number;
+  billable_trip_hours: number;
   driver_pre_hours: number;
   driver_post_hours: number;
   reference_driver_hours: number;
@@ -789,8 +790,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                 label="Base cost"
                 value={`${estimate.bus_count} × $${estimate.hourly_rate}/hr × ${estimate.billable_hours}h = ${formatMoney(estimate.base_cost)}`}
               />
-              <Kv label="Trip time" value={`${estimate.trip_hours}h`} />
-              <Kv label="Driver time" value={`${(estimate.billable_hours - estimate.trip_hours).toFixed(1)}h`} />
+              <Kv label="Trip time" value={`${estimate.billable_trip_hours}h`} />
+              <Kv label="Driver time" value={`${(estimate.billable_hours - estimate.billable_trip_hours).toFixed(1)}h`} />
               <Kv label="Fuel fee" value={estimate.fuel_waived ? "Waived" : formatMoney(estimate.fuel_surcharge)} />
               {estimate.overtime_charge > 0 && (
                 <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
