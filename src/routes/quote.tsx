@@ -977,6 +977,8 @@ function QuotePage() {
                   <tbody className="divide-y divide-white/15">
                     <Row dark label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
                     <Row dark label="Hourly rate" value={`${formatMoney(hourlyRate)}/hr`} />
+                    <Row dark label="Trip time" value={`${tripHours.toFixed(1)} hrs`} />
+                    <Row dark label="Driver time" value={`${(billHours - tripHours).toFixed(1)} hrs`} />
                     <Row dark label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
                     <Row dark label="Base cost" value={formatMoney(baseCost)} />
                     <Row dark label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />
@@ -989,7 +991,10 @@ function QuotePage() {
                   </tbody>
                 </table>
                 <p className="mt-4 text-xs leading-relaxed text-white/50">
-                  Ballpark only, based on bus size and trip length. Melody or Alan will confirm the exact amount after reviewing your request — it may be higher or lower based on the actual route. No surprise billing.
+                  "Driver time" covers time on the clock beyond the trip itself — getting the bus to your pickup and
+                  back, plus our minimum booking length. Ballpark only, based on bus size and trip length. Melody or
+                  Alan will confirm the exact amount after reviewing your request — it may be higher or lower based
+                  on the actual route. No surprise billing.
                 </p>
               </section>
 

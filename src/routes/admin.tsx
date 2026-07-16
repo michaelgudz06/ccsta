@@ -789,7 +789,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                 label="Base cost"
                 value={`${estimate.bus_count} × $${estimate.hourly_rate}/hr × ${estimate.billable_hours}h = ${formatMoney(estimate.base_cost)}`}
               />
-              <Kv label="Driver time" value={`${estimate.driver_hours_used}h`} />
+              <Kv label="Trip time" value={`${estimate.trip_hours}h`} />
+              <Kv label="Driver time" value={`${(estimate.billable_hours - estimate.trip_hours).toFixed(1)}h`} />
               <Kv label="Fuel fee" value={estimate.fuel_waived ? "Waived" : formatMoney(estimate.fuel_surcharge)} />
               {estimate.overtime_charge > 0 && (
                 <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
