@@ -149,6 +149,21 @@ on every password field — login, signup, and reset-password.
   (admin-only — routes to a "contact Melody" dead end, no self-serve form).
   Pricing math is unchanged for every type. On the `trip-types` branch.
   **Not yet deployed** — see "Deploy planning" under Operational items below.
+- **Multi-destination (5th trip type)** — built (migrations `036`/`037`,
+  `quote.tsx`, `MultiStopRouteMap.tsx`): a real self-serve form for
+  multiple different destinations in one day, added *alongside* multi-trip
+  (not replacing it — multi-trip's copy was relabeled to mean booking
+  across multiple days instead, since it now means something different).
+  Customer adds a repeatable stop (address + time), plus a return-to-school
+  leg auto-added by default (editable address, removable). Hours billed
+  from earliest to latest stop time, same technique as shuttle — no
+  pricing-engine change. Distance is the actual resolved question: total
+  km summed across every leg (pickup → each stop → return), computed via a
+  single OSRM multi-waypoint routing request, feeding the existing $1/km-
+  over-200km charge unchanged. Unresolved addresses don't block submission
+  — flagged (via null `lat`/`lng` on that stop) for Melody to confirm by
+  hand, consistent with the existing distance-unavailable pattern. On the
+  `trip-types` branch. **Not yet deployed.**
 
 ## Operational items raised by Melody
 - **Email notification to Melody on new quotes.** Note: `submit_quote`
@@ -166,6 +181,33 @@ on every password field — login, signup, and reset-password.
   against what's actually live — the deployed version may differ
   meaningfully from work-in-progress in this repo (see deploy planning
   below). Priority: affects real bookings in progress right now.
+- **Polish the customer confirmation email — HIGH PRIORITY, near-urgent.**
+  The "we received your quote request" email (queued in `submit_quote` via
+  `_queue_email`, migrations 025/035/037) needs a real pass before more
+  customers start booking — it's the first thing a customer sees after
+  submitting, and reflects on CCSTA. Needs:
+  1. **Improved wording/tone** — current copy is functional, not polished.
+  2. **Visual design/branding** (logo, real formatting) — **note on actual
+     scope here:** this is genuinely plain text end-to-end today, not just
+     plain-*looking*. `notify-send/index.ts` sends only `text: row.body` to
+     Resend — no `html` field at all — and `notification_log.body`
+     (migration `018`) is a single `text` column with no separate HTML
+     body. Adding real branding means extending the edge function to also
+     send an `html` field (Resend accepts both `text` and `html` in the
+     same request) and giving `notification_log` somewhere to store HTML
+     content — not just rewriting the string inside `submit_quote`.
+  3. **Confirm it includes what the customer actually needs**: quote
+     number, a trip summary, what happens next, contact info. Check
+     against current content before rewriting rather than assuming it's
+     missing something.
+  - **Worth doing while in there, secondary priority:** review the other
+    customer-facing emails for the same plain-text/branding gap and tone
+    consistency — priced (`approve_quote`), rejected (`reject_quote`), and
+    cancelled/cancellation-declined (`resolve_cancellation_request`, both
+    branches). Note: `confirm_own_quote`'s email is *not* customer-facing —
+    it notifies the office when a customer accepts a price, so it's out of
+    scope here. The submission confirmation is still the one that matters
+    most right now.
 - **Deploy planning.** A full session's worth of work — new pricing,
   form rebuild, trip types, several migrations — is built but undeployed.
   When ready: deploy deliberately during low-traffic time, have a rollback
@@ -206,8 +248,24 @@ on every password field — login, signup, and reset-password.
     confirm — plus a pre-check for a clean error message).
 
 ## Still on the backlog (planned, not built)
-- Single-page quote-form redesign (fewer pages, "show more" buttons).
+- ~~Single-page quote-form redesign (fewer pages, "show more" buttons).~~
+  **Done** — shipped via `e57417f` (collapsed the 4-step wizard into one
+  scrolling page) and `55d40a0` (card-based redesign). This bullet was
+  never removed when it landed.
 - Address autofill reliability + a clear "driver time will be added on the invoice" notice.
+- **Admin page redesign (to Melody's preferences)** *(its own focused
+  session — not a quick tweak)*: the admin/dispatch view works and has
+  the right info, but its layout/design should be reworked to match how
+  Melody actually wants to review quotes and manage bookings. A design
+  project like the customer quote-form redesign was (see the single-page
+  redesign item above) — gather her specific preferences on what she
+  needs to see, in what order, and how it should look, then redesign
+  around that, rather than guessing.
+  - **Not the same thing as:** the multi-destination stops display
+    (showing every stop's destination + address + arrival/departure time)
+    being built as a functional addition in the near term. That's a
+    content addition to the existing layout; this item is the broader
+    visual/layout redesign, deferred and separate.
 - Member 2-hour vs. others 4-hour minimum billing — **partially done**: server-side
   pricing (`calculate_estimate`) already applies the correct 2hr/4hr floor by
   membership. Still open: the customer-facing quote-form estimate (`quote.tsx`'s
@@ -229,30 +287,24 @@ on every password field — login, signup, and reset-password.
   per-run times in `quote_shuttle_runs`) was built calendar-readable from
   the start for exactly this.
 
-- **Multi-trip → self-serve multi-destination form** *(future — redesign of
-  the current multi-trip dead-end)*: replace the "contact Melody" dead-end
-  with a real self-serve form for **multiple different destinations in one
-  day**. Customer adds a repeatable block per stop, each with its own
-  destination *and* time slot — same repeatable-block shape as shuttle
-  runs, but each entry also carries a destination, not just times.
-  - **Hours pricing confirmed:** hourly, continuous from first pickup to
-    last drop-off — same "bus tied up all day" billing as shuttle, no new
-    pricing logic needed there.
-  - **Open question to resolve before building:** how the $1/km
-    long-distance charge (beyond 200km) works across multiple destinations.
-    Today's logic (`calculate_estimate`, `quote_versions.distance_km`)
-    assumes a single origin→destination route; multi-destination has
-    several legs. Decide: sum km across all legs, or total round-trip
-    distance? Confirm with Curtis/Melody before implementing.
-  - **The "contact Melody" dead-end moves, doesn't disappear:** it becomes
-    the path for customers wanting to plan several trips across *multiple
-    days* (advance/bulk planning) instead of multiple destinations in one
-    day.
-  - **Scope:** new repeatable destination+time form structure, distance
-    handling for multiple routes in `calculate_estimate`, and a storage
-    structure that extends the `quote_shuttle_runs` pattern to include a
-    destination per stop (kept calendar-readable, consistent with the
-    calendar/availability item above).
+- **Multi-destination schedule feasibility validation** *(future —
+  deferred; simpler version — just collecting arrival + departure times
+  per stop — was built first)*: validate that the times a customer enters
+  for multi-destination stops are physically possible. For each
+  consecutive pair of stops, calculate the actual travel time between them
+  and warn the customer if an entered arrival time is impossible given the
+  drive from the previous stop (e.g. leaves stop 1 at 10:00, stop 2 is a
+  45-min drive away, but they entered a 10:15 arrival at stop 2).
+  - **Useful head start:** the OSRM multi-waypoint request already built
+    for distance (`MultiStopRouteMap.tsx`) returns a `legs` array with
+    per-leg `duration`, not just the total — the travel-time data this
+    needs is already coming back from the routing call, just unused today.
+    Building this is mostly validation/UX (comparing entered times against
+    those durations and surfacing a warning), not a new data source.
+  - Complex enough to defer: real-world buffer time at each stop, what
+    counts as "close enough" vs. an error, and whether an infeasible
+    schedule should block submission or just warn (Melody flags it) all
+    need deciding before building.
 
 - **Customer quote editing** *(its own project — plan separately when picked
   up)*: let customers edit a quote they already submitted, instead of having
