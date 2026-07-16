@@ -636,6 +636,50 @@ export type Database = {
           },
         ]
       }
+      quote_multi_stops: {
+        Row: {
+          arrival_time: string
+          departure_time: string | null
+          destination_address: string
+          destination_name: string | null
+          id: string
+          lat: number | null
+          lng: number | null
+          quote_version_id: string
+          stop_number: number
+        }
+        Insert: {
+          arrival_time: string
+          departure_time?: string | null
+          destination_address: string
+          destination_name?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          quote_version_id: string
+          stop_number: number
+        }
+        Update: {
+          arrival_time?: string
+          departure_time?: string | null
+          destination_address?: string
+          destination_name?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          quote_version_id?: string
+          stop_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_multi_stops_quote_version_id_fkey"
+            columns: ["quote_version_id"]
+            isOneToOne: false
+            referencedRelation: "quote_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       quotes: {
         Row: {
           created_at: string
@@ -1006,7 +1050,7 @@ export type Database = {
         | "completed"
         | "invoiced"
         | "cancelled"
-      quote_trip_type: "two_way" | "one_way" | "shuttle" | "multi_trip"
+      quote_trip_type: "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip"
       trip_status: "scheduled" | "in_progress" | "completed" | "cancelled"
     }
     CompositeTypes: {
@@ -1150,7 +1194,7 @@ export const Constants = {
         "invoiced",
         "cancelled",
       ],
-      quote_trip_type: ["two_way", "one_way", "shuttle", "multi_trip"],
+      quote_trip_type: ["two_way", "one_way", "shuttle", "multi_destination", "multi_trip"],
       trip_status: ["scheduled", "in_progress", "completed", "cancelled"],
     },
   },

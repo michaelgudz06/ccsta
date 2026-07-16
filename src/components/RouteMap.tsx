@@ -28,14 +28,14 @@ const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 
 // School-run congestion windows (local time): morning + afternoon pickups.
-function rushBuffer(departTime?: string): { pct: number; isRush: boolean } {
+export function rushBuffer(departTime?: string): { pct: number; isRush: boolean } {
   if (!departTime) return { pct: 0.12, isRush: false };
   const [h] = departTime.split(":").map(Number);
   const isRush = (h >= 7 && h < 9) || (h >= 14 && h < 18);
   return { pct: isRush ? 0.2 : 0.12, isRush };
 }
 
-function loadLeaflet(): Promise<typeof import("leaflet")> {
+export function loadLeaflet(): Promise<typeof import("leaflet")> {
   return new Promise((resolve, reject) => {
     const w = window as unknown as { L?: typeof import("leaflet") };
     if (w.L) { resolve(w.L); return; }
@@ -60,7 +60,7 @@ function loadLeaflet(): Promise<typeof import("leaflet")> {
   });
 }
 
-async function geocode(q: string): Promise<[number, number] | null> {
+export async function geocode(q: string): Promise<[number, number] | null> {
   if (!q.trim()) return null;
   // Bias toward British Columbia, Canada for school-trip addresses.
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(q)}`;

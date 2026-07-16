@@ -244,8 +244,9 @@ type AdminVersionDetail = {
   total: number | null;
   departure_time: string | null;
   return_time: string | null;
-  trip_type: "two_way" | "one_way" | "shuttle" | "multi_trip";
+  trip_type: "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
   shuttle_runs: { run_number: number; pickup_time: string; dropoff_time: string }[];
+  multi_stops: { stop_number: number; destination_name: string | null; destination_address: string; arrival_time: string; departure_time: string | null }[];
   adults_count: number | null;
   cargo_needed: boolean | null;
   special_requests: string | null;
@@ -370,8 +371,17 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           for (const r of runs ?? []) {
             (runsByVersion[r.quote_version_id] ??= []).push(r);
           }
+          const { data: stops } = await supabase
+            .from("quote_multi_stops")
+            .select("quote_version_id, stop_number, destination_name, destination_address, arrival_time, departure_time")
+            .in("quote_version_id", versionIds)
+            .order("stop_number", { ascending: true });
+          const stopsByVersion: Record<string, { stop_number: number; destination_name: string | null; destination_address: string; arrival_time: string; departure_time: string | null }[]> = {};
+          for (const s of stops ?? []) {
+            (stopsByVersion[s.quote_version_id] ??= []).push(s);
+          }
           versionMap = Object.fromEntries(
-            (versions ?? []).map((v: any) => [v.id, { ...v, shuttle_runs: runsByVersion[v.id] ?? [] }])
+            (versions ?? []).map((v: any) => [v.id, { ...v, shuttle_runs: runsByVersion[v.id] ?? [], multi_stops: stopsByVersion[v.id] ?? [] }])
           );
         }
         const merged: AdminQuoteRow[] = rows.map((r: any) => ({
@@ -665,7 +675,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
             <Kv label="School" value={quote.schools?.name ?? "—"} />
             <Kv label="Trip date" value={tripDate} />
             <Kv label="Trip type" value={formatTripType(ver?.trip_type)} />
-            {ver?.trip_type === "shuttle" ? (
+            {ver?.trip_type === "shuttle" || ver?.trip_type === "multi_destination" ? (
               <Kv label="Bus engaged" value={`${formatTime(ver?.departure_time ?? null)} → ${formatTime(ver?.return_time ?? null)}`} />
             ) : (
               <>
@@ -674,8 +684,12 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
               </>
             )}
             <Kv label="Pickup address" value={ver?.pickup_address || "—"} />
-            <Kv label="Destination" value={ver?.destination_name || "—"} />
-            <Kv label="Destination address" value={ver?.destination_address || "—"} />
+            {ver?.trip_type !== "multi_destination" && (
+              <>
+                <Kv label="Destination" value={ver?.destination_name || "—"} />
+                <Kv label="Destination address" value={ver?.destination_address || "—"} />
+              </>
+            )}
             {ver?.distance_km != null ? (
               <Kv label="Distance (one-way)" value={`${ver.distance_km} km`} />
             ) : (
@@ -710,6 +724,21 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                 {ver.shuttle_runs.map((r) => (
                   <li key={r.run_number}>
                     Run {r.run_number}: {formatTime(r.pickup_time)} → {formatTime(r.dropoff_time)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {ver?.trip_type === "multi_destination" && ver.multi_stops.length > 0 && (
+            <div className="mt-3 rounded-xl border border-border bg-surface p-3">
+              <div className="mb-1.5 text-xs font-semibold text-foreground">Stops</div>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {ver.multi_stops.map((s) => (
+                  <li key={s.stop_number}>
+                    Stop {s.stop_number}: {s.destination_name || s.destination_address}
+                    {s.destination_name ? ` (${s.destination_address})` : ""} — arrive {formatTime(s.arrival_time)}
+                    {s.departure_time ? `, depart ${formatTime(s.departure_time)}` : ""}
                   </li>
                 ))}
               </ul>
@@ -998,6 +1027,7 @@ const TRIP_TYPE_LABELS: Record<string, string> = {
   two_way: "Two-way",
   one_way: "One-way",
   shuttle: "Shuttle",
+  multi_destination: "Multi-destination",
   multi_trip: "Multi-trip",
 };
 

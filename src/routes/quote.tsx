@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
+import { MultiStopRouteMap, type GeocodePoint } from "@/components/MultiStopRouteMap";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
@@ -12,14 +13,17 @@ import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 
-type TripType = "two_way" | "one_way" | "shuttle" | "multi_trip";
+type TripType = "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
 type ShuttleRun = { pickup: string; dropoff: string };
+type MultiStop = { address: string; arrivalTime: string; departureTime: string };
+type ReturnStop = { address: string; arrivalTime: string };
 
 const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
   { value: "two_way", label: "Two-way", hint: "Round trip — we drop your group off and pick them back up." },
   { value: "one_way", label: "One-way", hint: "Drop-off only, no return." },
   { value: "shuttle", label: "Shuttle", hint: "Repeated runs between your school and ONE destination throughout the day." },
-  { value: "multi_trip", label: "Multi-trip", hint: "Several DIFFERENT destinations in one day — arranged directly with our office." },
+  { value: "multi_destination", label: "Multi-destination", hint: "Several DIFFERENT destinations in ONE day." },
+  { value: "multi_trip", label: "Multi-trip", hint: "Booking across MULTIPLE DAYS — arranged directly with our office." },
 ];
 
 export const Route = createFileRoute("/quote")({
@@ -49,6 +53,11 @@ function QuotePage() {
   const [departTime, setDepartTime] = useState("");
   const [returnTime, setReturnTime] = useState("");
   const [shuttleRuns, setShuttleRuns] = useState<ShuttleRun[]>([{ pickup: "", dropoff: "" }]);
+  const [multiStops, setMultiStops] = useState<MultiStop[]>([{ address: "", arrivalTime: "", departureTime: "" }]);
+  const [includeReturnLeg, setIncludeReturnLeg] = useState(true);
+  const [returnStop, setReturnStop] = useState<ReturnStop>({ address: "", arrivalTime: "" });
+  const [returnAddressTouched, setReturnAddressTouched] = useState(false);
+  const [multiStopGeocode, setMultiStopGeocode] = useState<GeocodePoint[]>([]);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
 
   // Step 2 — passenger calculator (K-4 seat 3-per-bench, Grade 5+ & adults seat 2-per-bench)
@@ -101,6 +110,10 @@ function QuotePage() {
     if (d.departTime) setDepartTime(d.departTime as string);
     if (d.returnTime) setReturnTime(d.returnTime as string);
     if (Array.isArray(d.shuttleRuns) && d.shuttleRuns.length) setShuttleRuns(d.shuttleRuns as ShuttleRun[]);
+    if (Array.isArray(d.multiStops) && d.multiStops.length) setMultiStops(d.multiStops as MultiStop[]);
+    if (typeof d.includeReturnLeg === "boolean") setIncludeReturnLeg(d.includeReturnLeg);
+    if (d.returnStop) setReturnStop(d.returnStop as ReturnStop);
+    if (typeof d.returnAddressTouched === "boolean") setReturnAddressTouched(d.returnAddressTouched);
     if (d.kToFour) setKToFour(d.kToFour as string);
     if (d.grade5Plus) setGrade5Plus(d.grade5Plus as string);
     if (d.adults) setAdults(d.adults as string);
@@ -121,6 +134,7 @@ function QuotePage() {
       (d.tripType && d.tripType !== "two_way") ||
       d.departTime || d.returnTime ||
       (Array.isArray(d.shuttleRuns) && d.shuttleRuns.some((r) => (r as ShuttleRun).pickup || (r as ShuttleRun).dropoff)) ||
+      (Array.isArray(d.multiStops) && d.multiStops.some((s) => (s as MultiStop).address || (s as MultiStop).arrivalTime || (s as MultiStop).departureTime)) ||
       d.kToFour || d.grade5Plus || d.adults ||
       d.c1n || d.c1e || d.c1p || d.dayN || d.dayP || d.notes || d.driverPref,
     );
@@ -156,9 +170,9 @@ function QuotePage() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !draftReady) return;
-    const draft = { school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref };
+    const draft = { school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, multiStops, includeReturnLeg, returnStop, returnAddressTouched, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [draftReady, school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
+  }, [draftReady, school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, multiStops, includeReturnLeg, returnStop, returnAddressTouched, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
 
   // Prefill from previous quote
   useEffect(() => {
@@ -193,16 +207,39 @@ function QuotePage() {
     })();
   }, [session, prefilled]);
 
+  // Multi-destination: default the return-leg address to the pickup address
+  // until the customer edits it themselves — still fully editable/removable.
+  useEffect(() => {
+    if (tripType !== "multi_destination" || returnAddressTouched) return;
+    const fallback = pickup || school;
+    if (fallback && returnStop.address !== fallback) {
+      setReturnStop((r) => ({ ...r, address: fallback }));
+    }
+  }, [tripType, pickup, school, returnAddressTouched, returnStop.address]);
+
   // Bus-engaged envelope: for two-way/one-way this is just departure->return;
   // for shuttle it's the first pickup -> last drop-off across all runs (the
-  // bus is tied up continuously, gaps between runs included). "HH:MM" strings
-  // compare lexicographically within a single day, so min/max works directly.
+  // bus is tied up continuously, gaps between runs included); for
+  // multi-destination the start is the explicit pickup departure time (same
+  // field/logic as two-way/one-way — no longer derived from stop times) and
+  // the end is the latest arrival time across all stops, whether that's the
+  // last regular stop or the return leg. The distance route is a SEPARATE
+  // calculation below — driver-time hours only ever come from these times.
+  // "HH:MM" strings compare lexicographically within a single day, so
+  // min/max works directly.
   const filledRuns = shuttleRuns.filter((r) => r.pickup && r.dropoff);
+  const allMultiStopArrivals = [
+    ...multiStops.map((s) => s.arrivalTime),
+    ...(includeReturnLeg ? [returnStop.arrivalTime] : []),
+  ].filter(Boolean);
+  const filledMultiStops = [...multiStops, ...(includeReturnLeg ? [returnStop] : [])].filter((s) => s.address);
   const envelopeDepart = tripType === "shuttle"
     ? filledRuns.reduce((min, r) => (!min || r.pickup < min ? r.pickup : min), "")
     : departTime;
   const envelopeReturn = tripType === "shuttle"
     ? filledRuns.reduce((max, r) => (r.dropoff > max ? r.dropoff : max), "")
+    : tripType === "multi_destination"
+    ? allMultiStopArrivals.reduce((max, t) => (t > max ? t : max), "")
     : returnTime;
 
   // Trip-duration helper (minutes)
@@ -260,13 +297,25 @@ function QuotePage() {
     if (totalStudents + adultsN < 1) e.passengers = "Please enter at least 1 passenger.";
 
     if (!school.trim())            e.school = "Please enter your school name.";
-    if (!destination.trim())       e.destination = "Please enter the destination name.";
-    if (!destinationAddress.trim()) e.destinationAddress = "Please enter the destination address so we can calculate the route.";
+    if (tripType !== "multi_destination") {
+      if (!destination.trim())       e.destination = "Please enter the destination name.";
+      if (!destinationAddress.trim()) e.destinationAddress = "Please enter the destination address so we can calculate the route.";
+    }
     if (!date)                     e.date = "Please select the trip date.";
 
     if (tripType === "shuttle") {
       if (shuttleRuns.length === 0 || shuttleRuns.some((r) => !r.pickup || !r.dropoff)) {
         e.shuttleRuns = "Please enter pickup and drop-off times for every run.";
+      }
+    } else if (tripType === "multi_destination") {
+      if (!departTime) e.departTime = "Please enter the pickup departure time.";
+      // Unresolved addresses do NOT block submission (Melody confirms those
+      // by hand) — this only requires every stop to actually have an
+      // address and times filled in.
+      const stopsIncomplete = multiStops.some((s) => !s.address || !s.arrivalTime || !s.departureTime);
+      const returnIncomplete = includeReturnLeg && (!returnStop.address || !returnStop.arrivalTime);
+      if (multiStops.length === 0 || stopsIncomplete || returnIncomplete) {
+        e.multiStops = "Please enter an address and time for every stop.";
       }
     } else {
       if (!departTime) e.departTime = "Please enter the departure time.";
@@ -295,7 +344,7 @@ function QuotePage() {
 
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "shuttleRuns", "c1n", "c1e", "c1p", "c2e", "c2n", "dayN", "dayP"];
+      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "shuttleRuns", "multiStops", "c1n", "c1e", "c1p", "c2e", "c2n", "dayN", "dayP"];
       const firstKey = order.find((k) => e[k]);
       if (firstKey && typeof document !== "undefined") {
         document.getElementById(`field-${firstKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -319,12 +368,37 @@ function QuotePage() {
       p_data: {
         school_name:         school,
         pickup_address:      pickup || school,
-        destination_name:    destination,
-        destination_address: destinationAddress,
         trip_date:           date,
         trip_type:           tripType,
+        // Destinations for multi-destination live per-stop below, not here.
+        ...(tripType !== "multi_destination"
+          ? { destination_name: destination, destination_address: destinationAddress }
+          : {}),
         ...(tripType === "shuttle"
           ? { shuttle_runs: shuttleRuns.map((r, i) => ({ run_number: i + 1, pickup_time: r.pickup, dropoff_time: r.dropoff })) }
+          : tripType === "multi_destination"
+          ? {
+              departure_time: departTime,
+              stops: [
+                ...multiStops.map((s, i) => ({
+                  stop_number: i + 1,
+                  destination_address: s.address,
+                  arrival_time: s.arrivalTime,
+                  departure_time: s.departureTime,
+                  lat: multiStopGeocode[i + 1]?.lat ?? undefined,
+                  lng: multiStopGeocode[i + 1]?.lng ?? undefined,
+                })),
+                ...(includeReturnLeg
+                  ? [{
+                      stop_number: multiStops.length + 1,
+                      destination_address: returnStop.address,
+                      arrival_time: returnStop.arrivalTime,
+                      lat: multiStopGeocode[multiStops.length + 1]?.lat ?? undefined,
+                      lng: multiStopGeocode[multiStops.length + 1]?.lng ?? undefined,
+                    }]
+                  : []),
+              ],
+            }
           : { departure_time: departTime, return_time: returnTime }),
         student_count:       String(totalStudents),
         adults_count:        adults,
@@ -445,7 +519,7 @@ function QuotePage() {
 
         <div className="space-y-5">
             <SectionCard number={1} title="Trip type" hint="What kind of trip is this?">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {TRIP_TYPE_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
@@ -464,10 +538,11 @@ function QuotePage() {
 
             {tripType === "multi_trip" ? (
               <div className="rounded-3xl border border-border bg-card p-6 text-center shadow-soft sm:p-7">
-                <h2 className="text-lg font-bold text-foreground">Booking multiple trips?</h2>
+                <h2 className="text-lg font-bold text-foreground">Booking across multiple days?</h2>
                 <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                  Multi-trip bookings are arranged directly with our office rather than through this
-                  instant-estimate form. Reach out and Melody will put a custom quote together for you.
+                  Planning several separate trips on different days is arranged directly with our office
+                  rather than through this instant-estimate form. Reach out and Melody will put a custom
+                  quote together for you.
                 </p>
                 <a
                   href={`mailto:${COMPANY.email}`}
@@ -535,24 +610,26 @@ function QuotePage() {
                 />
               </div>
 
-              <div className="rounded-2xl border border-border p-4 space-y-3.5">
-                <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Destination</div>
-                <Field
-                  id="field-destination"
-                  label="Destination name" required
-                  value={destination} onChange={(v) => { setDestination(v); setErrors((e) => ({ ...e, destination: "" })); }}
-                  placeholder="e.g. Science World"
-                  error={errors.destination}
-                />
-                <AddressAutocomplete
-                  id="field-destinationAddress"
-                  label="Destination address" required
-                  value={destinationAddress}
-                  onChange={(v) => { setDestinationAddress(v); setErrors((e) => ({ ...e, destinationAddress: "" })); }}
-                  placeholder="e.g. 1455 Quebec St, Vancouver, BC"
-                  error={errors.destinationAddress}
-                />
-              </div>
+              {tripType !== "multi_destination" && (
+                <div className="rounded-2xl border border-border p-4 space-y-3.5">
+                  <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Destination</div>
+                  <Field
+                    id="field-destination"
+                    label="Destination name" required
+                    value={destination} onChange={(v) => { setDestination(v); setErrors((e) => ({ ...e, destination: "" })); }}
+                    placeholder="e.g. Science World"
+                    error={errors.destination}
+                  />
+                  <AddressAutocomplete
+                    id="field-destinationAddress"
+                    label="Destination address" required
+                    value={destinationAddress}
+                    onChange={(v) => { setDestinationAddress(v); setErrors((e) => ({ ...e, destinationAddress: "" })); }}
+                    placeholder="e.g. 1455 Quebec St, Vancouver, BC"
+                    error={errors.destinationAddress}
+                  />
+                </div>
+              )}
 
               <Field
                 id="field-date"
@@ -600,6 +677,100 @@ function QuotePage() {
                   ))}
                   {errors.shuttleRuns && <p className="text-xs text-destructive">{errors.shuttleRuns}</p>}
                 </div>
+              ) : tripType === "multi_destination" ? (
+                <div id="field-multiStops" className="space-y-4">
+                  <TimeField
+                    id="field-departTime"
+                    label="Departure time from pickup" required
+                    value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
+                    error={errors.departTime}
+                  />
+                  {multiStops.map((stop, i) => (
+                    <div key={i} className="space-y-3 rounded-2xl border border-border bg-surface p-4 sm:p-5">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Stop {i + 1}</div>
+                        {multiStops.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setMultiStops((s) => s.filter((_, si) => si !== i))}
+                            className="text-xs font-semibold text-destructive hover:underline"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <AddressAutocomplete
+                        label="Destination address"
+                        value={stop.address}
+                        onChange={(v) => {
+                          setMultiStops((s) => s.map((st, si) => (si === i ? { ...st, address: v } : st)));
+                          setErrors((e) => ({ ...e, multiStops: "" }));
+                        }}
+                        placeholder="e.g. 1455 Quebec St, Vancouver, BC"
+                      />
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <TimeField
+                          label="Arrival time"
+                          value={stop.arrivalTime}
+                          onChange={(v) => {
+                            setMultiStops((s) => s.map((st, si) => (si === i ? { ...st, arrivalTime: v } : st)));
+                            setErrors((e) => ({ ...e, multiStops: "" }));
+                          }}
+                        />
+                        <TimeField
+                          label="Departure time"
+                          value={stop.departureTime}
+                          onChange={(v) => {
+                            setMultiStops((s) => s.map((st, si) => (si === i ? { ...st, departureTime: v } : st)));
+                            setErrors((e) => ({ ...e, multiStops: "" }));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setMultiStops((s) => [...s, { address: "", arrivalTime: "", departureTime: "" }])}
+                    className="text-sm font-semibold text-primary hover:underline"
+                  >
+                    + Add another stop
+                  </button>
+
+                  <div className="space-y-3 rounded-2xl border border-dashed border-border bg-surface p-4 sm:p-5">
+                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={includeReturnLeg}
+                        onChange={(e) => setIncludeReturnLeg(e.target.checked)}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      Return to school
+                    </label>
+                    {includeReturnLeg && (
+                      <>
+                        <AddressAutocomplete
+                          label="Return address"
+                          value={returnStop.address}
+                          onChange={(v) => {
+                            setReturnStop((r) => ({ ...r, address: v }));
+                            setReturnAddressTouched(true);
+                            setErrors((e) => ({ ...e, multiStops: "" }));
+                          }}
+                          placeholder="Defaults to your pick-up address"
+                        />
+                        <TimeField
+                          label="Arrival time"
+                          value={returnStop.arrivalTime}
+                          onChange={(v) => {
+                            setReturnStop((r) => ({ ...r, arrivalTime: v }));
+                            setErrors((e) => ({ ...e, multiStops: "" }));
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                  {errors.multiStops && <p className="text-xs text-destructive">{errors.multiStops}</p>}
+                </div>
               ) : (
                 <div className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 sm:p-5">
                   <TimeField
@@ -619,7 +790,7 @@ function QuotePage() {
 
               {tripMinutes !== null && (
                 <div className="flex items-center justify-between rounded-xl bg-primary/5 px-4 py-3">
-                  <span className="text-xs font-semibold text-foreground/80">{tripType === "shuttle" ? "Bus engaged" : "Trip length"}</span>
+                  <span className="text-xs font-semibold text-foreground/80">{tripType === "shuttle" || tripType === "multi_destination" ? "Bus engaged" : "Trip length"}</span>
                   <span className="text-sm font-bold text-primary tabular-nums">
                     {Math.floor(tripMinutes / 60)}h{tripMinutes % 60 > 0 ? ` ${tripMinutes % 60}m` : ""}
                   </span>
@@ -627,23 +798,44 @@ function QuotePage() {
               )}
 
               {/* Route map preview — appears as soon as pickup + destination are filled */}
-              {showMapPreview && (
-                <div className="rounded-2xl border border-border bg-surface overflow-hidden">
-                  <div className="px-4 pt-3 pb-1">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Route preview</p>
+              {tripType === "multi_destination" ? (
+                (pickup || school) && filledMultiStops.length > 0 && (
+                  <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+                    <div className="px-4 pt-3 pb-1">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Route preview</p>
+                    </div>
+                    <MultiStopRouteMap
+                      addresses={[pickup || school, ...multiStops.map((s) => s.address), ...(includeReturnLeg ? [returnStop.address] : [])]}
+                      departTime={envelopeDepart || undefined}
+                      onResult={(r) => setDistanceKm(r?.distanceKm ?? null)}
+                      onGeocodeUpdate={setMultiStopGeocode}
+                      className="h-52 w-full"
+                    />
+                    <p className="px-4 py-2 text-xs text-muted-foreground">
+                      Distance shown is the full route: pickup → every stop → return leg (if included), all summed.
+                      Longer routes mean more hours on the clock.
+                    </p>
                   </div>
-                  <RouteMap
-                    pickup={pickup || school}
-                    destination={destinationAddress}
-                    departTime={envelopeDepart || undefined}
-                    onResult={(r) => setDistanceKm(r.distanceKm)}
-                    className="h-52 w-full"
-                  />
-                  <p className="px-4 py-2 text-xs text-muted-foreground">
-                    Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
-                    Longer routes mean more hours on the clock.
-                  </p>
-                </div>
+                )
+              ) : (
+                showMapPreview && (
+                  <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+                    <div className="px-4 pt-3 pb-1">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Route preview</p>
+                    </div>
+                    <RouteMap
+                      pickup={pickup || school}
+                      destination={destinationAddress}
+                      departTime={envelopeDepart || undefined}
+                      onResult={(r) => setDistanceKm(r.distanceKm)}
+                      className="h-52 w-full"
+                    />
+                    <p className="px-4 py-2 text-xs text-muted-foreground">
+                      Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
+                      Longer routes mean more hours on the clock.
+                    </p>
+                  </div>
+                )
               )}
 
               {tripType === "two_way" && (
@@ -660,6 +852,12 @@ function QuotePage() {
                 <p className="text-xs text-muted-foreground">
                   Runs back and forth between the same pickup and destination all day. Your bus is booked
                   continuously from the first pickup to the last drop-off, even if there are gaps between runs.
+                </p>
+              )}
+              {tripType === "multi_destination" && (
+                <p className="text-xs text-muted-foreground">
+                  Your bus is booked from the earliest stop time to the latest. If an address can't be located
+                  automatically, your request still goes through — Melody will confirm the route by hand.
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
