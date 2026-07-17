@@ -59,6 +59,12 @@ function QuotePage() {
   const [returnAddressTouched, setReturnAddressTouched] = useState(false);
   const [multiStopGeocode, setMultiStopGeocode] = useState<GeocodePoint[]>([]);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
+  // Member pricing (2hr minimum vs 4hr): only looked up for logged-in
+  // customers, since RLS only permits reading `schools` when authenticated.
+  // Logged-out customers always see the non-member 4hr minimum, unchanged
+  // from today — Melody's admin review is the safety net for a member
+  // school that quoted while logged out.
+  const [isMemberSchool, setIsMemberSchool] = useState(false);
 
   // Step 2 — passenger calculator (K-4 seat 3-per-bench, Grade 5+ & adults seat 2-per-bench)
   const [kToFour, setKToFour] = useState("");
@@ -217,6 +223,28 @@ function QuotePage() {
     }
   }, [tripType, pickup, school, returnAddressTouched, returnStop.address]);
 
+  // Member pricing: logged-in customers only (RLS: schools_auth_read
+  // requires auth.uid() IS NOT NULL). Debounced so this doesn't fire on
+  // every keystroke while typing the school name. Case-insensitive exact
+  // match on the trimmed name, same matching approach submit_quote already
+  // uses server-side (lower(trim(name))).
+  useEffect(() => {
+    if (!session || !school.trim()) { setIsMemberSchool(false); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      supabase
+        .from("schools")
+        .select("is_member")
+        .ilike("name", school.trim())
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled) setIsMemberSchool(data?.is_member ?? false);
+        });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [session, school]);
+
   // Bus-engaged envelope: for two-way/one-way this is just departure->return;
   // for shuttle it's the first pickup -> last drop-off across all runs (the
   // bus is tied up continuously, gaps between runs included); for
@@ -267,7 +295,11 @@ function QuotePage() {
   const benchCount = seatsNeeded <= 9 ? 18 : seatsNeeded <= 23.67 ? 47 : 56;
   const busCount   = seatsNeeded > 0 ? Math.max(1, Math.ceil(seatsNeeded / BUS_SEATS[benchCount])) : 1;
   const hourlyRate = benchCount === 56 ? 105.00 : 92.50;
-  const minHours   = 4;
+  // 2hr minimum for a recognized member school (logged-in only — see the
+  // isMemberSchool lookup above), 4hr otherwise. hourlyRate above is
+  // unaffected — this preview is still non-member-rate only, a separate,
+  // already-documented gap (see WHATS_NEW.md).
+  const minHours   = isMemberSchool ? 2 : 4;
   // Use actual trip duration if entered, otherwise fall back to minimum
   const tripHours  = tripHoursCalc !== null ? tripHoursCalc : minHours;
   // Minimum applies to TRIP TIME ONLY (matches calculate_estimate) — the
