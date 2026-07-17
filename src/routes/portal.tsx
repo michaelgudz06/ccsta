@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, CheckCircle2, XCircle, Phone } from "lucide-react";
-import { formatTripDate, formatTime, formatMoney } from "@/lib/format";
+import { formatTripDate, formatTime, formatMoney, formatTripType } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 
 export const Route = createFileRoute("/portal")({
@@ -45,6 +45,7 @@ type VersionDetail = {
   pickup_address: string | null;
   departure_time: string | null;
   return_time: string | null;
+  trip_type: "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
   student_count: number | null;
   adults_count: number | null;
   subtotal: number | null;
@@ -95,7 +96,7 @@ function PortalPage() {
     if (versionIds.length > 0) {
       const { data: versions } = await supabase
         .from("quote_versions")
-        .select("id, trip_date, destination_name, destination_address, pickup_address, departure_time, return_time, student_count, adults_count, subtotal, surcharge_total, total, contact_primary, special_requests")
+        .select("id, trip_date, destination_name, destination_address, pickup_address, departure_time, return_time, trip_type, student_count, adults_count, subtotal, surcharge_total, total, contact_primary, special_requests")
         .in("id", versionIds);
       versionMap = Object.fromEntries(
         (versions ?? []).map((v) => [v.id, v as unknown as VersionDetail]),
@@ -206,11 +207,15 @@ function PortalPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-foreground">{v?.destination_name ?? "Field trip"}</span>
+                          <span className="font-semibold text-foreground">
+                            {v?.trip_type === "multi_destination" ? "Multiple destinations" : (v?.destination_name ?? "Field trip")}
+                            {" · "}{formatTripDate(v?.trip_date)}
+                            {" · "}{formatTripType(v?.trip_type)}
+                          </span>
                           <span className="text-xs text-muted-foreground">#{q.quote_number}</span>
                         </div>
                         <div className="mt-0.5 text-sm text-muted-foreground">
-                          {formatTripDate(v?.trip_date)} · {(v?.student_count ?? 0) + (v?.adults_count ?? 0)} riders
+                          {(v?.student_count ?? 0) + (v?.adults_count ?? 0)} riders
                         </div>
                       </div>
                       <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${cancelPending ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
@@ -226,6 +231,7 @@ function PortalPage() {
                     {open && v && (
                       <div className="border-t border-border bg-surface/50 px-4 py-4">
                         <div className="grid gap-4 sm:grid-cols-2">
+                          <Detail label="Trip type" value={formatTripType(v.trip_type)} />
                           <Detail label="Pickup" value={v.pickup_address || q.schools?.name || "—"} />
                           <Detail label="Destination" value={v.destination_address || v.destination_name || "—"} />
                           <Detail label="Trip date" value={formatTripDate(v.trip_date)} />

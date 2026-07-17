@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
-import { formatTripDate, formatTime, formatMoney, todayISO, addDaysISO } from "@/lib/format";
+import { formatTripDate, formatTime, formatMoney, formatTripType, todayISO, addDaysISO } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 import {
   Inbox, ClipboardCheck, CalendarDays, Bus, Bell,
@@ -1023,18 +1023,6 @@ function fmtContact(c?: { name?: string; email?: string; phone?: string } | null
   if (!c) return "—";
   const parts = [c.name, c.email, c.phone].filter(Boolean);
   return parts.length ? parts.join(" · ") : "—";
-}
-
-const TRIP_TYPE_LABELS: Record<string, string> = {
-  two_way: "Two-way",
-  one_way: "One-way",
-  shuttle: "Shuttle",
-  multi_destination: "Multi-destination",
-  multi_trip: "Multi-trip",
-};
-
-function formatTripType(t?: string | null): string {
-  return t ? (TRIP_TYPE_LABELS[t] ?? t) : "—";
 }
 
 function Kv({ label, value }: { label: string; value: string }) {

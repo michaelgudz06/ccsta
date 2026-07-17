@@ -57,3 +57,16 @@ export function formatMoney(n: number | null | undefined): string {
   if (n == null) return "—";
   return n.toLocaleString("en-CA", { style: "currency", currency: "CAD" });
 }
+
+export const TRIP_TYPE_LABELS: Record<string, string> = {
+  two_way: "Two-way",
+  one_way: "One-way",
+  shuttle: "Shuttle",
+  multi_destination: "Multi-destination",
+  multi_trip: "Multi-trip",
+};
+
+/** Format a `quote_versions.trip_type` value for display, e.g. "two_way" → "Two-way". */
+export function formatTripType(t?: string | null): string {
+  return t ? (TRIP_TYPE_LABELS[t] ?? t) : "—";
+}
