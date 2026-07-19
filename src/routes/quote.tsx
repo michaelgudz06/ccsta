@@ -5,6 +5,10 @@ import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
 import { MultiStopRouteMap, type GeocodePoint } from "@/components/MultiStopRouteMap";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import {
+  Field, TimeField, Stepper, ShuttleRunsEditor, MultiStopsEditor,
+  type ShuttleRun, type MultiStop, type ReturnStop,
+} from "@/components/QuoteFields";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -14,9 +18,6 @@ import { formatMoney } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 
 type TripType = "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
-type ShuttleRun = { pickup: string; dropoff: string };
-type MultiStop = { address: string; arrivalTime: string; departureTime: string };
-type ReturnStop = { address: string; arrivalTime: string };
 
 const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
   { value: "two_way", label: "Two-way", hint: "Round trip — we drop your group off and pick them back up." },
@@ -27,6 +28,9 @@ const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
 ];
 
 export const Route = createFileRoute("/quote")({
+  validateSearch: (search: Record<string, unknown>): { edit?: string } => ({
+    edit: typeof search.edit === "string" ? search.edit : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Get a Field Trip Quote — CCSTA" },
@@ -41,7 +45,19 @@ export const Route = createFileRoute("/quote")({
 function QuotePage() {
   const navigate = useNavigate();
   const { session } = useAuth();
+  const { edit: editQuoteId } = Route.useSearch();
   const [prefilled, setPrefilled] = useState(false);
+
+  // "Edit mode": reopens this same form pre-filled with an existing quote's
+  // data instead of starting blank. editLoading gates rendering until the
+  // fetch resolves; editBlocked holds a user-facing reason (wrong status,
+  // pending cancellation, not found/not yours) when the quote can't be
+  // edited online, checked client-side for a nicer experience than filling
+  // out the whole form only to hit a server error at the end. The real
+  // enforcement is still edit_own_quote itself.
+  const [editLoading, setEditLoading] = useState(!!editQuoteId);
+  const [editBlocked, setEditBlocked] = useState<string | null>(null);
+  const [editLoaded, setEditLoaded] = useState(false);
 
   // Step 1
   const [school, setSchool] = useState("");
@@ -146,6 +162,9 @@ function QuotePage() {
     );
 
   useEffect(() => {
+    // Editing an existing quote has nothing to do with the anonymous
+    // new-quote draft mechanism -- skip the resume-prompt entirely.
+    if (editQuoteId) { setDraftReady(true); return; }
     if (typeof window === "undefined") return;
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
@@ -175,14 +194,16 @@ function QuotePage() {
   };
 
   useEffect(() => {
-    if (typeof window === "undefined" || !draftReady) return;
+    if (editQuoteId || typeof window === "undefined" || !draftReady) return;
     const draft = { school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, multiStops, includeReturnLeg, returnStop, returnAddressTouched, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
-  }, [draftReady, school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, multiStops, includeReturnLeg, returnStop, returnAddressTouched, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
+  }, [editQuoteId, draftReady, school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, multiStops, includeReturnLeg, returnStop, returnAddressTouched, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
 
-  // Prefill from previous quote
+  // Prefill from previous quote (blank-form convenience only — skipped
+  // entirely in edit mode, where the load-existing-quote effect below
+  // populates everything instead).
   useEffect(() => {
-    if (!session || prefilled) return;
+    if (!session || prefilled || editQuoteId) return;
     setPrefilled(true);
     (async () => {
       const { data: q } = await supabase
@@ -211,7 +232,102 @@ function QuotePage() {
       setDayN((s) => s || cd.name || "");
       setDayP((s) => s || cd.phone || "");
     })();
-  }, [session, prefilled]);
+  }, [session, prefilled, editQuoteId]);
+
+  // Edit mode: load the existing quote and pre-fill the entire form. RLS
+  // already scopes `quotes`/`quote_versions` reads to the owning customer
+  // (or an admin), so a foreign quote id simply comes back empty -- treated
+  // the same as "not found" below, no separate ownership check needed.
+  useEffect(() => {
+    if (!editQuoteId || editLoaded) return;
+    setEditLoaded(true);
+    (async () => {
+      const { data: q } = await supabase
+        .from("quotes")
+        .select("status, current_version_id, cancellation_requested_at, schools(name)")
+        .eq("id", editQuoteId)
+        .maybeSingle();
+      if (!q || !q.current_version_id) {
+        setEditBlocked("This quote couldn't be found.");
+        setEditLoading(false);
+        return;
+      }
+      const currentVersionId = q.current_version_id;
+      if (!["requested", "in_review", "approved", "confirmed"].includes(q.status)) {
+        setEditBlocked("This quote can no longer be edited online — please call us.");
+        setEditLoading(false);
+        return;
+      }
+      if (q.cancellation_requested_at) {
+        setEditBlocked("A cancellation request is already pending for this quote — it can't be edited at the same time.");
+        setEditLoading(false);
+        return;
+      }
+      const { data: v } = await supabase
+        .from("quote_versions")
+        .select("destination_name, destination_address, pickup_address, trip_date, trip_type, departure_time, return_time, student_count, adults_count, grade_breakdown, cargo_needed, contact_primary, contact_secondary, contact_day_of, special_requests, driver_preference")
+        .eq("id", currentVersionId)
+        .maybeSingle();
+      if (!v) {
+        setEditBlocked("This quote couldn't be found.");
+        setEditLoading(false);
+        return;
+      }
+      const [runsRes, stopsRes] = await Promise.all([
+        supabase.from("quote_shuttle_runs").select("run_number, pickup_time, dropoff_time").eq("quote_version_id", currentVersionId).order("run_number", { ascending: true }),
+        supabase.from("quote_multi_stops").select("stop_number, destination_name, destination_address, arrival_time, departure_time").eq("quote_version_id", currentVersionId).order("stop_number", { ascending: true }),
+      ]);
+
+      setSchool((q.schools as { name?: string } | null)?.name ?? "");
+      setPickup(v.pickup_address ?? "");
+      setDestination(v.destination_name ?? "");
+      setDestinationAddress(v.destination_address ?? "");
+      setDate(v.trip_date ?? "");
+      setTripType(v.trip_type as TripType);
+      setDepartTime(v.departure_time ?? "");
+      setReturnTime(v.return_time ?? "");
+
+      const runs = runsRes.data ?? [];
+      setShuttleRuns(runs.length > 0 ? runs.map((r) => ({ pickup: r.pickup_time, dropoff: r.dropoff_time })) : [{ pickup: "", dropoff: "" }]);
+
+      // A return-to-school leg has no departure_time (arrival-only, last in
+      // the sequence) -- regular stops always have both. That's the only
+      // signal we have to split the flat DB rows back into the "regular
+      // stops" + "return leg" shape this form uses.
+      const stopRows = stopsRes.data ?? [];
+      const lastStop = stopRows[stopRows.length - 1];
+      const hasReturnLeg = stopRows.length > 0 && lastStop.departure_time == null;
+      const regularStops = hasReturnLeg ? stopRows.slice(0, -1) : stopRows;
+      setMultiStops(
+        regularStops.length > 0
+          ? regularStops.map((s) => ({ address: s.destination_address, arrivalTime: s.arrival_time, departureTime: s.departure_time ?? "" }))
+          : [{ address: "", arrivalTime: "", departureTime: "" }],
+      );
+      setIncludeReturnLeg(hasReturnLeg);
+      setReturnStop(hasReturnLeg ? { address: lastStop.destination_address, arrivalTime: lastStop.arrival_time } : { address: "", arrivalTime: "" });
+      // The return-leg address is already an explicit saved value here, not
+      // a blank default waiting to be auto-filled from pickup.
+      setReturnAddressTouched(true);
+
+      const grades = Array.isArray(v.grade_breakdown) ? (v.grade_breakdown as { grade?: string; count?: string }[]) : [];
+      setKToFour(String(grades.find((g) => String(g.grade).toUpperCase() === "K")?.count ?? ""));
+      setGrade5Plus(String(grades.find((g) => String(g.grade) === "5")?.count ?? ""));
+      setAdults(v.adults_count != null ? String(v.adults_count) : "");
+      setCargo(!!v.cargo_needed);
+
+      const c1 = (v.contact_primary ?? {}) as { name?: string; email?: string; phone?: string };
+      const c2 = (v.contact_secondary ?? {}) as { name?: string; email?: string; phone?: string };
+      const cd = (v.contact_day_of ?? {}) as { name?: string; phone?: string };
+      setC1n(c1.name ?? ""); setC1e(c1.email ?? ""); setC1p(c1.phone ?? "");
+      setC2n(c2.name ?? ""); setC2e(c2.email ?? ""); setC2p(c2.phone ?? "");
+      setDayN(cd.name ?? ""); setDayP(cd.phone ?? "");
+
+      setNotes(v.special_requests ?? "");
+      setDriverPref(v.driver_preference ?? "");
+
+      setEditLoading(false);
+    })();
+  }, [editQuoteId, editLoaded]);
 
   // Multi-destination: default the return-leg address to the pickup address
   // until the customer edits it themselves — still fully editable/removable.
@@ -400,51 +516,76 @@ function QuotePage() {
     }
     setSubmitting(true);
     setSubmitError(null);
+
+    // Shared shape both submit_quote and edit_own_quote accept — school_name
+    // (create-only, school isn't editable here) and driver_preference
+    // (placement differs below) are the only fields not in common.
+    const tripFields = {
+      pickup_address:      pickup || school,
+      trip_date:           date,
+      trip_type:           tripType,
+      // Destinations for multi-destination live per-stop below, not here.
+      ...(tripType !== "multi_destination"
+        ? { destination_name: destination, destination_address: destinationAddress }
+        : {}),
+      ...(tripType === "shuttle"
+        ? { shuttle_runs: shuttleRuns.map((r, i) => ({ run_number: i + 1, pickup_time: r.pickup, dropoff_time: r.dropoff })) }
+        : tripType === "multi_destination"
+        ? {
+            departure_time: departTime,
+            stops: [
+              ...multiStops.map((s, i) => ({
+                stop_number: i + 1,
+                destination_address: s.address,
+                arrival_time: s.arrivalTime,
+                departure_time: s.departureTime,
+                lat: multiStopGeocode[i + 1]?.lat ?? undefined,
+                lng: multiStopGeocode[i + 1]?.lng ?? undefined,
+              })),
+              ...(includeReturnLeg
+                ? [{
+                    stop_number: multiStops.length + 1,
+                    destination_address: returnStop.address,
+                    arrival_time: returnStop.arrivalTime,
+                    lat: multiStopGeocode[multiStops.length + 1]?.lat ?? undefined,
+                    lng: multiStopGeocode[multiStops.length + 1]?.lng ?? undefined,
+                  }]
+                : []),
+            ],
+          }
+        : { departure_time: departTime, return_time: returnTime }),
+      student_count:       String(totalStudents),
+      adults_count:        adults,
+      grade_breakdown:     [{ grade: "K", count: kToFour }, { grade: "5", count: grade5Plus }],
+      cargo_needed:        cargo,
+      contact_primary:     { name: c1n, email: c1e, phone: c1p },
+      contact_secondary:   { name: c2n, email: c2e, phone: c2p },
+      contact_day_of:      { name: dayN, phone: dayP },
+      special_requests:    notes,
+    };
+
+    if (editQuoteId) {
+      const { error } = await supabase.rpc("edit_own_quote" as never, {
+        p_quote_id: editQuoteId,
+        // driver_preference goes straight into the edit payload (no
+        // separate best-effort call needed, unlike the create path below).
+        p_data: { ...tripFields, driver_preference: driverPref },
+      } as never);
+      setSubmitting(false);
+      if (error) { setSubmitError(error.message); return; }
+      // Save the route distance so the server-side estimate can apply the
+      // long-distance surcharge (best-effort) — same call the create path
+      // makes, just against the already-known quote id.
+      if (distanceKm != null) {
+        await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: editQuoteId, p_distance_km: distanceKm } as never);
+      }
+      dispatchNotifications();
+      navigate({ to: "/portal" });
+      return;
+    }
+
     const { data, error } = await supabase.rpc("submit_quote", {
-      p_data: {
-        school_name:         school,
-        pickup_address:      pickup || school,
-        trip_date:           date,
-        trip_type:           tripType,
-        // Destinations for multi-destination live per-stop below, not here.
-        ...(tripType !== "multi_destination"
-          ? { destination_name: destination, destination_address: destinationAddress }
-          : {}),
-        ...(tripType === "shuttle"
-          ? { shuttle_runs: shuttleRuns.map((r, i) => ({ run_number: i + 1, pickup_time: r.pickup, dropoff_time: r.dropoff })) }
-          : tripType === "multi_destination"
-          ? {
-              departure_time: departTime,
-              stops: [
-                ...multiStops.map((s, i) => ({
-                  stop_number: i + 1,
-                  destination_address: s.address,
-                  arrival_time: s.arrivalTime,
-                  departure_time: s.departureTime,
-                  lat: multiStopGeocode[i + 1]?.lat ?? undefined,
-                  lng: multiStopGeocode[i + 1]?.lng ?? undefined,
-                })),
-                ...(includeReturnLeg
-                  ? [{
-                      stop_number: multiStops.length + 1,
-                      destination_address: returnStop.address,
-                      arrival_time: returnStop.arrivalTime,
-                      lat: multiStopGeocode[multiStops.length + 1]?.lat ?? undefined,
-                      lng: multiStopGeocode[multiStops.length + 1]?.lng ?? undefined,
-                    }]
-                  : []),
-              ],
-            }
-          : { departure_time: departTime, return_time: returnTime }),
-        student_count:       String(totalStudents),
-        adults_count:        adults,
-        grade_breakdown:     [{ grade: "K", count: kToFour }, { grade: "5", count: grade5Plus }],
-        cargo_needed:        cargo,
-        contact_primary:     { name: c1n, email: c1e, phone: c1p },
-        contact_secondary:   { name: c2n, email: c2e, phone: c2p },
-        contact_day_of:      { name: dayN, phone: dayP },
-        special_requests:    notes,
-      },
+      p_data: { school_name: school, ...tripFields },
     });
     setSubmitting(false);
     if (error) { setSubmitError(error.message); return; }
@@ -461,6 +602,35 @@ function QuotePage() {
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
     setSubmittedQuoteNo(result.quote_number);
   };
+
+  // Edit mode: loading or blocked states take over the whole page, same
+  // pattern as the draft-resume prompt and success screen below.
+  if (editQuoteId && editLoading) {
+    return (
+      <div className="min-h-screen bg-surface">
+        <AppTopBar />
+        <main className="mx-auto max-w-xl px-4 py-20 text-center text-sm text-muted-foreground sm:px-6">
+          Loading your quote…
+        </main>
+      </div>
+    );
+  }
+  if (editBlocked) {
+    return (
+      <div className="min-h-screen bg-surface">
+        <AppTopBar />
+        <main className="mx-auto max-w-xl px-4 py-20 sm:px-6">
+          <div className="rounded-3xl border border-border bg-card p-7 text-center shadow-soft">
+            <h1 className="text-xl font-semibold text-foreground">Can't edit this quote online</h1>
+            <p className="mt-3 text-sm text-muted-foreground">{editBlocked}</p>
+            <Button className="mt-6" variant="accent" onClick={() => navigate({ to: "/portal" })}>
+              Back to my quotes
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   // Resume-or-start-fresh prompt — shown instead of the form until answered,
   // so nothing autosaves and no field renders until the user picks one.
@@ -547,9 +717,13 @@ function QuotePage() {
 
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Get a Quote</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            {editQuoteId ? "Update your trip request" : "Get a Quote"}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Takes about 3 minutes. {session ? "" : "You'll need to log in to submit."}
+            {editQuoteId
+              ? "Change what you need, then save — we'll review the changes and confirm a new price."
+              : <>Takes about 3 minutes. {session ? "" : "You'll need to log in to submit."}</>}
           </p>
         </div>
 
@@ -638,6 +812,8 @@ function QuotePage() {
                   value={school} onChange={(v) => { setSchool(v); setErrors((e) => ({ ...e, school: "" })); }}
                   placeholder="e.g. Maple Ridge Christian School"
                   error={errors.school}
+                  disabled={!!editQuoteId}
+                  hint={editQuoteId ? "Can't be changed here — call us if this needs to change." : undefined}
                 />
                 <AddressAutocomplete
                   label="Pick-up address (leave blank to use school name)"
@@ -675,137 +851,33 @@ function QuotePage() {
               />
 
               {tripType === "shuttle" ? (
-                <div id="field-shuttleRuns" className="space-y-4">
-                  <Stepper
-                    label="Number of runs"
-                    value={String(shuttleRuns.length)}
-                    onChange={(v) => {
-                      const n = Math.max(1, parseInt(v || "1", 10) || 1);
-                      setShuttleRuns((runs) => {
-                        if (n === runs.length) return runs;
-                        if (n > runs.length) {
-                          return [...runs, ...Array.from({ length: n - runs.length }, () => ({ pickup: "", dropoff: "" }))];
-                        }
-                        return runs.slice(0, n);
-                      });
-                      setErrors((e) => ({ ...e, shuttleRuns: "" }));
-                    }}
-                  />
-                  {shuttleRuns.map((run, i) => (
-                    <div key={i} className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 sm:p-5">
-                      <TimeField
-                        label={`Run ${i + 1} pickup`} required
-                        value={run.pickup}
-                        onChange={(v) => {
-                          setShuttleRuns((runs) => runs.map((r, ri) => (ri === i ? { ...r, pickup: v } : r)));
-                          setErrors((e) => ({ ...e, shuttleRuns: "" }));
-                        }}
-                      />
-                      <TimeField
-                        label={`Run ${i + 1} drop-off`} required
-                        value={run.dropoff}
-                        onChange={(v) => {
-                          setShuttleRuns((runs) => runs.map((r, ri) => (ri === i ? { ...r, dropoff: v } : r)));
-                          setErrors((e) => ({ ...e, shuttleRuns: "" }));
-                        }}
-                      />
-                    </div>
-                  ))}
-                  {errors.shuttleRuns && <p className="text-xs text-destructive">{errors.shuttleRuns}</p>}
-                </div>
+                <ShuttleRunsEditor
+                  id="field-shuttleRuns"
+                  runs={shuttleRuns}
+                  onChange={setShuttleRuns}
+                  error={errors.shuttleRuns}
+                  onErrorClear={() => setErrors((e) => ({ ...e, shuttleRuns: "" }))}
+                />
               ) : tripType === "multi_destination" ? (
-                <div id="field-multiStops" className="space-y-4">
+                <div className="space-y-4">
                   <TimeField
                     id="field-departTime"
                     label="Departure time from pickup" required
                     value={departTime} onChange={(v) => { setDepartTime(v); setErrors((e) => ({ ...e, departTime: "" })); }}
                     error={errors.departTime}
                   />
-                  {multiStops.map((stop, i) => (
-                    <div key={i} className="space-y-3 rounded-2xl border border-border bg-surface p-4 sm:p-5">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Stop {i + 1}</div>
-                        {multiStops.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setMultiStops((s) => s.filter((_, si) => si !== i))}
-                            className="text-xs font-semibold text-destructive hover:underline"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      <AddressAutocomplete
-                        label="Destination address"
-                        value={stop.address}
-                        onChange={(v) => {
-                          setMultiStops((s) => s.map((st, si) => (si === i ? { ...st, address: v } : st)));
-                          setErrors((e) => ({ ...e, multiStops: "" }));
-                        }}
-                        placeholder="e.g. 1455 Quebec St, Vancouver, BC"
-                      />
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <TimeField
-                          label="Arrival time"
-                          value={stop.arrivalTime}
-                          onChange={(v) => {
-                            setMultiStops((s) => s.map((st, si) => (si === i ? { ...st, arrivalTime: v } : st)));
-                            setErrors((e) => ({ ...e, multiStops: "" }));
-                          }}
-                        />
-                        <TimeField
-                          label="Departure time"
-                          value={stop.departureTime}
-                          onChange={(v) => {
-                            setMultiStops((s) => s.map((st, si) => (si === i ? { ...st, departureTime: v } : st)));
-                            setErrors((e) => ({ ...e, multiStops: "" }));
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setMultiStops((s) => [...s, { address: "", arrivalTime: "", departureTime: "" }])}
-                    className="text-sm font-semibold text-primary hover:underline"
-                  >
-                    + Add another stop
-                  </button>
-
-                  <div className="space-y-3 rounded-2xl border border-dashed border-border bg-surface p-4 sm:p-5">
-                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={includeReturnLeg}
-                        onChange={(e) => setIncludeReturnLeg(e.target.checked)}
-                        className="h-4 w-4 accent-primary"
-                      />
-                      Return to school
-                    </label>
-                    {includeReturnLeg && (
-                      <>
-                        <AddressAutocomplete
-                          label="Return address"
-                          value={returnStop.address}
-                          onChange={(v) => {
-                            setReturnStop((r) => ({ ...r, address: v }));
-                            setReturnAddressTouched(true);
-                            setErrors((e) => ({ ...e, multiStops: "" }));
-                          }}
-                          placeholder="Defaults to your pick-up address"
-                        />
-                        <TimeField
-                          label="Arrival time"
-                          value={returnStop.arrivalTime}
-                          onChange={(v) => {
-                            setReturnStop((r) => ({ ...r, arrivalTime: v }));
-                            setErrors((e) => ({ ...e, multiStops: "" }));
-                          }}
-                        />
-                      </>
-                    )}
-                  </div>
-                  {errors.multiStops && <p className="text-xs text-destructive">{errors.multiStops}</p>}
+                  <MultiStopsEditor
+                    id="field-multiStops"
+                    stops={multiStops}
+                    onChange={setMultiStops}
+                    includeReturnLeg={includeReturnLeg}
+                    onIncludeReturnLegChange={setIncludeReturnLeg}
+                    returnStop={returnStop}
+                    onReturnStopChange={setReturnStop}
+                    onReturnAddressTouched={() => setReturnAddressTouched(true)}
+                    error={errors.multiStops}
+                    onErrorClear={() => setErrors((e) => ({ ...e, multiStops: "" }))}
+                  />
                 </div>
               ) : (
                 <div className="grid gap-4 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 sm:p-5">
@@ -1054,7 +1126,9 @@ function QuotePage() {
 
               <div className="space-y-3 pt-1">
                 <Button variant="accent" size="xl" className="w-full font-bold" onClick={handleSubmit} disabled={submitting}>
-                  {submitting ? "Submitting…" : session ? "Submit request" : "Create account & send"}
+                  {editQuoteId
+                    ? (submitting ? "Saving…" : "Save changes")
+                    : (submitting ? "Submitting…" : session ? "Submit request" : "Create account & send")}
                 </Button>
                 {!session && (
                   <Button
@@ -1075,172 +1149,11 @@ function QuotePage() {
   );
 }
 
-function to12Hour(value: string): { hour: string; minute: string; period: "AM" | "PM" } {
-  if (!value) return { hour: "", minute: "", period: "AM" };
-  const [h, m] = value.split(":");
-  let hourNum = parseInt(h, 10);
-  const period: "AM" | "PM" = hourNum >= 12 ? "PM" : "AM";
-  hourNum = hourNum % 12;
-  if (hourNum === 0) hourNum = 12;
-  return { hour: String(hourNum), minute: m || "", period };
-}
-
-function to24Hour(hour: string, period: "AM" | "PM") {
-  let h = parseInt(hour, 10);
-  if (period === "PM" && h !== 12) h += 12;
-  if (period === "AM" && h === 12) h = 0;
-  return String(h).padStart(2, "0");
-}
-
-function clampHour12(v: string): number | null {
-  const n = parseInt(v, 10);
-  return v.trim() === "" || isNaN(n) || n < 1 || n > 12 ? null : n;
-}
-function clampMinute(v: string): number | null {
-  const n = parseInt(v, 10);
-  return isNaN(n) || n < 0 || n > 59 ? null : n;
-}
-
-// HH:MM text inputs + AM/PM toggle. Internally buffers raw keystrokes so the
-// user can type freely; only resolves and commits a full 24h "HH:MM" string
-// (the same contract the old <select>-based picker used) on blur / period click.
-function TimeField({
-  label, value, onChange, error, required, id,
-}: {
-  label: string; value: string; onChange: (v: string) => void; error?: string; required?: boolean; id?: string;
-}) {
-  const parsed = to12Hour(value);
-  const [hourText, setHourText] = useState(parsed.hour);
-  const [minText, setMinText] = useState(parsed.minute);
-
-  useEffect(() => {
-    const p = to12Hour(value);
-    setHourText(p.hour);
-    setMinText(p.minute);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-
-  const commit = (hText: string, mText: string, period: "AM" | "PM") => {
-    const hn = clampHour12(hText);
-    const mn = mText.trim() === "" ? 0 : clampMinute(mText);
-    if (hn == null || mn == null) return;
-    onChange(`${to24Hour(String(hn), period)}:${String(mn).padStart(2, "0")}`);
-  };
-
-  const handleHourBlur = () => {
-    const hn = clampHour12(hourText);
-    if (hn == null) { setHourText(parsed.hour); return; }
-    setHourText(String(hn));
-    commit(String(hn), minText, parsed.period);
-  };
-  const handleMinBlur = () => {
-    const mn = minText.trim() === "" ? 0 : clampMinute(minText);
-    if (mn == null) { setMinText(parsed.minute); return; }
-    const padded = String(mn).padStart(2, "0");
-    setMinText(padded);
-    commit(hourText, padded, parsed.period);
-  };
-
-  const borderCls = error ? "border-destructive ring-1 ring-destructive/30" : "border-input";
-
-  return (
-    <label id={id} className="block text-sm">
-      <span className="font-medium text-foreground">
-        {label}
-        {required && <span className="ml-0.5 text-destructive">*</span>}
-      </span>
-      <div className="mt-1.5 flex items-center gap-2.5">
-        <div className={`flex h-11 items-center gap-1.5 rounded-xl border ${borderCls} bg-background px-3.5 focus-within:ring-2 focus-within:ring-ring`}>
-          <input
-            type="text" inputMode="numeric" maxLength={2}
-            value={hourText}
-            onChange={(e) => setHourText(e.target.value.replace(/\D/g, "").slice(0, 2))}
-            onBlur={handleHourBlur}
-            placeholder="HH"
-            aria-label={`${label} — hour`}
-            className="w-5 border-0 bg-transparent p-0 text-right text-[15px] font-bold tabular-nums text-foreground outline-none"
-          />
-          <span className="text-[15px] font-bold text-muted-foreground/50">:</span>
-          <input
-            type="text" inputMode="numeric" maxLength={2}
-            value={minText}
-            onChange={(e) => setMinText(e.target.value.replace(/\D/g, "").slice(0, 2))}
-            onBlur={handleMinBlur}
-            placeholder="MM"
-            aria-label={`${label} — minute`}
-            className="w-5 border-0 bg-transparent p-0 text-[15px] font-bold tabular-nums text-foreground outline-none"
-          />
-        </div>
-        <div className="flex h-11 shrink-0 overflow-hidden rounded-xl border border-input">
-          {(["AM", "PM"] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => commit(hourText, minText, p)}
-              className={`w-10 text-xs font-semibold transition-colors ${p === "PM" ? "border-l border-input" : ""} ${
-                parsed.period === p ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      </div>
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-    </label>
-  );
-}
-
 function StepWrap({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-5">
       <h2 className="text-xl font-semibold text-foreground">{title}</h2>
       {children}
-    </div>
-  );
-}
-
-function Stepper({
-  label, value, onChange, bare, id,
-}: {
-  label: string; value: string; onChange: (v: string) => void; bare?: boolean; id?: string;
-}) {
-  const n = parseInt(value, 10) || 0;
-  const set = (next: number) => {
-    const clamped = Math.max(0, next);
-    onChange(clamped === 0 ? "" : String(clamped));
-  };
-  return (
-    <div id={id} className={`flex items-center justify-between gap-4 ${bare ? "py-2.5" : "rounded-2xl border border-border p-3.5"}`}>
-      <div className="text-sm font-semibold text-foreground">{label}</div>
-      <div className="flex h-[42px] shrink-0 items-center overflow-hidden rounded-xl border border-input">
-        <button
-          type="button" onClick={() => set(n - 1)} disabled={n <= 0}
-          aria-label={`Decrease ${label}`}
-          className="flex h-full w-10 items-center justify-center text-xl font-medium text-primary hover:bg-muted disabled:opacity-30"
-        >
-          &minus;
-        </button>
-        <input
-          type="text" inputMode="numeric"
-          value={value === "" ? "0" : value}
-          onChange={(e) => {
-            const raw = e.target.value.replace(/\D/g, "");
-            if (raw === "") { onChange(""); return; }
-            const parsedN = Math.max(0, parseInt(raw, 10));
-            onChange(parsedN === 0 ? "" : String(parsedN));
-          }}
-          aria-label={label}
-          className="h-full w-11 border-0 bg-transparent text-center text-[17px] font-bold tabular-nums text-foreground outline-none"
-        />
-        <button
-          type="button" onClick={() => set(n + 1)}
-          aria-label={`Increase ${label}`}
-          className="flex h-full w-10 items-center justify-center text-xl font-medium text-primary hover:bg-muted"
-        >
-          +
-        </button>
-      </div>
     </div>
   );
 }
@@ -1283,41 +1196,6 @@ function Disclosure({
       </button>
       {open && <div className="mt-4 space-y-3.5 border-t border-border pt-5">{children}</div>}
     </div>
-  );
-}
-
-function Field({
-  label, value, onChange, type = "text", placeholder, error, required, step, id,
-}: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean; step?: number; id?: string;
-}) {
-  const handleChange = (raw: string) => {
-    if (type === "number") {
-      if (raw === "") { onChange(""); return; }
-      const n = Math.max(0, Math.floor(Number(raw)));
-      onChange(Number.isNaN(n) ? "" : String(n));
-      return;
-    }
-    onChange(raw);
-  };
-  return (
-    <label id={id} className="block text-sm">
-      <span className="font-medium text-foreground">
-        {label}
-        {required && <span className="ml-0.5 text-destructive">*</span>}
-      </span>
-      <input
-        type={type}
-        {...(type === "number" ? { min: 0, step: step ?? 1, inputMode: "numeric" as const } : {})}
-        {...(type === "time" && step !== undefined ? { step } : {})}
-        value={value}
-        onChange={(e) => handleChange(e.target.value)}
-        onKeyDown={(e) => { if (type === "number" && (e.key === "-" || e.key === "e")) e.preventDefault(); }}
-        placeholder={placeholder}
-        className={`mt-1.5 w-full rounded-xl border ${error ? "border-destructive ring-1 ring-destructive/30" : "border-input"} bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2`}
-      />
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-    </label>
   );
 }
 

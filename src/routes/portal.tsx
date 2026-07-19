@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
-import { Plus, ChevronDown, CheckCircle2, XCircle, Phone } from "lucide-react";
+import { Plus, ChevronDown, CheckCircle2, XCircle, Phone, Pencil } from "lucide-react";
 import { formatTripDate, formatTime, formatMoney, formatTripType } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 
@@ -46,6 +46,7 @@ type VersionDetail = {
   departure_time: string | null;
   return_time: string | null;
   trip_type: "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
+  grade_breakdown: { grade?: string; count?: string }[] | null;
   student_count: number | null;
   adults_count: number | null;
   subtotal: number | null;
@@ -96,7 +97,7 @@ function PortalPage() {
     if (versionIds.length > 0) {
       const { data: versions } = await supabase
         .from("quote_versions")
-        .select("id, trip_date, destination_name, destination_address, pickup_address, departure_time, return_time, trip_type, student_count, adults_count, subtotal, surcharge_total, total, contact_primary, special_requests")
+        .select("id, trip_date, destination_name, destination_address, pickup_address, departure_time, return_time, trip_type, grade_breakdown, student_count, adults_count, subtotal, surcharge_total, total, contact_primary, special_requests")
         .in("id", versionIds);
       versionMap = Object.fromEntries(
         (versions ?? []).map((v) => [v.id, v as unknown as VersionDetail]),
@@ -199,6 +200,11 @@ function PortalPage() {
                 const canRequestCancel =
                   ["approved", "confirmed", "scheduled"].includes(q.status) && !cancelPending;
                 const canAccept = q.status === "approved" && !cancelPending;
+                // Editable pre-scheduling only (a bus/driver assigned needs
+                // the office involved for now), and not alongside a pending
+                // cancellation request.
+                const canEdit =
+                  ["requested", "in_review", "approved", "confirmed"].includes(q.status) && !cancelPending;
                 return (
                   <div key={q.id} className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
                     <button
@@ -270,8 +276,16 @@ function PortalPage() {
                           </p>
                         )}
 
-                        {(canAccept || canCancel || canRequestCancel) && (
+                        {(canAccept || canCancel || canRequestCancel || canEdit) && (
                           <div className="mt-4 flex flex-wrap gap-2">
+                            {canEdit && (
+                              <Button asChild variant="outline">
+                                <Link to="/quote" search={{ edit: q.id }}>
+                                  <Pencil className="h-4 w-4" />
+                                  Edit trip
+                                </Link>
+                              </Button>
+                            )}
                             {canAccept && (
                               <Button
                                 variant="accent"

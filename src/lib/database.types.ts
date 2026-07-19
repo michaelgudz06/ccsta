@@ -476,6 +476,7 @@ export type Database = {
       quote_versions: {
         Row: {
           adults_count: number | null
+          approved_driver_hours: number | null
           cargo_needed: boolean
           contact_day_of: Json | null
           contact_primary: Json | null
@@ -486,7 +487,11 @@ export type Database = {
           departure_time: string | null
           destination_address: string | null
           destination_name: string | null
+          distance_km: number | null
+          driver_preference: string | null
+          edited_at: string | null
           estimated_hours: number | null
+          fuel_waived: boolean
           grade_breakdown: Json | null
           id: string
           internal_notes: string | null
@@ -501,6 +506,7 @@ export type Database = {
           suggested_driver_id: string | null
           surcharge_snapshot: Json | null
           surcharge_total: number | null
+          system_driver_hours: number | null
           total: number | null
           trip_date: string | null
           trip_type: Database["public"]["Enums"]["quote_trip_type"]
@@ -509,6 +515,7 @@ export type Database = {
         }
         Insert: {
           adults_count?: number | null
+          approved_driver_hours?: number | null
           cargo_needed?: boolean
           contact_day_of?: Json | null
           contact_primary?: Json | null
@@ -519,7 +526,11 @@ export type Database = {
           departure_time?: string | null
           destination_address?: string | null
           destination_name?: string | null
+          distance_km?: number | null
+          driver_preference?: string | null
+          edited_at?: string | null
           estimated_hours?: number | null
+          fuel_waived?: boolean
           grade_breakdown?: Json | null
           id?: string
           internal_notes?: string | null
@@ -534,6 +545,7 @@ export type Database = {
           suggested_driver_id?: string | null
           surcharge_snapshot?: Json | null
           surcharge_total?: number | null
+          system_driver_hours?: number | null
           total?: number | null
           trip_date?: string | null
           trip_type?: Database["public"]["Enums"]["quote_trip_type"]
@@ -542,6 +554,7 @@ export type Database = {
         }
         Update: {
           adults_count?: number | null
+          approved_driver_hours?: number | null
           cargo_needed?: boolean
           contact_day_of?: Json | null
           contact_primary?: Json | null
@@ -552,7 +565,11 @@ export type Database = {
           departure_time?: string | null
           destination_address?: string | null
           destination_name?: string | null
+          distance_km?: number | null
+          driver_preference?: string | null
+          edited_at?: string | null
           estimated_hours?: number | null
+          fuel_waived?: boolean
           grade_breakdown?: Json | null
           id?: string
           internal_notes?: string | null
@@ -567,6 +584,7 @@ export type Database = {
           suggested_driver_id?: string | null
           surcharge_snapshot?: Json | null
           surcharge_total?: number | null
+          system_driver_hours?: number | null
           total?: number | null
           trip_date?: string | null
           trip_type?: Database["public"]["Enums"]["quote_trip_type"]
@@ -682,6 +700,8 @@ export type Database = {
       }
       quotes: {
         Row: {
+          cancellation_reason: string | null
+          cancellation_requested_at: string | null
           created_at: string
           current_version_id: string | null
           customer_id: string
@@ -692,6 +712,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancellation_reason?: string | null
+          cancellation_requested_at?: string | null
           created_at?: string
           current_version_id?: string | null
           customer_id: string
@@ -702,6 +724,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancellation_reason?: string | null
+          cancellation_requested_at?: string | null
           created_at?: string
           current_version_id?: string | null
           customer_id?: string
