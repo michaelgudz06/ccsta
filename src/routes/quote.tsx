@@ -969,7 +969,7 @@ function QuotePage() {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                *All trips are a minimum of 4 hours.
+                *All trips are a minimum of {minHours} hours{isMemberSchool ? " (member rate)" : ""}.
               </p>
             </SectionCard>
 
@@ -1083,7 +1083,7 @@ function QuotePage() {
 
                 <table className="mt-5 w-full text-sm">
                   <tbody className="divide-y divide-white/15">
-                    <Row dark label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (non-member rate)`} />
+                    <Row dark label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (${isMemberSchool ? "member" : "non-member"} rate)`} />
                     <Row dark label="Hourly rate" value={`${formatMoney(hourlyRate)}/hr`} />
                     <Row dark label="Trip time" value={`${billableTripHours.toFixed(1)} hrs`} />
                     <Row dark label="Driver time" value={`${(billHours - billableTripHours).toFixed(1)} hrs`} />
