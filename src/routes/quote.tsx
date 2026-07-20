@@ -397,7 +397,9 @@ function QuotePage() {
   })();
   const tripHoursCalc = tripMinutes !== null ? tripMinutes / 60 : null;
 
-  // Client-side preview estimate using real 2026-2027 non-member rates.
+  // Client-side preview estimate using real 2026-2027 rates (member and
+  // non-member — see the isMemberSchool lookup above, same signal used for
+  // the minimum-hours floor below).
   // Seat-based capacity: each bus has bench seats (18->9, 47->23.67, 56->28);
   // older riders (Gr 5+ & adults) take 2 per seat, younger (K-4) take 3 per seat.
   const youngN = parseInt(kToFour) || 0;
@@ -410,11 +412,11 @@ function QuotePage() {
   const headcount = totalStudents + adultsN;
   const benchCount = seatsNeeded <= 9 ? 18 : seatsNeeded <= 23.67 ? 47 : 56;
   const busCount   = seatsNeeded > 0 ? Math.max(1, Math.ceil(seatsNeeded / BUS_SEATS[benchCount])) : 1;
-  const hourlyRate = benchCount === 56 ? 105.00 : 92.50;
+  const hourlyRate = isMemberSchool
+    ? (benchCount === 56 ? 78.75 : 68.25)
+    : (benchCount === 56 ? 105.00 : 92.50);
   // 2hr minimum for a recognized member school (logged-in only — see the
-  // isMemberSchool lookup above), 4hr otherwise. hourlyRate above is
-  // unaffected — this preview is still non-member-rate only, a separate,
-  // already-documented gap (see WHATS_NEW.md).
+  // isMemberSchool lookup above), 4hr otherwise.
   const minHours   = isMemberSchool ? 2 : 4;
   // Use actual trip duration if entered, otherwise fall back to minimum
   const tripHours  = tripHoursCalc !== null ? tripHoursCalc : minHours;
