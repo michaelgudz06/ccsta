@@ -301,15 +301,16 @@ deployed `main` site.
     Admin@ccsta.net
     [CCSTA logo image below the footer]
     ```
-  - **Logo-hosting question — must resolve before adding the image.** Email
-    clients can't render a locally-embedded file; the logo needs a public
-    URL. `CCSTA LOGO.jpg` exists untracked at the project root but isn't
-    hosted anywhere. Options when this is picked up: (a) upload it
-    somewhere public (Supabase Storage bucket, S3, etc.) and use that URL;
-    (b) skip the image for now and ship text-only branding in the footer;
-    (c) check whether the live site already hosts this same logo (it
-    presumably does, for its own header/favicon) and just point the email
-    at that existing asset instead of hosting a new copy.
+  - **Logo hosting — resolved (2026-07-19).** The logo is now committed at
+    `public/ccsta-logo.jpg` (moved from an untracked root-level file with
+    spaces in its name). TanStack Start serves everything in `public/` from
+    the site root the same way it already serves `favicon.svg` — so once
+    this branch is deployed, the logo is reachable at
+    `https://ccsta.net/ccsta-logo.jpg`, usable directly as the `<img src>`
+    in the HTML email once that's built. Confirmed the live site does
+    *not* already host this logo elsewhere — the site header
+    (`src/components/Logo.tsx`) is a code-drawn SVG + text mark, not this
+    image, so this is a genuinely new public asset, not a duplicate.
 - **Deploy planning.** A full session's worth of work — new pricing,
   form rebuild, trip types, several migrations — is built but undeployed.
   When ready: deploy deliberately during low-traffic time, have a rollback
