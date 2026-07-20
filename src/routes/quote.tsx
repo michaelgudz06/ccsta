@@ -19,6 +19,15 @@ import { COMPANY } from "@/lib/company";
 
 type TripType = "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isValidEmail = (v: string) => EMAIL_RE.test(v.trim());
+// Accepts local or international formats (spaces/dashes/parens/+ allowed) —
+// just checks there's a plausible number of digits, not a strict NA pattern.
+const isValidPhone = (v: string) => {
+  const digits = v.replace(/\D/g, "");
+  return digits.length >= 7 && digits.length <= 15;
+};
+
 const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
   { value: "two_way", label: "Two-way", hint: "Round trip — we drop your group off and pick them back up." },
   { value: "one_way", label: "One-way", hint: "Drop-off only, no return." },
@@ -377,6 +386,10 @@ function QuotePage() {
     ...(includeReturnLeg ? [returnStop.arrivalTime] : []),
   ].filter(Boolean);
   const filledMultiStops = [...multiStops, ...(includeReturnLeg ? [returnStop] : [])].filter((s) => s.address);
+  const filledMultiStopAddresses = multiStops.map((s) => s.address).filter(Boolean);
+  const multiDestinationSummary = filledMultiStopAddresses.length
+    ? `${filledMultiStopAddresses.length} stop${filledMultiStopAddresses.length > 1 ? "s" : ""}: ${filledMultiStopAddresses.join(" → ")}`
+    : "Your stops";
   const envelopeDepart = tripType === "shuttle"
     ? filledRuns.reduce((min, r) => (!min || r.pickup < min ? r.pickup : min), "")
     : departTime;
@@ -482,11 +495,16 @@ function QuotePage() {
 
     if (!c1n.trim()) e.c1n = "Name is required.";
     if (!c1e.trim()) e.c1e = "Email is required.";
+    else if (!isValidEmail(c1e)) e.c1e = "Please enter a valid email address.";
     if (!c1p.trim()) e.c1p = "Phone is required.";
-    // Secondary contact is OPTIONAL — no required checks.
+    else if (!isValidPhone(c1p)) e.c1p = "Please enter a valid phone number.";
+    // Secondary contact is OPTIONAL — only format-checked if filled in.
+    if (c2e.trim() && !isValidEmail(c2e)) e.c2e = "Please enter a valid email address.";
+    if (c2p.trim() && !isValidPhone(c2p)) e.c2p = "Please enter a valid phone number.";
 
     if (!dayN.trim()) e.dayN = "Name is required.";
     if (!dayP.trim()) e.dayP = "Phone is required.";
+    else if (!isValidPhone(dayP)) e.dayP = "Please enter a valid phone number.";
 
     // Primary and secondary must be two different people.
     const norm = (str: string) => str.trim().toLowerCase();
@@ -498,7 +516,7 @@ function QuotePage() {
 
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "shuttleRuns", "multiStops", "c1n", "c1e", "c1p", "c2e", "c2n", "dayN", "dayP"];
+      const order = ["passengers", "school", "destination", "destinationAddress", "date", "departTime", "returnTime", "shuttleRuns", "multiStops", "c1n", "c1e", "c1p", "c2e", "c2n", "c2p", "dayN", "dayP"];
       const firstKey = order.find((k) => e[k]);
       if (firstKey && typeof document !== "undefined") {
         document.getElementById(`field-${firstKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -800,7 +818,7 @@ function QuotePage() {
                 <div className="grid gap-3.5 sm:grid-cols-3">
                   <Field id="field-c2n" label="Name" value={c2n} onChange={(v) => { setC2n(v); setErrors((e) => ({ ...e, c2n: "" })); }} placeholder="John Doe" error={errors.c2n} />
                   <Field id="field-c2e" label="Email" type="email" value={c2e} onChange={(v) => { setC2e(v); setErrors((e) => ({ ...e, c2e: "" })); }} placeholder="john@school.ca" error={errors.c2e} />
-                  <Field label="Phone" value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
+                  <Field id="field-c2p" label="Phone" value={c2p} onChange={(v) => { setC2p(v); setErrors((e) => ({ ...e, c2p: "" })); }} placeholder="604-555-0101" error={errors.c2p} />
                 </div>
               </Disclosure>
             </SectionCard>
@@ -1073,7 +1091,9 @@ function QuotePage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-white/60">Instant estimate</div>
-                    <div className="mt-1 text-lg font-bold text-white">{destination || "Your destination"}</div>
+                    <div className={`mt-1 font-bold text-white ${tripType === "multi_destination" ? "text-sm leading-snug line-clamp-3" : "text-lg"}`}>
+                      {tripType === "multi_destination" ? multiDestinationSummary : (destination || "Your destination")}
+                    </div>
                     <div className="text-sm text-white/70">
                       {date || "—"} · {envelopeDepart || "—"} → {envelopeReturn || "—"} · {totalStudents || "—"} students
                     </div>
