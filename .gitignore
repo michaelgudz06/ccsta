@@ -37,6 +37,8 @@ ccsta-test/
 
 # Local-only reference material (pricing templates, etc.) — never shipped
 /reference/
+/2026-2027 Multiple Trip Quote Template Draft 2.xlsx
+/DATA_REQUEST_CURTIS.xlsx
 
 # Build output
 .vercel/
