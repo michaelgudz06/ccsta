@@ -532,8 +532,8 @@ function QuotePage() {
   const benchCount = seatsNeeded <= 9 ? 18 : seatsNeeded <= 23.67 ? 47 : 56;
   const busCount   = seatsNeeded > 0 ? Math.max(1, Math.ceil(seatsNeeded / BUS_SEATS[benchCount])) : 1;
   const hourlyRate = isMemberSchool
-    ? (benchCount === 56 ? 78.75 : 68.25)
-    : (benchCount === 56 ? 105.00 : 92.50);
+    ? (benchCount === 56 ? 78.75 : benchCount === 47 ? 68.25 : 58.25)
+    : (benchCount === 56 ? 105.00 : benchCount === 47 ? 92.50 : 82.50);
   // 2hr minimum for a recognized member school (logged-in only — see the
   // isMemberSchool lookup above), 4hr otherwise.
   const minHours   = isMemberSchool ? 2 : 4;
