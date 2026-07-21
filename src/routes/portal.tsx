@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, CheckCircle2, XCircle, Phone, Pencil } from "lucide-react";
 import { formatTripDate, formatTime, formatMoney, formatTripType } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
+import { friendlyError } from "@/lib/errors";
 
 export const Route = createFileRoute("/portal")({
   head: () => ({ meta: [{ title: `My Field Trips — ${COMPANY.name}` }, { name: "robots", content: "noindex" }] }),
@@ -157,7 +158,10 @@ function PortalPage() {
     setActionError(null);
     const { error } = await supabase.rpc(fn as any, { p_quote_id: quoteId, ...extraArgs });
     setActionBusy(null);
-    if (error) { setActionError(error.message); return; }
+    if (error) {
+      setActionError(friendlyError(error, `Something went wrong. Please try again, or call us at ${COMPANY.phoneMelody} if it keeps happening.`));
+      return;
+    }
     dispatchNotifications();
     await load();
   }
@@ -189,7 +193,7 @@ function PortalPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">My Field Trips</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Signed in as {email ?? "you@school.ca"}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Signed in as {email ?? "you@example.com"}</p>
           </div>
           <Button asChild variant="accent" size="lg">
             <Link to="/quote"><Plus className="h-4 w-4" /> Request a new quote</Link>
@@ -458,7 +462,7 @@ function PortalPage() {
           <div>
             <h2 className="text-lg font-semibold text-foreground">My details</h2>
             <div className="mt-4 rounded-2xl border border-border bg-card p-5 shadow-soft">
-              <ProfRow label="School" value={profileSchool ?? "Add one by requesting a quote"} />
+              <ProfRow label="Organization" value={profileSchool ?? "Add one by requesting a quote"} />
               <ProfRow label="Primary contact" value={profileContact?.name || "—"} />
               <ProfRow label="Email" value={profileContact?.email || email || "—"} />
               <ProfRow label="Phone" value={profileContact?.phone || "—"} />
