@@ -174,9 +174,9 @@ export function Stepper({
 }
 
 export function Field({
-  label, value, onChange, type = "text", placeholder, error, required, step, id, disabled, hint,
+  label, value, onChange, type = "text", placeholder, error, required, step, id, disabled, hint, min, max,
 }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean; step?: number; id?: string; disabled?: boolean; hint?: string;
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; error?: string; required?: boolean; step?: number; id?: string; disabled?: boolean; hint?: string; min?: string; max?: string;
 }) {
   const handleChange = (raw: string) => {
     if (type === "number") {
@@ -198,6 +198,7 @@ export function Field({
         disabled={disabled}
         {...(type === "number" ? { min: 0, step: step ?? 1, inputMode: "numeric" as const } : {})}
         {...(type === "time" && step !== undefined ? { step } : {})}
+        {...(type === "date" ? { min, max } : {})}
         value={value}
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={(e) => { if (type === "number" && (e.key === "-" || e.key === "e")) e.preventDefault(); }}
@@ -352,7 +353,7 @@ export function MultiStopsEditor({
             onChange={(e) => onIncludeReturnLegChange(e.target.checked)}
             className="h-4 w-4 accent-primary"
           />
-          Return to school
+          Return to origin
         </label>
         {includeReturnLeg && (
           <>
