@@ -206,22 +206,36 @@ check off and remove as they land.
 - [ ] `quote.tsx:1088` — "Suggested bus" line hardcodes the label "(non-member
   rate)" even when a member school's correct discounted rate is being shown.
   Confusing/wrong for exactly the customers this feature was built for.
-- [ ] `quote.tsx:973-975` — static "*All trips are a minimum of 4 hours."
+- [x] `quote.tsx:973-975` — static "*All trips are a minimum of 4 hours."
   caption is shown unconditionally, contradicting the correct dynamic
-  "2 hr minimum" row directly above it for member schools.
-- [ ] Multi-destination's estimate card shows a generic "Your destination"
+  "2 hr minimum" row directly above it for member schools. **Fixed** —
+  caption is now dynamic (`minHours` + member-rate note).
+- [x] Multi-destination's estimate card shows a generic "Your destination"
   placeholder (`destination` is never populated for this trip type) instead
-  of the actual stop list/count.
-- [ ] Quote-form validation is a hand-rolled `validateAll()` (no zod /
+  of the actual stop list/count. **Fixed** — now shows the real stop count
+  + addresses in order.
+- [x] Quote-form validation is a hand-rolled `validateAll()` (no zod /
   react-hook-form despite that being this project's stated convention) that
   only checks non-empty — no email/phone format validation. A bad email
-  silently kills that customer's own confirmation email.
+  silently kills that customer's own confirmation email. **Fixed** — email/
+  phone format now validated (primary, secondary, day-of), blocks submission
+  with an inline error.
 - [ ] Confirm (don't assume) the Google Maps API key is actually set in the
   production environment. None was found anywhere in this repo, including
   `.env.local` patterns — `AddressAutocomplete` is correctly wired on every
   address field across all 5 trip types and degrades gracefully with no key
   (plain text input, no errors, never blocks submission), but that also
-  means it may not be suggesting anything anywhere right now.
+  means it may not be suggesting anything anywhere right now. **Correction
+  (2026-07-20):** a prior note here claimed this was resolved because the
+  key is set in Vercel's environment variables. That's wrong — this site is
+  served by Lovable (synced from GitHub `main`), not Vercel; the `.vercel/`
+  folder in this repo is a local-only, gitignored leftover from an unrelated
+  one-off `vercel build`, not a real deployment. Check **Lovable's** project
+  settings specifically, and verify live that autocomplete is suggesting
+  addresses rather than falling back to plain text. Billing context and two
+  small non-urgent follow-ups (find who owns the Google Cloud billing card;
+  set a budget alert, since there's no automatic hard cap) are tracked in
+  `NEXT_SESSION.md`.
 
 **Should fix before launch (real gaps, lower-visibility risk):**
 - [ ] Portal quote-detail view only ever reads `quote_versions` — never
@@ -369,6 +383,43 @@ deployed `main` site.
     being built as a functional addition in the near term. That's a
     content addition to the existing layout; this item is the broader
     visual/layout redesign, deferred and separate.
+  - **Small near-term addition, same category as the stops display
+    above** *(2026-07-20, low priority)*: show the quote **submission
+    date** (`created_at`) somewhere sensible in the admin UI — the list
+    row or the detail panel, whichever's easiest — it's not there today.
+    Just put it wherever fits for now rather than waiting on the redesign;
+    it's a small display addition, not worth its own design pass.
+  - **Concrete scope for this batch, gathered 2026-07-20 — do together
+    post-launch, do NOT build now:**
+    - **Quote detail view is hard to read/confusing — redesign for
+      clarity.** Top priority within this batch.
+    - Simplify the calculations display (both admin and customer side) —
+      currently hard to read.
+    - Remove the "waive fuel" toggle section entirely; replace it with
+      letting Melody directly edit *any* number inline (driver time, fuel
+      fee, overtime — e.g. set fuel to $0, remove the overtime line).
+    - Separate admin sections by quote **stage** — reviewed / approved-
+      but-pricing-not-yet-customer-approved / scheduled / completed /
+      invoiced — quotes move between stages instead of sitting in one
+      long list.
+    - Invoiced section: organize completed+invoiced quotes into folders
+      **by organization**, for record-keeping.
+    - Sort/filter all quotes by date, organization, destination.
+    - **Bug, not a design question** — quote number editing on the admin
+      page doesn't actually save to the quote list; edits don't persist.
+      Confirm whether this needs its own quick fix before the redesign or
+      can ride along with it.
+    - "Enter to save" on admin edits — currently you have to click out of
+      the field for it to save.
+- **Post-launch — other items** *(do NOT build now)*:
+  - Admin confirmation email needs the full trip info, not a summary —
+    basically the whole quote. Mila has mockup screenshots (Claude Code
+    mockups) to reference when this is picked up.
+  - Make day-of contact **optional** — estimate-only customers shouldn't
+    have to fill it in.
+  - **New feature:** a "Quote approved" email to the customer with an
+    **"Approve pricing"** button — customer reviews the price, clicks
+    approve, and the quote moves to scheduling.
 - ~~Member 2-hour vs. others 4-hour minimum billing.~~ **Done** — see
   "Recently completed" above (commit `5e9016d`). Client-side preview now
   matches server-side pricing for member schools.
