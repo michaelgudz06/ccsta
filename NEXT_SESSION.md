@@ -129,6 +129,27 @@ resolved this, twice.
 
 ## The plan, in order
 
+### 1. DONE (2026-07-21) — clean up test quotes
+
+Deleted all 20 test quotes created under `milagudz07@gmail.com` /
+`milagudz06@gmail.com` (and via free-text contact emails on quotes logged
+in under other test accounts), after reviewing the full list row by row.
+One quote (`Q-2026-0110` / `01f7255c...`, status `scheduled`) had
+downstream rows in `trips` and `invoices` — checked both for real
+driver pay or billing activity (none found, `payroll_records` and
+`notification_log` also had zero rows for that trip) before deleting in
+dependency order: `invoices` → `trips` → `quotes`.
+
+**Note for the next test round:** `quotes` has FK dependents in at least
+`trips` and `invoices` (`invoices` may have its own dependents too — not
+fully mapped). Deleting a `scheduled`/further-along test quote isn't a
+single-table delete; check `trips`/`invoices`/`payroll_records`/
+`notification_log` for that quote's id before assuming a plain
+`DELETE FROM quotes` will work.
+
+<details>
+<summary>Original step 1 instructions (for reference)</summary>
+
 ### 1. FIRST — clean up test quotes
 
 All my own test quotes were created under `milagudz07@gmail.com` and
@@ -178,6 +199,8 @@ ORDER BY q.created_at DESC;
 Multi-destination quotes' `destination_name` will show blank (real stops
 live in `quote_multi_stops` instead) — extend the query if that matters
 for review. Delete by `quote_id` only, after eyeballing the full list.
+
+</details>
 
 ### 2. THEN — deploy
 
