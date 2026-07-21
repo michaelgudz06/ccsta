@@ -107,6 +107,31 @@ function QuotePage() {
   // school that quoted while logged out.
   const [isMemberSchool, setIsMemberSchool] = useState(false);
 
+  // Live pricing data for the customer estimate preview, replacing what used
+  // to be hardcoded numbers in this file (see migration 050 -- rate_config
+  // and surcharge_config are both now publicly readable, no PII in either
+  // table, unlike schools above). Fallbacks below are last-resort only, for
+  // the brief window before this fetch resolves or if it fails outright --
+  // they mirror the current DB values at time of writing but are NOT the
+  // source of truth anymore, so don't hand-edit them when a rate changes.
+  const [rateRows, setRateRows] = useState<{ bench_count: number; customer_type: string; hourly_rate: number }[]>([]);
+  const [surcharges, setSurcharges] = useState<Record<string, number>>({});
+  useEffect(() => {
+    (async () => {
+      const [{ data: rates }, { data: surchargeRows }] = await Promise.all([
+        supabase.from("rate_config").select("bench_count, customer_type, hourly_rate"),
+        supabase.from("surcharge_config").select("key, value"),
+      ]);
+      if (rates) setRateRows(rates);
+      if (surchargeRows) setSurcharges(Object.fromEntries(surchargeRows.map((r) => [r.key, r.value])));
+    })();
+  }, []);
+  const RATE_FALLBACK: Record<number, Record<string, number>> = {
+    18: { member: 58.25, non_member: 82.50 },
+    47: { member: 68.25, non_member: 92.50 },
+    56: { member: 78.75, non_member: 105.00 },
+  };
+
   // Step 2 — passenger calculator (K-4 seat 3-per-bench, Grade 5+ & adults seat 2-per-bench)
   const [kToFour, setKToFour] = useState("");
   const [grade5Plus, setGrade5Plus] = useState("");
@@ -531,9 +556,10 @@ function QuotePage() {
   const headcount = totalStudents + adultsN;
   const benchCount = seatsNeeded <= 9 ? 18 : seatsNeeded <= 23.67 ? 47 : 56;
   const busCount   = seatsNeeded > 0 ? Math.max(1, Math.ceil(seatsNeeded / BUS_SEATS[benchCount])) : 1;
-  const hourlyRate = isMemberSchool
-    ? (benchCount === 56 ? 78.75 : benchCount === 47 ? 68.25 : 58.25)
-    : (benchCount === 56 ? 105.00 : benchCount === 47 ? 92.50 : 82.50);
+  const customerType = isMemberSchool ? "member" : "non_member";
+  const hourlyRate =
+    rateRows.find((r) => r.bench_count === benchCount && r.customer_type === customerType)?.hourly_rate
+    ?? RATE_FALLBACK[benchCount][customerType];
   // 2hr minimum for a recognized member school (logged-in only — see the
   // isMemberSchool lookup above), 4hr otherwise.
   const minHours   = isMemberSchool ? 2 : 4;
@@ -543,28 +569,29 @@ function QuotePage() {
   // driver-time buffer always adds on top of the (possibly floored) trip
   // time, never absorbed into the minimum.
   const billableTripHours = Math.max(tripHours, minHours);
-  // System estimate: flat 1hr driver-time buffer (matches calculate_estimate's
-  // driver_time_buffer_hours default — Melody can set a more accurate time
-  // later, but the public preview always shows this flat-buffer figure).
-  const DRIVER_TIME_BUFFER_HOURS = 1;
+  // System estimate: flat driver-time buffer (matches calculate_estimate's
+  // driver_time_buffer_hours — Melody can set a more accurate time later,
+  // but the public preview always shows this flat-buffer figure).
+  const DRIVER_TIME_BUFFER_HOURS = surcharges.driver_time_buffer_hours ?? 1;
   const driverHours = billableTripHours + DRIVER_TIME_BUFFER_HOURS;
   const billHours  = driverHours;
   const baseCost   = billHours * hourlyRate * busCount;
-  const fuelSurcharge = 50 * busCount;
+  const fuelSurcharge = (surcharges.fuel_surcharge_per_trip ?? 50) * busCount;
   // Matches calculate_estimate's overtime_threshold_hours/overtime_rate_per_hour
-  // seed values (migration 014) — charged on driver hours beyond 8, per bus.
-  const OVERTIME_THRESHOLD_HOURS = 8;
-  const OVERTIME_RATE_PER_HOUR = 17;
+  // — charged on driver hours beyond the threshold, per bus.
+  const OVERTIME_THRESHOLD_HOURS = surcharges.overtime_threshold_hours ?? 8;
+  const OVERTIME_RATE_PER_HOUR = surcharges.overtime_rate_per_hour ?? 17;
   const overtimeCharge = billHours > OVERTIME_THRESHOLD_HOURS
     ? (billHours - OVERTIME_THRESHOLD_HOURS) * OVERTIME_RATE_PER_HOUR * busCount
     : 0;
-  const LONG_DISTANCE_THRESHOLD_KM = 200;
-  const LONG_DISTANCE_RATE_PER_KM = 1;
+  const LONG_DISTANCE_THRESHOLD_KM = surcharges.long_distance_threshold_km ?? 200;
+  const LONG_DISTANCE_RATE_PER_KM = surcharges.long_distance_rate_per_km ?? 1;
   const longDistanceCharge = distanceKm != null && distanceKm > LONG_DISTANCE_THRESHOLD_KM
     ? (distanceKm - LONG_DISTANCE_THRESHOLD_KM) * LONG_DISTANCE_RATE_PER_KM * busCount
     : 0;
   const subtotal   = baseCost + fuelSurcharge + overtimeCharge + longDistanceCharge;
-  const gst        = subtotal * 0.05;
+  const GST_RATE_PCT = surcharges.gst_rate_pct ?? 5;
+  const gst        = subtotal * (GST_RATE_PCT / 100);
   const estimatedTotal = subtotal + gst;
   const busLabel   = benchCount === 18 ? "18-passenger mini-bus" : benchCount === 47 ? "47-passenger coach" : "56-passenger coach";
 
