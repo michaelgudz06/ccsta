@@ -39,7 +39,7 @@ function AdminPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
-              ADMIN · MELODY, ALAN, AND CURTIS
+              ADMIN
             </span>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">Operations</h1>
           </div>
@@ -136,7 +136,7 @@ function Dashboard({ onJump }: { onJump: (t: Tab, quoteId?: string) => void }) {
       });
       setRecent(
         ((recentRes.data ?? []) as Array<{ id: string; quote_number: string; status: string; created_at: string; schools: { name: string } | null }>)
-          .map((r) => ({ id: r.id, quote_number: r.quote_number, status: r.status, created_at: r.created_at, school: r.schools?.name ?? "Unknown school" })),
+          .map((r) => ({ id: r.id, quote_number: r.quote_number, status: r.status, created_at: r.created_at, school: r.schools?.name ?? "Unknown organization" })),
       );
     })();
   }, []);
@@ -589,15 +589,25 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                 <div>
                   <div className="font-semibold text-foreground">{q.quote_number}</div>
                   <div className="text-xs text-muted-foreground">
-                    {q.schools?.name ?? "Unknown school"} ·{" "}
+                    {q.schools?.name ?? "Unknown organization"} ·{" "}
                     {q.quote_versions?.trip_date
                       ? new Date(q.quote_versions.trip_date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })
                       : "no date"}
                   </div>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${q.cancellation_requested_at && q.status !== "cancelled" ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
-                  {q.cancellation_requested_at && q.status !== "cancelled" ? "Cancel requested" : STATUS_LABEL[q.status] ?? q.status}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {q.status !== "cancelled" && q.quote_versions?.distance_km == null && (
+                    <span
+                      title="Distance unavailable — long-distance surcharge may be missing from this estimate"
+                      className="text-amber-600"
+                    >
+                      ⚠
+                    </span>
+                  )}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${q.cancellation_requested_at && q.status !== "cancelled" ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
+                    {q.cancellation_requested_at && q.status !== "cancelled" ? "Cancel requested" : STATUS_LABEL[q.status] ?? q.status}
+                  </span>
+                </div>
               </button>
             </li>
           ))}
@@ -673,7 +683,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <h4 className="mb-3 text-sm font-semibold text-foreground">Trip details</h4>
           <div className="grid gap-3 text-sm sm:grid-cols-2">
-            <Kv label="School" value={quote.schools?.name ?? "—"} />
+            <Kv label="Organization" value={quote.schools?.name ?? "—"} />
             <Kv label="Trip date" value={tripDate} />
             <Kv label="Trip type" value={formatTripType(ver?.trip_type)} />
             {ver?.trip_type === "shuttle" || ver?.trip_type === "multi_destination" ? (
@@ -713,7 +723,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
             departTime={ver?.departure_time ?? undefined}
             onResult={(r) => {
               if (ver && ver.distance_km == null) {
-                supabase.rpc("set_quote_distance_km" as never, { p_quote_id: quote.id, p_distance_km: r.distanceKm } as never);
+                supabase.rpc("set_quote_distance_km" as never, { p_quote_id: quote.id, p_distance_km: r.distanceKm } as never)
+                  .then(({ error }) => { if (error) console.error("set_quote_distance_km (admin backfill) failed:", error); });
               }
             }}
           />
@@ -916,7 +927,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                   {assignBusy ? "Loading…" : quote.status === "confirmed" ? "Assign driver & bus →" : "Assign early →"}
                 </button>
                 {quote.status === "approved" && (
-                  <span className="text-[11px] text-amber-700">Waiting for the school to accept the price — they haven't confirmed yet.</span>
+                  <span className="text-[11px] text-amber-700">Waiting for the organization to accept the price — they haven't confirmed yet.</span>
                 )}
               </div>
             )}
@@ -984,10 +995,10 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
             </h4>
             <p className="mt-1 text-xs text-rose-700">
               {quote.status === "scheduled"
-                ? "This frees up the booked bus and driver and emails the school that their booking is cancelled."
+                ? "This frees up the booked bus and driver and emails the organization that their booking is cancelled."
                 : quote.status === "confirmed"
-                ? "This cancels the accepted booking and emails the school."
-                : "This declines the request and emails the school."}
+                ? "This cancels the accepted booking and emails the organization."
+                : "This declines the request and emails the organization."}
             </p>
             <textarea
               rows={3}
@@ -1067,7 +1078,7 @@ function Schedule() {
         }>).map((t) => ({
           id: t.id, trip_number: t.trip_number, trip_date: t.trip_date, departure_time: t.departure_time, return_time: t.return_time,
           destination_name: t.destination_name, status: t.status,
-          school: t.schools?.name ?? "Unknown school",
+          school: t.schools?.name ?? "Unknown organization",
           driver: t.drivers ? `${t.drivers.first_name} ${t.drivers.last_name}` : null,
           bus: t.buses?.fleet_number ?? null,
         })),
@@ -1406,7 +1417,7 @@ function Availability() {
 
 function Documents() {
   const docs = [
-    { title: "Bus rules & confirmation sheet", desc: "Sent to the school once the trip goes green." },
+    { title: "Bus rules & confirmation sheet", desc: "Sent to the organization once the trip goes green." },
     { title: "Driver sheet", desc: "Trip details for the assigned driver." },
     { title: "Invoice file (Sage 50 import)", desc: "CSV/XML export format for Sage 50 accounting import." },
   ];
