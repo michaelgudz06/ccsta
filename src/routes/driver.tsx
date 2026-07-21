@@ -225,7 +225,7 @@ function DriverPage() {
 
                   {t.special_requests && (
                     <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                      <span className="font-semibold">Notes from the school: </span>{t.special_requests}
+                      <span className="font-semibold">Notes: </span>{t.special_requests}
                     </div>
                   )}
 
