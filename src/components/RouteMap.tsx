@@ -105,7 +105,11 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
         };
         if (cancelled) return;
         const route = rData.routes?.[0];
-        if (!route) { setErrorMsg("No driving route found between those points."); setStatus("error"); return; }
+        if (!route) {
+          setErrorMsg("No driving route found between those points. Your request will still go through — we'll confirm the final price after reviewing it.");
+          setStatus("error");
+          return;
+        }
 
         const distanceKm = route.distance / 1000;
         const freeFlowMin = route.duration / 60;
@@ -140,7 +144,7 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
         setStatus("ready");
       } catch (e) {
         if (cancelled) return;
-        setErrorMsg("Map service is temporarily unavailable.");
+        setErrorMsg("Map service is temporarily unavailable. Your request will still go through — we'll confirm the final price after reviewing it.");
         setStatus("error");
         console.error("RouteMap error:", e);
       }
@@ -160,11 +164,13 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
     );
   }
 
-  // Silent error (e.g. address not geocodable) — show nothing rather than alarming the user.
+  // Address not geocodable — no map to show, but be honest that this means
+  // we don't yet know the exact distance rather than falsely reassuring
+  // the customer their estimate already accounts for it.
   if (status === "error" && !errorMsg) {
     return (
       <div className={`rounded-2xl border border-dashed border-border bg-card p-5 text-sm text-muted-foreground ${className ?? ""}`}>
-        Route preview not available for this address — your estimate is still accurate.
+        Route preview not available for this address. Your request will still go through — we'll confirm the final price after reviewing it.
       </div>
     );
   }
