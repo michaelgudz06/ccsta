@@ -5,9 +5,10 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
-import { Plus, ChevronDown, CheckCircle2, XCircle, Phone } from "lucide-react";
-import { formatTripDate, formatTime, formatMoney } from "@/lib/format";
+import { Plus, ChevronDown, CheckCircle2, XCircle, Phone, Pencil } from "lucide-react";
+import { formatTripDate, formatTime, formatMoney, formatTripType } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
+import { friendlyError } from "@/lib/errors";
 
 export const Route = createFileRoute("/portal")({
   head: () => ({ meta: [{ title: `My Field Trips — ${COMPANY.name}` }, { name: "robots", content: "noindex" }] }),
@@ -37,6 +38,8 @@ const statusStyle: Record<string, string> = {
 };
 
 type Contact = { name?: string; email?: string; phone?: string };
+type ShuttleRun = { run_number: number; pickup_time: string; dropoff_time: string };
+type MultiStop = { stop_number: number; destination_name: string | null; destination_address: string; arrival_time: string; departure_time: string | null };
 type VersionDetail = {
   id: string;
   trip_date: string | null;
@@ -45,6 +48,8 @@ type VersionDetail = {
   pickup_address: string | null;
   departure_time: string | null;
   return_time: string | null;
+  trip_type: "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
+  grade_breakdown: { grade?: string; count?: string }[] | null;
   student_count: number | null;
   adults_count: number | null;
   subtotal: number | null;
@@ -52,6 +57,8 @@ type VersionDetail = {
   total: number | null;
   contact_primary: Contact | null;
   special_requests: string | null;
+  shuttle_runs: ShuttleRun[];
+  multi_stops: MultiStop[];
 };
 type QuoteRow = {
   id: string;
@@ -95,10 +102,31 @@ function PortalPage() {
     if (versionIds.length > 0) {
       const { data: versions } = await supabase
         .from("quote_versions")
-        .select("id, trip_date, destination_name, destination_address, pickup_address, departure_time, return_time, student_count, adults_count, subtotal, surcharge_total, total, contact_primary, special_requests")
+        .select("id, trip_date, destination_name, destination_address, pickup_address, departure_time, return_time, trip_type, grade_breakdown, student_count, adults_count, subtotal, surcharge_total, total, contact_primary, special_requests")
         .in("id", versionIds);
+      const { data: runs } = await supabase
+        .from("quote_shuttle_runs")
+        .select("quote_version_id, run_number, pickup_time, dropoff_time")
+        .in("quote_version_id", versionIds)
+        .order("run_number", { ascending: true });
+      const runsByVersion: Record<string, ShuttleRun[]> = {};
+      for (const r of runs ?? []) {
+        (runsByVersion[r.quote_version_id] ??= []).push(r);
+      }
+      const { data: stops } = await supabase
+        .from("quote_multi_stops")
+        .select("quote_version_id, stop_number, destination_name, destination_address, arrival_time, departure_time")
+        .in("quote_version_id", versionIds)
+        .order("stop_number", { ascending: true });
+      const stopsByVersion: Record<string, MultiStop[]> = {};
+      for (const s of stops ?? []) {
+        (stopsByVersion[s.quote_version_id] ??= []).push(s);
+      }
       versionMap = Object.fromEntries(
-        (versions ?? []).map((v) => [v.id, v as unknown as VersionDetail]),
+        (versions ?? []).map((v) => [
+          v.id,
+          { ...v, shuttle_runs: runsByVersion[v.id] ?? [], multi_stops: stopsByVersion[v.id] ?? [] } as unknown as VersionDetail,
+        ]),
       );
     }
     setQuotes(
@@ -130,7 +158,10 @@ function PortalPage() {
     setActionError(null);
     const { error } = await supabase.rpc(fn as any, { p_quote_id: quoteId, ...extraArgs });
     setActionBusy(null);
-    if (error) { setActionError(error.message); return; }
+    if (error) {
+      setActionError(friendlyError(error, `Something went wrong. Please try again, or call us at ${COMPANY.phoneMelody} if it keeps happening.`));
+      return;
+    }
     dispatchNotifications();
     await load();
   }
@@ -162,7 +193,7 @@ function PortalPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">My Field Trips</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Signed in as {email ?? "you@school.ca"}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Signed in as {email ?? "you@example.com"}</p>
           </div>
           <Button asChild variant="accent" size="lg">
             <Link to="/quote"><Plus className="h-4 w-4" /> Request a new quote</Link>
@@ -198,6 +229,11 @@ function PortalPage() {
                 const canRequestCancel =
                   ["approved", "confirmed", "scheduled"].includes(q.status) && !cancelPending;
                 const canAccept = q.status === "approved" && !cancelPending;
+                // Editable pre-scheduling only (a bus/driver assigned needs
+                // the office involved for now), and not alongside a pending
+                // cancellation request.
+                const canEdit =
+                  ["requested", "in_review", "approved", "confirmed"].includes(q.status) && !cancelPending;
                 return (
                   <div key={q.id} className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
                     <button
@@ -206,11 +242,15 @@ function PortalPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-foreground">{v?.destination_name ?? "Field trip"}</span>
+                          <span className="font-semibold text-foreground">
+                            {v?.trip_type === "multi_destination" ? "Multiple destinations" : (v?.destination_name ?? "Field trip")}
+                            {" · "}{formatTripDate(v?.trip_date)}
+                            {" · "}{formatTripType(v?.trip_type)}
+                          </span>
                           <span className="text-xs text-muted-foreground">#{q.quote_number}</span>
                         </div>
                         <div className="mt-0.5 text-sm text-muted-foreground">
-                          {formatTripDate(v?.trip_date)} · {(v?.student_count ?? 0) + (v?.adults_count ?? 0)} riders
+                          {(v?.student_count ?? 0) + (v?.adults_count ?? 0)} riders
                         </div>
                       </div>
                       <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${cancelPending ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
@@ -226,13 +266,47 @@ function PortalPage() {
                     {open && v && (
                       <div className="border-t border-border bg-surface/50 px-4 py-4">
                         <div className="grid gap-4 sm:grid-cols-2">
+                          <Detail label="Trip type" value={formatTripType(v.trip_type)} />
                           <Detail label="Pickup" value={v.pickup_address || q.schools?.name || "—"} />
-                          <Detail label="Destination" value={v.destination_address || v.destination_name || "—"} />
+                          {v.trip_type !== "multi_destination" && (
+                            <Detail label="Destination" value={v.destination_address || v.destination_name || "—"} />
+                          )}
                           <Detail label="Trip date" value={formatTripDate(v.trip_date)} />
-                          <Detail label="Times" value={`${formatTime(v.departure_time)} → ${formatTime(v.return_time)}`} />
+                          <Detail
+                            label={v.trip_type === "shuttle" || v.trip_type === "multi_destination" ? "Bus engaged" : "Times"}
+                            value={`${formatTime(v.departure_time)} → ${formatTime(v.return_time)}`}
+                          />
                           <Detail label="Students" value={String(v.student_count ?? 0)} />
                           <Detail label="Adults / chaperones" value={String(v.adults_count ?? 0)} />
                         </div>
+
+                        {v.trip_type === "shuttle" && v.shuttle_runs.length > 0 && (
+                          <div className="mt-3 rounded-xl border border-dashed border-border bg-card p-3 text-sm">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shuttle runs</span>
+                            <ul className="mt-1 space-y-1 text-foreground">
+                              {v.shuttle_runs.map((r) => (
+                                <li key={r.run_number}>
+                                  Run {r.run_number}: {formatTime(r.pickup_time)} → {formatTime(r.dropoff_time)}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {v.trip_type === "multi_destination" && v.multi_stops.length > 0 && (
+                          <div className="mt-3 rounded-xl border border-dashed border-border bg-card p-3 text-sm">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stops</span>
+                            <ul className="mt-1 space-y-1 text-foreground">
+                              {v.multi_stops.map((s) => (
+                                <li key={s.stop_number}>
+                                  Stop {s.stop_number}: {s.destination_name || s.destination_address}
+                                  {s.destination_name ? ` (${s.destination_address})` : ""} — arrive {formatTime(s.arrival_time)}
+                                  {s.departure_time ? `, depart ${formatTime(s.departure_time)}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
 
                         {v.special_requests && (
                           <div className="mt-3 rounded-xl border border-dashed border-border bg-card p-3 text-sm">
@@ -264,8 +338,16 @@ function PortalPage() {
                           </p>
                         )}
 
-                        {(canAccept || canCancel || canRequestCancel) && (
+                        {(canAccept || canCancel || canRequestCancel || canEdit) && (
                           <div className="mt-4 flex flex-wrap gap-2">
+                            {canEdit && (
+                              <Button asChild variant="outline">
+                                <Link to="/quote" search={{ edit: q.id }}>
+                                  <Pencil className="h-4 w-4" />
+                                  Edit trip
+                                </Link>
+                              </Button>
+                            )}
                             {canAccept && (
                               <Button
                                 variant="accent"
@@ -380,7 +462,7 @@ function PortalPage() {
           <div>
             <h2 className="text-lg font-semibold text-foreground">My details</h2>
             <div className="mt-4 rounded-2xl border border-border bg-card p-5 shadow-soft">
-              <ProfRow label="School" value={profileSchool ?? "Add one by requesting a quote"} />
+              <ProfRow label="Organization" value={profileSchool ?? "Add one by requesting a quote"} />
               <ProfRow label="Primary contact" value={profileContact?.name || "—"} />
               <ProfRow label="Email" value={profileContact?.email || email || "—"} />
               <ProfRow label="Phone" value={profileContact?.phone || "—"} />

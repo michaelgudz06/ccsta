@@ -28,14 +28,14 @@ const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 
 // School-run congestion windows (local time): morning + afternoon pickups.
-function rushBuffer(departTime?: string): { pct: number; isRush: boolean } {
+export function rushBuffer(departTime?: string): { pct: number; isRush: boolean } {
   if (!departTime) return { pct: 0.12, isRush: false };
   const [h] = departTime.split(":").map(Number);
   const isRush = (h >= 7 && h < 9) || (h >= 14 && h < 18);
   return { pct: isRush ? 0.2 : 0.12, isRush };
 }
 
-function loadLeaflet(): Promise<typeof import("leaflet")> {
+export function loadLeaflet(): Promise<typeof import("leaflet")> {
   return new Promise((resolve, reject) => {
     const w = window as unknown as { L?: typeof import("leaflet") };
     if (w.L) { resolve(w.L); return; }
@@ -60,7 +60,7 @@ function loadLeaflet(): Promise<typeof import("leaflet")> {
   });
 }
 
-async function geocode(q: string): Promise<[number, number] | null> {
+export async function geocode(q: string): Promise<[number, number] | null> {
   if (!q.trim()) return null;
   // Bias toward British Columbia, Canada for school-trip addresses.
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(q)}`;
@@ -105,7 +105,11 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
         };
         if (cancelled) return;
         const route = rData.routes?.[0];
-        if (!route) { setErrorMsg("No driving route found between those points."); setStatus("error"); return; }
+        if (!route) {
+          setErrorMsg("No driving route found between those points. Your request will still go through — we'll confirm the final price after reviewing it.");
+          setStatus("error");
+          return;
+        }
 
         const distanceKm = route.distance / 1000;
         const freeFlowMin = route.duration / 60;
@@ -140,7 +144,7 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
         setStatus("ready");
       } catch (e) {
         if (cancelled) return;
-        setErrorMsg("Map service is temporarily unavailable.");
+        setErrorMsg("Map service is temporarily unavailable. Your request will still go through — we'll confirm the final price after reviewing it.");
         setStatus("error");
         console.error("RouteMap error:", e);
       }
@@ -160,11 +164,13 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
     );
   }
 
-  // Silent error (e.g. address not geocodable) — show nothing rather than alarming the user.
+  // Address not geocodable — no map to show, but be honest that this means
+  // we don't yet know the exact distance rather than falsely reassuring
+  // the customer their estimate already accounts for it.
   if (status === "error" && !errorMsg) {
     return (
       <div className={`rounded-2xl border border-dashed border-border bg-card p-5 text-sm text-muted-foreground ${className ?? ""}`}>
-        Route preview not available for this address — your estimate is still accurate.
+        Route preview not available for this address. Your request will still go through — we'll confirm the final price after reviewing it.
       </div>
     );
   }

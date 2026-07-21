@@ -476,6 +476,7 @@ export type Database = {
       quote_versions: {
         Row: {
           adults_count: number | null
+          approved_driver_hours: number | null
           cargo_needed: boolean
           contact_day_of: Json | null
           contact_primary: Json | null
@@ -486,7 +487,11 @@ export type Database = {
           departure_time: string | null
           destination_address: string | null
           destination_name: string | null
+          distance_km: number | null
+          driver_preference: string | null
+          edited_at: string | null
           estimated_hours: number | null
+          fuel_waived: boolean
           grade_breakdown: Json | null
           id: string
           internal_notes: string | null
@@ -501,13 +506,16 @@ export type Database = {
           suggested_driver_id: string | null
           surcharge_snapshot: Json | null
           surcharge_total: number | null
+          system_driver_hours: number | null
           total: number | null
           trip_date: string | null
+          trip_type: Database["public"]["Enums"]["quote_trip_type"]
           updated_at: string
           version_number: number
         }
         Insert: {
           adults_count?: number | null
+          approved_driver_hours?: number | null
           cargo_needed?: boolean
           contact_day_of?: Json | null
           contact_primary?: Json | null
@@ -518,7 +526,11 @@ export type Database = {
           departure_time?: string | null
           destination_address?: string | null
           destination_name?: string | null
+          distance_km?: number | null
+          driver_preference?: string | null
+          edited_at?: string | null
           estimated_hours?: number | null
+          fuel_waived?: boolean
           grade_breakdown?: Json | null
           id?: string
           internal_notes?: string | null
@@ -533,13 +545,16 @@ export type Database = {
           suggested_driver_id?: string | null
           surcharge_snapshot?: Json | null
           surcharge_total?: number | null
+          system_driver_hours?: number | null
           total?: number | null
           trip_date?: string | null
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
           version_number: number
         }
         Update: {
           adults_count?: number | null
+          approved_driver_hours?: number | null
           cargo_needed?: boolean
           contact_day_of?: Json | null
           contact_primary?: Json | null
@@ -550,7 +565,11 @@ export type Database = {
           departure_time?: string | null
           destination_address?: string | null
           destination_name?: string | null
+          distance_km?: number | null
+          driver_preference?: string | null
+          edited_at?: string | null
           estimated_hours?: number | null
+          fuel_waived?: boolean
           grade_breakdown?: Json | null
           id?: string
           internal_notes?: string | null
@@ -565,8 +584,10 @@ export type Database = {
           suggested_driver_id?: string | null
           surcharge_snapshot?: Json | null
           surcharge_total?: number | null
+          system_driver_hours?: number | null
           total?: number | null
           trip_date?: string | null
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
           version_number?: number
         }
@@ -601,8 +622,86 @@ export type Database = {
           },
         ]
       }
+      quote_shuttle_runs: {
+        Row: {
+          dropoff_time: string
+          id: string
+          pickup_time: string
+          quote_version_id: string
+          run_number: number
+        }
+        Insert: {
+          dropoff_time: string
+          id?: string
+          pickup_time: string
+          quote_version_id: string
+          run_number: number
+        }
+        Update: {
+          dropoff_time?: string
+          id?: string
+          pickup_time?: string
+          quote_version_id?: string
+          run_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_shuttle_runs_quote_version_id_fkey"
+            columns: ["quote_version_id"]
+            isOneToOne: false
+            referencedRelation: "quote_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quote_multi_stops: {
+        Row: {
+          arrival_time: string
+          departure_time: string | null
+          destination_address: string
+          destination_name: string | null
+          id: string
+          lat: number | null
+          lng: number | null
+          quote_version_id: string
+          stop_number: number
+        }
+        Insert: {
+          arrival_time: string
+          departure_time?: string | null
+          destination_address: string
+          destination_name?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          quote_version_id: string
+          stop_number: number
+        }
+        Update: {
+          arrival_time?: string
+          departure_time?: string | null
+          destination_address?: string
+          destination_name?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          quote_version_id?: string
+          stop_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_multi_stops_quote_version_id_fkey"
+            columns: ["quote_version_id"]
+            isOneToOne: false
+            referencedRelation: "quote_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       quotes: {
         Row: {
+          cancellation_reason: string | null
+          cancellation_requested_at: string | null
           created_at: string
           current_version_id: string | null
           customer_id: string
@@ -613,6 +712,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancellation_reason?: string | null
+          cancellation_requested_at?: string | null
           created_at?: string
           current_version_id?: string | null
           customer_id: string
@@ -623,6 +724,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancellation_reason?: string | null
+          cancellation_requested_at?: string | null
           created_at?: string
           current_version_id?: string | null
           customer_id?: string
@@ -788,6 +891,7 @@ export type Database = {
           student_count: number | null
           trip_date: string
           trip_number: string
+          trip_type: Database["public"]["Enums"]["quote_trip_type"]
           updated_at: string
         }
         Insert: {
@@ -813,6 +917,7 @@ export type Database = {
           student_count?: number | null
           trip_date: string
           trip_number: string
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
         }
         Update: {
@@ -838,6 +943,7 @@ export type Database = {
           student_count?: number | null
           trip_date?: string
           trip_number?: string
+          trip_type?: Database["public"]["Enums"]["quote_trip_type"]
           updated_at?: string
         }
         Relationships: [
@@ -968,6 +1074,7 @@ export type Database = {
         | "completed"
         | "invoiced"
         | "cancelled"
+      quote_trip_type: "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip"
       trip_status: "scheduled" | "in_progress" | "completed" | "cancelled"
     }
     CompositeTypes: {
@@ -1111,6 +1218,7 @@ export const Constants = {
         "invoiced",
         "cancelled",
       ],
+      quote_trip_type: ["two_way", "one_way", "shuttle", "multi_destination", "multi_trip"],
       trip_status: ["scheduled", "in_progress", "completed", "cancelled"],
     },
   },

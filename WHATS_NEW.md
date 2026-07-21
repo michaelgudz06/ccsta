@@ -137,11 +137,345 @@ on every password field — login, signup, and reset-password.
 - **Google Maps key:** add `ccsta.net` to the allowed referrers.
 - **Samsara token** is stored (`.env.local`); native live tracking is a later phase.
 
+## Recently completed
+- **Admin manual price override after Calculate** — done. Melody can override the
+  system driver-time estimate and waive the $50 fuel fee, both editable any time
+  and persisted separately from the system estimate for audit (migration 034).
+- **Trip types** — built (migration `035`, `quote.tsx`, `admin.tsx`): a
+  trip-type selector at the top of the quote form with two-way (unchanged
+  behavior), one-way (drop-off time instead of a return leg), shuttle
+  (customer-defined number of runs, each with its own pickup/drop-off time,
+  billed continuously from first pickup to last drop-off), and multi-trip
+  (admin-only — routes to a "contact Melody" dead end, no self-serve form).
+  Pricing math is unchanged for every type. On the `trip-types` branch.
+  **Not yet deployed** — see "Deploy planning" under Operational items below.
+- **Multi-destination (5th trip type)** — built, full feature (migrations
+  `036`/`037`/`038`, `quote.tsx`, `MultiStopRouteMap.tsx`): a real self-serve
+  form for multiple different destinations in one day, added *alongside*
+  multi-trip (not replacing it — multi-trip's copy was relabeled to mean
+  booking across multiple days instead, since it now means something
+  different). Customer adds a repeatable stop (address + arrival/departure
+  time), plus a return-to-school leg auto-added by default (editable
+  address, removable). Hours billed from earliest to latest stop time, same
+  technique as shuttle — no pricing-engine change. Distance is the actual
+  resolved question: total km summed across every leg (pickup → each stop →
+  return), computed via a single OSRM multi-waypoint routing request,
+  feeding the existing $1/km-over-200km charge unchanged. Unresolved
+  addresses don't block submission — flagged (via null `lat`/`lng` on that
+  stop) for Melody to confirm by hand, consistent with the existing
+  distance-unavailable pattern. On the `trip-types` branch. **Not yet
+  deployed.** *(Confirmed by 2026-07-19 pre-deploy audit — see PRE-DEPLOY
+  PUNCH LIST below for one open gap: the portal's own quote-detail view
+  doesn't yet show the stop list back to the customer.)*
+- **Member 2hr/4hr minimum, client-side — done** (commit `5e9016d`,
+  2026-07-16). The customer-facing quote-form estimate (`quote.tsx`) now
+  looks up the logged-in customer's school membership live and correctly
+  applies a 2-hour floor + the discounted member hourly rate in the preview,
+  matching the server (`calculate_estimate`). Member rates already existed
+  in `rate_config` (seeded in migration `014`); this was purely a client
+  lookup gap, now closed. **Superseded claim:** earlier notes in this file
+  said the client "hardcodes a 4-hour minimum regardless of membership" —
+  that was accurate when written but is now stale; corrected here per the
+  2026-07-19 audit. One cosmetic bug remains from the same code path: the
+  "Suggested bus" line still hardcodes the label "(non-member rate)" even
+  when the correct member rate is the one being shown — see PRE-DEPLOY
+  PUNCH LIST.
+- **Customer quote editing — done** (migrations `040`/`041`/`042`,
+  `src/routes/quote.tsx`, `src/routes/portal.tsx`; commits through `fd9bbb9`,
+  2026-07-18). Full-form editing — a customer reopens `/quote?edit=<id>`
+  fully pre-filled, including changing trip type, and re-submits. Matches
+  the original spec on the parts that matter: the 1-week-before-trip lock
+  with the "pushing the date later is still OK" exception, and any edit
+  unconditionally revoking approval and re-notifying admin for re-review.
+  **Deliberate scope cut, not a bug:** already-`scheduled` quotes (bus/
+  driver assigned) cannot be edited at all yet — migration `040`'s header
+  comment says this is deferred until the bus/driver unassign flow is
+  confirmed with Melody. Works across all 5 trip types, including editing
+  shuttle runs and multi-destination stops (migration `041`).
+
+## PRE-DEPLOY PUNCH LIST (from the 2026-07-19 customer-flow audit)
+
+Full customer journey (landing → quote form → estimate → address autofill →
+submission → confirmation email → portal) was code-audited on 2026-07-19
+ahead of deploying the customer-facing experience to `main`. Static/code
+review only — not a substitute for the manual end-to-end testing in
+priority 1 below. Tracking items here so they don't get lost before launch;
+check off and remove as they land.
+
+**Must fix before launch (customer-visible, cheap):**
+- [ ] `quote.tsx:1088` — "Suggested bus" line hardcodes the label "(non-member
+  rate)" even when a member school's correct discounted rate is being shown.
+  Confusing/wrong for exactly the customers this feature was built for.
+- [x] `quote.tsx:973-975` — static "*All trips are a minimum of 4 hours."
+  caption is shown unconditionally, contradicting the correct dynamic
+  "2 hr minimum" row directly above it for member schools. **Fixed** —
+  caption is now dynamic (`minHours` + member-rate note).
+- [x] Multi-destination's estimate card shows a generic "Your destination"
+  placeholder (`destination` is never populated for this trip type) instead
+  of the actual stop list/count. **Fixed** — now shows the real stop count
+  + addresses in order.
+- [x] Quote-form validation is a hand-rolled `validateAll()` (no zod /
+  react-hook-form despite that being this project's stated convention) that
+  only checks non-empty — no email/phone format validation. A bad email
+  silently kills that customer's own confirmation email. **Fixed** — email/
+  phone format now validated (primary, secondary, day-of), blocks submission
+  with an inline error.
+- [ ] Confirm (don't assume) the Google Maps API key is actually set in the
+  production environment. None was found anywhere in this repo, including
+  `.env.local` patterns — `AddressAutocomplete` is correctly wired on every
+  address field across all 5 trip types and degrades gracefully with no key
+  (plain text input, no errors, never blocks submission), but that also
+  means it may not be suggesting anything anywhere right now. **Correction
+  (2026-07-20):** a prior note here claimed this was resolved because the
+  key is set in Vercel's environment variables. That's wrong — this site is
+  served by Lovable (synced from GitHub `main`), not Vercel; the `.vercel/`
+  folder in this repo is a local-only, gitignored leftover from an unrelated
+  one-off `vercel build`, not a real deployment. Check **Lovable's** project
+  settings specifically, and verify live that autocomplete is suggesting
+  addresses rather than falling back to plain text. Billing context and two
+  small non-urgent follow-ups (find who owns the Google Cloud billing card;
+  set a budget alert, since there's no automatic hard cap) are tracked in
+  `NEXT_SESSION.md`.
+
+**Should fix before launch (real gaps, lower-visibility risk):**
+- [ ] Portal quote-detail view only ever reads `quote_versions` — never
+  `quote_shuttle_runs` or `quote_multi_stops`. Shuttle quotes show one flat
+  time range instead of per-run detail; multi-destination quotes render a
+  bare "—" for destination since the real data lives in `quote_multi_stops`.
+- [ ] Confirmation (and other customer-facing) emails are still genuinely
+  plain-text end-to-end (see "Polish the customer confirmation email"
+  below) — already flagged as high-priority/near-urgent, still open.
+- [ ] Client-side estimate preview has no overtime line (server applies
+  overtime beyond 8 driver-hours; client doesn't show it) — long/full-day
+  trips will preview lower than the real invoiced price.
+- [ ] Submission failure shows the raw Postgres error string to the customer
+  instead of a friendly message (`quote.tsx:589-593`).
+
+**Cosmetic / fix whenever:**
+- [ ] Dead `StepWrap` component in `quote.tsx` (leftover from the pre-single-
+  page wizard), unused icon imports and a stray empty `<li>` on the
+  homepage, and a stale doc comment in `QuoteFields.tsx` referencing a
+  portal edit modal that doesn't exist (editing actually happens by
+  reopening `/quote?edit=<id>`).
+
+**Not re-verified by this audit — carry forward from priority 1/2 below:**
+finishing interactive end-to-end testing of all 5 trip types, and
+investigating the live reloading bug Melody reported on the currently
+deployed `main` site.
+
+## Operational items raised by Melody
+- **Email notification to Melody on new quotes.** Note: `submit_quote`
+  already queues a "New quote request" email to the office inbox on every
+  submission (`_admin_email()`, reading `app_config.notify_admin_email` —
+  currently `info@ccsta.ca`) using the existing Resend + `notify-send` edge
+  function infrastructure (migrations 025/035) — this predates this session
+  and isn't new work. What's actually unresolved: (a) confirm that inbox is
+  one Melody watches, or point it at her personally instead/as well, and
+  (b) confirm it's actually delivering — depends on `RESEND_API_KEY` being
+  set and the edge function being deployed, both already flagged as
+  outstanding action items above and tied to the undeployed-work item below.
+- **Live reloading bug (investigate).** Melody reports the *currently
+  deployed* site has reloading problems affecting real customers. Diagnose
+  against what's actually live — the deployed version may differ
+  meaningfully from work-in-progress in this repo (see deploy planning
+  below). Priority: affects real bookings in progress right now.
+- **Polish the customer confirmation email — HIGH PRIORITY, near-urgent.**
+  The "we received your quote request" email (queued in `submit_quote` via
+  `_queue_email`, migrations 025/035/037) needs a real pass before more
+  customers start booking — it's the first thing a customer sees after
+  submitting, and reflects on CCSTA. Needs:
+  1. **Improved wording/tone** — current copy is functional, not polished.
+  2. **Visual design/branding** (logo, real formatting) — **note on actual
+     scope here:** this is genuinely plain text end-to-end today, not just
+     plain-*looking*. `notify-send/index.ts` sends only `text: row.body` to
+     Resend — no `html` field at all — and `notification_log.body`
+     (migration `018`) is a single `text` column with no separate HTML
+     body. Adding real branding means extending the edge function to also
+     send an `html` field (Resend accepts both `text` and `html` in the
+     same request) and giving `notification_log` somewhere to store HTML
+     content — not just rewriting the string inside `submit_quote`.
+  3. **Confirm it includes what the customer actually needs**: quote
+     number, a trip summary, what happens next, contact info. Check
+     against current content before rewriting rather than assuming it's
+     missing something.
+  - **Worth doing while in there, secondary priority:** review the other
+    customer-facing emails for the same plain-text/branding gap and tone
+    consistency — priced (`approve_quote`), rejected (`reject_quote`), and
+    cancelled/cancellation-declined (`resolve_cancellation_request`, both
+    branches). Note: `confirm_own_quote`'s email is *not* customer-facing —
+    it notifies the office when a customer accepts a price, so it's out of
+    scope here. The submission confirmation is still the one that matters
+    most right now.
+  - **Footer content (from Melody, 2026-07-19)** — use this in the HTML
+    version once built:
+    ```
+    Melody Vanderwal
+    CCSTA Admin
+    778-986-9011
+    Admin@ccsta.net
+    [CCSTA logo image below the footer]
+    ```
+  - **Logo hosting — resolved (2026-07-19).** The logo is now committed at
+    `public/ccsta-logo.jpg` (moved from an untracked root-level file with
+    spaces in its name). TanStack Start serves everything in `public/` from
+    the site root the same way it already serves `favicon.svg` — so once
+    this branch is deployed, the logo is reachable at
+    `https://ccsta.net/ccsta-logo.jpg`, usable directly as the `<img src>`
+    in the HTML email once that's built. Confirmed the live site does
+    *not* already host this logo elsewhere — the site header
+    (`src/components/Logo.tsx`) is a code-drawn SVG + text mark, not this
+    image, so this is a genuinely new public asset, not a duplicate.
+- **Deploy planning.** A full session's worth of work — new pricing,
+  form rebuild, trip types, several migrations — is built but undeployed.
+  When ready: deploy deliberately during low-traffic time, have a rollback
+  plan ready, and verify first if at all possible. Real customers are
+  actively using the live site, so this isn't a routine push.
+- **Quote number alignment with the existing Excel system** *(backlog —
+  not urgent, but affects reconciliation with CCSTA's book of record)*.
+  The app auto-generates quote numbers (`Q-YYYY-####`) from a Postgres
+  sequence (`quote_number_seq`, consumed in `submit_quote` — see
+  migrations 011/025/035/037). These numbers need to align with the
+  numbering CCSTA already uses in their existing Excel system, which has
+  real quotes predating the app.
+  - **Note on current state:** `quote_number_seq` is only ever
+    *referenced* (`nextval(...)`) in the migrations that use it — it isn't
+    actually defined (`CREATE SEQUENCE`) anywhere in this repo's migration
+    history, meaning it was created directly against the live database at
+    some point outside version control. Bringing its starting value under
+    proper migration control (rather than a one-off manual
+    `ALTER SEQUENCE`) is part of this work, not just a config tweak.
+  - **Two parts:**
+    1. **Correct starting point** — set/restart the sequence so new
+       quotes continue from wherever the Excel system currently is,
+       instead of restarting at 0001. **Confirm the exact current number
+       with Melody before setting this** — getting it wrong in the wrong
+       direction (e.g. reusing a number already in Excel) is worse than
+       leaving it misaligned a while longer.
+    2. **Admin-only manual edit** of a quote's number, so Melody can
+       hand-align any individual quote that drifts.
+  - **Safeguard (must-have, not optional):** if quote numbers become
+    editable, enforce uniqueness — a duplicate quote number is worse than
+    a mismatched one. Needs a friendly "that number's already in use"
+    error on the edit, not just relying on a raw unique-constraint
+    violation bubbling up.
+  - **Scope when picked up:** find/formalize the sequence definition,
+    make its starting value migration-controlled, add the admin-only edit
+    field with a uniqueness check (likely a `UNIQUE` constraint on
+    `quotes.quote_number` already exists as the enforcement backstop —
+    confirm — plus a pre-check for a clean error message).
+
 ## Still on the backlog (planned, not built)
-- Single-page quote-form redesign (fewer pages, "show more" buttons).
+- ~~Single-page quote-form redesign (fewer pages, "show more" buttons).~~
+  **Done** — shipped via `e57417f` (collapsed the 4-step wizard into one
+  scrolling page) and `55d40a0` (card-based redesign). This bullet was
+  never removed when it landed.
 - Address autofill reliability + a clear "driver time will be added on the invoice" notice.
-- Member 2-hour vs. others 4-hour minimum billing.
+- **Admin page redesign (to Melody's preferences)** *(its own focused
+  session — not a quick tweak)*: the admin/dispatch view works and has
+  the right info, but its layout/design should be reworked to match how
+  Melody actually wants to review quotes and manage bookings. A design
+  project like the customer quote-form redesign was (see the single-page
+  redesign item above) — gather her specific preferences on what she
+  needs to see, in what order, and how it should look, then redesign
+  around that, rather than guessing.
+  - **Not the same thing as:** the multi-destination stops display
+    (showing every stop's destination + address + arrival/departure time)
+    being built as a functional addition in the near term. That's a
+    content addition to the existing layout; this item is the broader
+    visual/layout redesign, deferred and separate.
+  - **Small near-term addition, same category as the stops display
+    above** *(2026-07-20, low priority)*: show the quote **submission
+    date** (`created_at`) somewhere sensible in the admin UI — the list
+    row or the detail panel, whichever's easiest — it's not there today.
+    Just put it wherever fits for now rather than waiting on the redesign;
+    it's a small display addition, not worth its own design pass.
+  - **Concrete scope for this batch, gathered 2026-07-20 — do together
+    post-launch, do NOT build now:**
+    - **Quote detail view is hard to read/confusing — redesign for
+      clarity.** Top priority within this batch.
+    - Simplify the calculations display (both admin and customer side) —
+      currently hard to read.
+    - Remove the "waive fuel" toggle section entirely; replace it with
+      letting Melody directly edit *any* number inline (driver time, fuel
+      fee, overtime — e.g. set fuel to $0, remove the overtime line).
+    - Separate admin sections by quote **stage** — reviewed / approved-
+      but-pricing-not-yet-customer-approved / scheduled / completed /
+      invoiced — quotes move between stages instead of sitting in one
+      long list.
+    - Invoiced section: organize completed+invoiced quotes into folders
+      **by organization**, for record-keeping.
+    - Sort/filter all quotes by date, organization, destination.
+    - **Bug, not a design question** — quote number editing on the admin
+      page doesn't actually save to the quote list; edits don't persist.
+      Confirm whether this needs its own quick fix before the redesign or
+      can ride along with it.
+    - "Enter to save" on admin edits — currently you have to click out of
+      the field for it to save.
+- **Post-launch — other items** *(do NOT build now)*:
+  - Admin confirmation email needs the full trip info, not a summary —
+    basically the whole quote. Mila has mockup screenshots (Claude Code
+    mockups) to reference when this is picked up.
+  - Make day-of contact **optional** — estimate-only customers shouldn't
+    have to fill it in.
+  - **New feature:** a "Quote approved" email to the customer with an
+    **"Approve pricing"** button — customer reviews the price, clicks
+    approve, and the quote moves to scheduling.
+- ~~Member 2-hour vs. others 4-hour minimum billing.~~ **Done** — see
+  "Recently completed" above (commit `5e9016d`). Client-side preview now
+  matches server-side pricing for member schools.
+- **MEMBER SPECIAL PRICING TIERS** *(needs clarification before building)*: the
+  2026-2027 rate sheet (`2026-2027 Multiple Trip Quote Template Draft 2.xlsx`,
+  "2026-2027 Rates" tab) has two special tiers beyond the plain
+  member/non-member/church-by-bus-size rates already wired into
+  `calculate_estimate`:
+  - **"Member w/i 1hr"** ($63 / $78.75): applies to a member trip "within 1
+    hour" — UNCLEAR whether that's 1hr driving distance or 1hr total trip
+    duration, and what the two numbers ($63/$78.75) each represent. Check the
+    sheet + confirm with Melody.
+  - **"Driver Only"** ($47.25): when only a driver is needed, no bus. No
+    "driver only" option exists on the form — unclear if this comes through
+    self-serve or is Melody-applied only.
+  - **Desired behavior once clarified:** auto-apply the tier + flag it
+    visibly for Melody to confirm (these are exceptions that shouldn't apply
+    silently).
+  - **Do NOT build until the rules are confirmed — mis-charging risk.**
 - Hourly driver availability + bus availability windows.
-- Admin manual price override after Calculate.
 - Parent bus-tracking portal.
 - 5% first-online-quote discount.
+- **Address autofill with saved favorites:** as customers type pickup/destination
+  addresses, show selectable suggestions for accuracy and less manual entry. Seed
+  it with our Excel list of known customer/school/destination addresses as saved
+  favorites, layered on top of a general address-lookup service.
+- **Calendar/availability system** *(build next, now that trip types is
+  done — see Recently completed)*: customers pick a date/time and the
+  system checks it against fleet (buses + drivers) availability, showing
+  color-coded slots — green = available, grey = a trip's already submitted
+  for that slot and under review, red = unavailable (must pick a different
+  day/bus/driver). The trip-type time-slot data (including shuttle's
+  per-run times in `quote_shuttle_runs`) was built calendar-readable from
+  the start for exactly this.
+
+- **Multi-destination schedule feasibility validation** *(future —
+  deferred; simpler version — just collecting arrival + departure times
+  per stop — was built first)*: validate that the times a customer enters
+  for multi-destination stops are physically possible. For each
+  consecutive pair of stops, calculate the actual travel time between them
+  and warn the customer if an entered arrival time is impossible given the
+  drive from the previous stop (e.g. leaves stop 1 at 10:00, stop 2 is a
+  45-min drive away, but they entered a 10:15 arrival at stop 2).
+  - **Useful head start:** the OSRM multi-waypoint request already built
+    for distance (`MultiStopRouteMap.tsx`) returns a `legs` array with
+    per-leg `duration`, not just the total — the travel-time data this
+    needs is already coming back from the routing call, just unused today.
+    Building this is mostly validation/UX (comparing entered times against
+    those durations and surfacing a warning), not a new data source.
+  - Complex enough to defer: real-world buffer time at each stop, what
+    counts as "close enough" vs. an error, and whether an infeasible
+    schedule should block submission or just warn (Melody flags it) all
+    need deciding before building.
+
+- ~~Customer quote editing.~~ **Done** — see "Recently completed" above
+  (migrations `040`–`042`). Open item carried forward: already-`scheduled`
+  quotes still can't be edited, pending Melody's decision on how bus/driver
+  unassignment should work — pick this up as a small follow-on, not a full
+  re-plan.

@@ -141,7 +141,7 @@ function LoginPage() {
                 <span className="font-medium text-foreground">Email</span>
                 <input
                   type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@school.ca" required autoComplete="email"
+                  placeholder="you@example.com" required autoComplete="email"
                   className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
                 />
               </label>
@@ -175,7 +175,7 @@ function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@school.ca"
+                  placeholder="you@example.com"
                   required
                   autoComplete="email"
                   className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
@@ -230,7 +230,7 @@ function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@school.ca"
+                  placeholder="you@example.com"
                   required
                   autoComplete="email"
                   className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"

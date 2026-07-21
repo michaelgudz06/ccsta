@@ -57,9 +57,10 @@ interface Props {
   error?: string;
   required?: boolean;
   className?: string;
+  id?: string;
 }
 
-export function AddressAutocomplete({ label, value, onChange, placeholder, error, required }: Props) {
+export function AddressAutocomplete({ label, value, onChange, placeholder, error, required, id }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [mapsReady, setMapsReady] = useState(false);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
@@ -108,7 +109,7 @@ export function AddressAutocomplete({ label, value, onChange, placeholder, error
   }, [mapsReady, onChange]);
 
   return (
-    <label className="block text-sm">
+    <label id={id} className="block text-sm">
       <span className="font-medium text-foreground">
         {label}
         {required && <span className="ml-0.5 text-destructive">*</span>}
