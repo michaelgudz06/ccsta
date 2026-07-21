@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
@@ -16,6 +16,7 @@ import { dispatchNotifications } from "@/lib/notify";
 import { useAuth } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
+import { friendlyError } from "@/lib/errors";
 
 type TripType = "two_way" | "one_way" | "shuttle" | "multi_destination" | "multi_trip";
 
@@ -26,6 +27,17 @@ const isValidEmail = (v: string) => EMAIL_RE.test(v.trim());
 const isValidPhone = (v: string) => {
   const digits = v.replace(/\D/g, "");
   return digits.length >= 7 && digits.length <= 15;
+};
+
+// Local calendar date as "YYYY-MM-DD", matching the <input type="date">
+// value format directly — avoids the UTC-vs-local off-by-one that
+// new Date().toISOString() would introduce near midnight.
+const dateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayDateStr = () => dateStr(new Date());
+const maxFutureDateStr = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 2);
+  return dateStr(d);
 };
 
 const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
@@ -67,6 +79,10 @@ function QuotePage() {
   const [editLoading, setEditLoading] = useState(!!editQuoteId);
   const [editBlocked, setEditBlocked] = useState<string | null>(null);
   const [editLoaded, setEditLoaded] = useState(false);
+  // Distinguishes "genuinely can't be edited" (not found, wrong status —
+  // retrying won't help) from "the load itself failed" (network blip,
+  // RLS hiccup — worth offering a retry for).
+  const [editLoadFailed, setEditLoadFailed] = useState(false);
 
   // Step 1
   const [school, setSchool] = useState("");
@@ -130,6 +146,11 @@ function QuotePage() {
   // Gates the autosave effect below so it can't fire (and overwrite the saved
   // draft with the form's blank initial state) before we've checked for one.
   const [draftReady, setDraftReady] = useState(false);
+  // Set once Start Fresh is chosen. The "prefill from previous quote" effect
+  // below checks this before applying its result -- a ref (not state) because
+  // it must be visible to that effect's in-flight async callback immediately,
+  // not on the next render, regardless of which resolves first.
+  const freshStartRef = useRef(false);
 
   const applyDraft = (d: Record<string, unknown>) => {
     if (d.school) setSchool(d.school as string);
@@ -170,6 +191,31 @@ function QuotePage() {
       d.c1n || d.c1e || d.c1p || d.dayN || d.dayP || d.notes || d.driverPref,
     );
 
+  // Shared by the general "prefill from previous quote" convenience effect
+  // below and by Start Fresh's narrower primary-contact-only refill -- one
+  // query, two different subsets of the result get applied.
+  const fetchLastQuoteInfo = async () => {
+    const { data: q } = await supabase
+      .from("quotes")
+      .select("current_version_id, schools(name)")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!q?.current_version_id) return null;
+    const { data: v } = await supabase
+      .from("quote_versions")
+      .select("pickup_address, contact_primary, contact_secondary, contact_day_of")
+      .eq("id", q.current_version_id)
+      .maybeSingle();
+    return {
+      schoolName: (q.schools as { name?: string } | null)?.name ?? "",
+      pickup: v?.pickup_address ?? "",
+      c1: (v?.contact_primary ?? {}) as { name?: string; email?: string; phone?: string },
+      c2: (v?.contact_secondary ?? {}) as { name?: string; email?: string; phone?: string },
+      cd: (v?.contact_day_of ?? {}) as { name?: string; phone?: string },
+    };
+  };
+
   useEffect(() => {
     // Editing an existing quote has nothing to do with the anonymous
     // new-quote draft mechanism -- skip the resume-prompt entirely.
@@ -197,9 +243,61 @@ function QuotePage() {
   };
 
   const handleStartFresh = () => {
+    // Marked before anything else so the general prefill effect's async
+    // callback (which may already be in flight, or may not have started
+    // yet) knows to skip applying school/pickup/secondary/day-of contact,
+    // no matter which finishes first -- see fetchLastQuoteInfo's other
+    // caller below for the one field group that's still meant to fill in.
+    freshStartRef.current = true;
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
     setPendingDraft(null);
+    // Reset every field to its true blank default -- a genuine fresh start,
+    // not just discarding the saved draft (which was never applied to state
+    // in the first place).
+    setSchool("");
+    setPickup("");
+    setDestination("");
+    setDestinationAddress("");
+    setDate("");
+    setTripType("two_way");
+    setDepartTime("");
+    setReturnTime("");
+    setShuttleRuns([{ pickup: "", dropoff: "" }]);
+    setMultiStops([{ address: "", arrivalTime: "", departureTime: "" }]);
+    setIncludeReturnLeg(true);
+    setReturnStop({ address: "", arrivalTime: "" });
+    setReturnAddressTouched(false);
+    setKToFour("");
+    setGrade5Plus("");
+    setAdults("");
+    setCargo(false);
+    setC1n(""); setC1e(""); setC1p("");
+    setC2n(""); setC2e(""); setC2p("");
+    setDayN(""); setDayP("");
+    setNotes("");
+    setDriverPref("");
+    setErrors({});
+    setDistanceKm(null);
+    setMultiStopGeocode([]);
     setDraftReady(true);
+    // Blocks the general effect outright if it hasn't started yet (it
+    // no-ops once `prefilled` is already true). If it's already in flight
+    // or already resolved, the freshStartRef check above is what stops it.
+    setPrefilled(true);
+
+    // Deliberate exception, not an oversight: primary contact still gets
+    // prefilled from the customer's last quote, same convenience as a
+    // normal fresh page load -- just narrowed to primary contact only.
+    // Everything else set above stays genuinely blank.
+    if (session) {
+      (async () => {
+        const info = await fetchLastQuoteInfo();
+        if (!info) return;
+        setC1n(info.c1.name ?? "");
+        setC1e(info.c1.email ?? "");
+        setC1p(info.c1.phone ?? "");
+      })();
+    }
   };
 
   useEffect(() => {
@@ -210,36 +308,31 @@ function QuotePage() {
 
   // Prefill from previous quote (blank-form convenience only — skipped
   // entirely in edit mode, where the load-existing-quote effect below
-  // populates everything instead).
+  // populates everything instead). NOT gated on draftReady/pendingDraft --
+  // that was tried and is what caused the bug this replaces (see commit
+  // history): gating it just delayed this fetch until draftReady flips
+  // true, which happens at the END of handleStartFresh, guaranteeing this
+  // async result lands AFTER (not before) the fresh-start reset and
+  // silently refills it via the `s || value` fallback below. Timing can't
+  // fix a race; freshStartRef.current is the actual guard -- checked right
+  // before this result is applied, so it's a no-op if Start Fresh has been
+  // chosen, no matter which finishes first.
   useEffect(() => {
     if (!session || prefilled || editQuoteId) return;
     setPrefilled(true);
     (async () => {
-      const { data: q } = await supabase
-        .from("quotes")
-        .select("current_version_id, schools(name)")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (!q?.current_version_id) return;
-      const { data: v } = await supabase
-        .from("quote_versions")
-        .select("pickup_address, contact_primary, contact_secondary, contact_day_of")
-        .eq("id", q.current_version_id)
-        .maybeSingle();
-      const c1 = (v?.contact_primary ?? {}) as { name?: string; email?: string; phone?: string };
-      const c2 = (v?.contact_secondary ?? {}) as { name?: string; email?: string; phone?: string };
-      const cd = (v?.contact_day_of ?? {}) as { name?: string; phone?: string };
-      setSchool((s) => s || (q.schools as { name?: string } | null)?.name || "");
-      setPickup((s) => s || v?.pickup_address || "");
-      setC1n((s) => s || c1.name || "");
-      setC1e((s) => s || c1.email || "");
-      setC1p((s) => s || c1.phone || "");
-      setC2n((s) => s || c2.name || "");
-      setC2e((s) => s || c2.email || "");
-      setC2p((s) => s || c2.phone || "");
-      setDayN((s) => s || cd.name || "");
-      setDayP((s) => s || cd.phone || "");
+      const info = await fetchLastQuoteInfo();
+      if (!info || freshStartRef.current) return;
+      setSchool((s) => s || info.schoolName);
+      setPickup((s) => s || info.pickup);
+      setC1n((s) => s || info.c1.name || "");
+      setC1e((s) => s || info.c1.email || "");
+      setC1p((s) => s || info.c1.phone || "");
+      setC2n((s) => s || info.c2.name || "");
+      setC2e((s) => s || info.c2.email || "");
+      setC2p((s) => s || info.c2.phone || "");
+      setDayN((s) => s || info.cd.name || "");
+      setDayP((s) => s || info.cd.phone || "");
     })();
   }, [session, prefilled, editQuoteId]);
 
@@ -251,90 +344,103 @@ function QuotePage() {
     if (!editQuoteId || editLoaded) return;
     setEditLoaded(true);
     (async () => {
-      const { data: q } = await supabase
-        .from("quotes")
-        .select("status, current_version_id, cancellation_requested_at, schools(name)")
-        .eq("id", editQuoteId)
-        .maybeSingle();
-      if (!q || !q.current_version_id) {
-        setEditBlocked("This quote couldn't be found.");
+      const failLoad = (err: unknown) => {
+        setEditLoadFailed(true);
+        setEditBlocked(friendlyError(err, "We couldn't load this quote right now."));
         setEditLoading(false);
-        return;
-      }
-      const currentVersionId = q.current_version_id;
-      if (!["requested", "in_review", "approved", "confirmed"].includes(q.status)) {
-        setEditBlocked("This quote can no longer be edited online — please call us.");
+      };
+      try {
+        const { data: q, error: qErr } = await supabase
+          .from("quotes")
+          .select("status, current_version_id, cancellation_requested_at, schools(name)")
+          .eq("id", editQuoteId)
+          .maybeSingle();
+        if (qErr) { failLoad(qErr); return; }
+        if (!q || !q.current_version_id) {
+          setEditBlocked("This quote couldn't be found.");
+          setEditLoading(false);
+          return;
+        }
+        const currentVersionId = q.current_version_id;
+        if (!["requested", "in_review", "approved", "confirmed"].includes(q.status)) {
+          setEditBlocked("This quote can no longer be edited online — please call us.");
+          setEditLoading(false);
+          return;
+        }
+        if (q.cancellation_requested_at) {
+          setEditBlocked("A cancellation request is already pending for this quote — it can't be edited at the same time.");
+          setEditLoading(false);
+          return;
+        }
+        const { data: v, error: vErr } = await supabase
+          .from("quote_versions")
+          .select("destination_name, destination_address, pickup_address, trip_date, trip_type, departure_time, return_time, student_count, adults_count, grade_breakdown, cargo_needed, contact_primary, contact_secondary, contact_day_of, special_requests, driver_preference")
+          .eq("id", currentVersionId)
+          .maybeSingle();
+        if (vErr) { failLoad(vErr); return; }
+        if (!v) {
+          setEditBlocked("This quote couldn't be found.");
+          setEditLoading(false);
+          return;
+        }
+        const [runsRes, stopsRes] = await Promise.all([
+          supabase.from("quote_shuttle_runs").select("run_number, pickup_time, dropoff_time").eq("quote_version_id", currentVersionId).order("run_number", { ascending: true }),
+          supabase.from("quote_multi_stops").select("stop_number, destination_name, destination_address, arrival_time, departure_time").eq("quote_version_id", currentVersionId).order("stop_number", { ascending: true }),
+        ]);
+        if (runsRes.error) { failLoad(runsRes.error); return; }
+        if (stopsRes.error) { failLoad(stopsRes.error); return; }
+
+        setSchool((q.schools as { name?: string } | null)?.name ?? "");
+        setPickup(v.pickup_address ?? "");
+        setDestination(v.destination_name ?? "");
+        setDestinationAddress(v.destination_address ?? "");
+        setDate(v.trip_date ?? "");
+        setTripType(v.trip_type as TripType);
+        setDepartTime(v.departure_time ?? "");
+        setReturnTime(v.return_time ?? "");
+
+        const runs = runsRes.data ?? [];
+        setShuttleRuns(runs.length > 0 ? runs.map((r) => ({ pickup: r.pickup_time, dropoff: r.dropoff_time })) : [{ pickup: "", dropoff: "" }]);
+
+        // A return-to-school leg has no departure_time (arrival-only, last in
+        // the sequence) -- regular stops always have both. That's the only
+        // signal we have to split the flat DB rows back into the "regular
+        // stops" + "return leg" shape this form uses.
+        const stopRows = stopsRes.data ?? [];
+        const lastStop = stopRows[stopRows.length - 1];
+        const hasReturnLeg = stopRows.length > 0 && lastStop.departure_time == null;
+        const regularStops = hasReturnLeg ? stopRows.slice(0, -1) : stopRows;
+        setMultiStops(
+          regularStops.length > 0
+            ? regularStops.map((s) => ({ address: s.destination_address, arrivalTime: s.arrival_time, departureTime: s.departure_time ?? "" }))
+            : [{ address: "", arrivalTime: "", departureTime: "" }],
+        );
+        setIncludeReturnLeg(hasReturnLeg);
+        setReturnStop(hasReturnLeg ? { address: lastStop.destination_address, arrivalTime: lastStop.arrival_time } : { address: "", arrivalTime: "" });
+        // The return-leg address is already an explicit saved value here, not
+        // a blank default waiting to be auto-filled from pickup.
+        setReturnAddressTouched(true);
+
+        const grades = Array.isArray(v.grade_breakdown) ? (v.grade_breakdown as { grade?: string; count?: string }[]) : [];
+        setKToFour(String(grades.find((g) => String(g.grade).toUpperCase() === "K")?.count ?? ""));
+        setGrade5Plus(String(grades.find((g) => String(g.grade) === "5")?.count ?? ""));
+        setAdults(v.adults_count != null ? String(v.adults_count) : "");
+        setCargo(!!v.cargo_needed);
+
+        const c1 = (v.contact_primary ?? {}) as { name?: string; email?: string; phone?: string };
+        const c2 = (v.contact_secondary ?? {}) as { name?: string; email?: string; phone?: string };
+        const cd = (v.contact_day_of ?? {}) as { name?: string; phone?: string };
+        setC1n(c1.name ?? ""); setC1e(c1.email ?? ""); setC1p(c1.phone ?? "");
+        setC2n(c2.name ?? ""); setC2e(c2.email ?? ""); setC2p(c2.phone ?? "");
+        setDayN(cd.name ?? ""); setDayP(cd.phone ?? "");
+
+        setNotes(v.special_requests ?? "");
+        setDriverPref(v.driver_preference ?? "");
+
         setEditLoading(false);
-        return;
+      } catch (err) {
+        failLoad(err);
       }
-      if (q.cancellation_requested_at) {
-        setEditBlocked("A cancellation request is already pending for this quote — it can't be edited at the same time.");
-        setEditLoading(false);
-        return;
-      }
-      const { data: v } = await supabase
-        .from("quote_versions")
-        .select("destination_name, destination_address, pickup_address, trip_date, trip_type, departure_time, return_time, student_count, adults_count, grade_breakdown, cargo_needed, contact_primary, contact_secondary, contact_day_of, special_requests, driver_preference")
-        .eq("id", currentVersionId)
-        .maybeSingle();
-      if (!v) {
-        setEditBlocked("This quote couldn't be found.");
-        setEditLoading(false);
-        return;
-      }
-      const [runsRes, stopsRes] = await Promise.all([
-        supabase.from("quote_shuttle_runs").select("run_number, pickup_time, dropoff_time").eq("quote_version_id", currentVersionId).order("run_number", { ascending: true }),
-        supabase.from("quote_multi_stops").select("stop_number, destination_name, destination_address, arrival_time, departure_time").eq("quote_version_id", currentVersionId).order("stop_number", { ascending: true }),
-      ]);
-
-      setSchool((q.schools as { name?: string } | null)?.name ?? "");
-      setPickup(v.pickup_address ?? "");
-      setDestination(v.destination_name ?? "");
-      setDestinationAddress(v.destination_address ?? "");
-      setDate(v.trip_date ?? "");
-      setTripType(v.trip_type as TripType);
-      setDepartTime(v.departure_time ?? "");
-      setReturnTime(v.return_time ?? "");
-
-      const runs = runsRes.data ?? [];
-      setShuttleRuns(runs.length > 0 ? runs.map((r) => ({ pickup: r.pickup_time, dropoff: r.dropoff_time })) : [{ pickup: "", dropoff: "" }]);
-
-      // A return-to-school leg has no departure_time (arrival-only, last in
-      // the sequence) -- regular stops always have both. That's the only
-      // signal we have to split the flat DB rows back into the "regular
-      // stops" + "return leg" shape this form uses.
-      const stopRows = stopsRes.data ?? [];
-      const lastStop = stopRows[stopRows.length - 1];
-      const hasReturnLeg = stopRows.length > 0 && lastStop.departure_time == null;
-      const regularStops = hasReturnLeg ? stopRows.slice(0, -1) : stopRows;
-      setMultiStops(
-        regularStops.length > 0
-          ? regularStops.map((s) => ({ address: s.destination_address, arrivalTime: s.arrival_time, departureTime: s.departure_time ?? "" }))
-          : [{ address: "", arrivalTime: "", departureTime: "" }],
-      );
-      setIncludeReturnLeg(hasReturnLeg);
-      setReturnStop(hasReturnLeg ? { address: lastStop.destination_address, arrivalTime: lastStop.arrival_time } : { address: "", arrivalTime: "" });
-      // The return-leg address is already an explicit saved value here, not
-      // a blank default waiting to be auto-filled from pickup.
-      setReturnAddressTouched(true);
-
-      const grades = Array.isArray(v.grade_breakdown) ? (v.grade_breakdown as { grade?: string; count?: string }[]) : [];
-      setKToFour(String(grades.find((g) => String(g.grade).toUpperCase() === "K")?.count ?? ""));
-      setGrade5Plus(String(grades.find((g) => String(g.grade) === "5")?.count ?? ""));
-      setAdults(v.adults_count != null ? String(v.adults_count) : "");
-      setCargo(!!v.cargo_needed);
-
-      const c1 = (v.contact_primary ?? {}) as { name?: string; email?: string; phone?: string };
-      const c2 = (v.contact_secondary ?? {}) as { name?: string; email?: string; phone?: string };
-      const cd = (v.contact_day_of ?? {}) as { name?: string; phone?: string };
-      setC1n(c1.name ?? ""); setC1e(c1.email ?? ""); setC1p(c1.phone ?? "");
-      setC2n(c2.name ?? ""); setC2e(c2.email ?? ""); setC2p(c2.phone ?? "");
-      setDayN(cd.name ?? ""); setDayP(cd.phone ?? "");
-
-      setNotes(v.special_requests ?? "");
-      setDriverPref(v.driver_preference ?? "");
-
-      setEditLoading(false);
     })();
   }, [editQuoteId, editLoaded]);
 
@@ -445,12 +551,19 @@ function QuotePage() {
   const billHours  = driverHours;
   const baseCost   = billHours * hourlyRate * busCount;
   const fuelSurcharge = 50 * busCount;
+  // Matches calculate_estimate's overtime_threshold_hours/overtime_rate_per_hour
+  // seed values (migration 014) — charged on driver hours beyond 8, per bus.
+  const OVERTIME_THRESHOLD_HOURS = 8;
+  const OVERTIME_RATE_PER_HOUR = 17;
+  const overtimeCharge = billHours > OVERTIME_THRESHOLD_HOURS
+    ? (billHours - OVERTIME_THRESHOLD_HOURS) * OVERTIME_RATE_PER_HOUR * busCount
+    : 0;
   const LONG_DISTANCE_THRESHOLD_KM = 200;
   const LONG_DISTANCE_RATE_PER_KM = 1;
   const longDistanceCharge = distanceKm != null && distanceKm > LONG_DISTANCE_THRESHOLD_KM
     ? (distanceKm - LONG_DISTANCE_THRESHOLD_KM) * LONG_DISTANCE_RATE_PER_KM * busCount
     : 0;
-  const subtotal   = baseCost + fuelSurcharge + longDistanceCharge;
+  const subtotal   = baseCost + fuelSurcharge + overtimeCharge + longDistanceCharge;
   const gst        = subtotal * 0.05;
   const estimatedTotal = subtotal + gst;
   const busLabel   = benchCount === 18 ? "18-passenger mini-bus" : benchCount === 47 ? "47-passenger coach" : "56-passenger coach";
@@ -468,7 +581,13 @@ function QuotePage() {
       if (!destination.trim())       e.destination = "Please enter the destination name.";
       if (!destinationAddress.trim()) e.destinationAddress = "Please enter the destination address so we can calculate the route.";
     }
-    if (!date)                     e.date = "Please select the trip date.";
+    if (!date) {
+      e.date = "Please select the trip date.";
+    } else if (date < todayDateStr()) {
+      e.date = "Please choose a date that hasn't already passed.";
+    } else if (date > maxFutureDateStr()) {
+      e.date = "That date is too far out — please choose a date within the next 2 years, or call us to plan further ahead.";
+    }
 
     if (tripType === "shuttle") {
       if (shuttleRuns.length === 0 || shuttleRuns.some((r) => !r.pickup || !r.dropoff)) {
@@ -592,12 +711,20 @@ function QuotePage() {
         p_data: { ...tripFields, driver_preference: driverPref },
       } as never);
       setSubmitting(false);
-      if (error) { setSubmitError(error.message); return; }
+      if (error) {
+        setSubmitError(friendlyError(error, `We couldn't save your changes. Please try again, or call us at ${COMPANY.phoneMelody}.`));
+        return;
+      }
       // Save the route distance so the server-side estimate can apply the
       // long-distance surcharge (best-effort) — same call the create path
-      // makes, just against the already-known quote id.
+      // makes, just against the already-known quote id. Best-effort: a
+      // failure here doesn't block the edit (which already succeeded), but
+      // it does mean distance_km stays null on this quote -- caught by the
+      // admin-side "distance unavailable" flag, not worth alarming the
+      // customer over a save that already went through.
       if (distanceKm != null) {
-        await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: editQuoteId, p_distance_km: distanceKm } as never);
+        const { error: distErr } = await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: editQuoteId, p_distance_km: distanceKm } as never);
+        if (distErr) console.error("set_quote_distance_km (edit) failed:", distErr);
       }
       dispatchNotifications();
       navigate({ to: "/portal" });
@@ -608,15 +735,25 @@ function QuotePage() {
       p_data: { school_name: school, ...tripFields },
     });
     setSubmitting(false);
-    if (error) { setSubmitError(error.message); return; }
-    const result = data as { quote_number: string; quote_id: string };
-    // Save the optional driver preference onto the new quote (best-effort).
-    if (driverPref.trim() && result.quote_id) {
-      await supabase.rpc("set_quote_driver_preference" as never, { p_quote_id: result.quote_id, p_pref: driverPref.trim() } as never);
+    if (error) {
+      setSubmitError(friendlyError(error, `We couldn't submit your quote request. Please try again, or call us at ${COMPANY.phoneMelody}.`));
+      return;
     }
-    // Save the route distance so the server-side estimate can apply the long-distance surcharge (best-effort).
+    const result = data as { quote_number: string; quote_id: string };
+    // Save the optional driver preference onto the new quote (best-effort) --
+    // the quote itself is already submitted successfully at this point, so a
+    // failure here isn't worth alarming the customer over.
+    if (driverPref.trim() && result.quote_id) {
+      const { error: prefErr } = await supabase.rpc("set_quote_driver_preference" as never, { p_quote_id: result.quote_id, p_pref: driverPref.trim() } as never);
+      if (prefErr) console.error("set_quote_driver_preference failed:", prefErr);
+    }
+    // Save the route distance so the server-side estimate can apply the
+    // long-distance surcharge (best-effort). If this fails, distance_km
+    // stays null on the quote -- caught by the admin-side "distance
+    // unavailable" flag, which is the real safety net for the money here.
     if (distanceKm != null && result.quote_id) {
-      await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: result.quote_id, p_distance_km: distanceKm } as never);
+      const { error: distErr } = await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: result.quote_id, p_distance_km: distanceKm } as never);
+      if (distErr) console.error("set_quote_distance_km failed:", distErr);
     }
     dispatchNotifications();
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
@@ -641,11 +778,28 @@ function QuotePage() {
         <AppTopBar />
         <main className="mx-auto max-w-xl px-4 py-20 sm:px-6">
           <div className="rounded-3xl border border-border bg-card p-7 text-center shadow-soft">
-            <h1 className="text-xl font-semibold text-foreground">Can't edit this quote online</h1>
+            <h1 className="text-xl font-semibold text-foreground">
+              {editLoadFailed ? "Couldn't load this quote" : "Can't edit this quote online"}
+            </h1>
             <p className="mt-3 text-sm text-muted-foreground">{editBlocked}</p>
-            <Button className="mt-6" variant="accent" onClick={() => navigate({ to: "/portal" })}>
-              Back to my quotes
-            </Button>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {editLoadFailed && (
+                <Button
+                  variant="accent"
+                  onClick={() => {
+                    setEditLoadFailed(false);
+                    setEditBlocked(null);
+                    setEditLoading(true);
+                    setEditLoaded(false);
+                  }}
+                >
+                  Try again
+                </Button>
+              )}
+              <Button variant={editLoadFailed ? "outline" : "accent"} onClick={() => navigate({ to: "/portal" })}>
+                Back to my quotes
+              </Button>
+            </div>
           </div>
         </main>
       </div>
@@ -787,7 +941,7 @@ function QuotePage() {
               <div>
                 <div className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Primary contact</div>
                 <p className="mb-3.5 text-xs text-muted-foreground">
-                  The person booking this trip — usually the school secretary or administrator. We'll send the confirmed quote to this person.
+                  The person booking this trip — usually whoever coordinates the trip for your organization. We'll send the confirmed quote to this person.
                 </p>
                 <div className="space-y-3.5">
                   <Field id="field-c1n" label="Name" required value={c1n} onChange={(v) => { setC1n(v); setErrors((e) => ({ ...e, c1n: "" })); }} placeholder="Jane Smith" error={errors.c1n} />
@@ -825,7 +979,7 @@ function QuotePage() {
 
             <SectionCard number={3} title="Trip details" hint="We'll size the bus and estimate your route.">
               <div className="rounded-2xl border border-border p-4 space-y-3.5">
-                <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">School &amp; pickup</div>
+                <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Organization &amp; pickup</div>
                 <Field
                   id="field-school"
                   label="Organization name" required
@@ -836,7 +990,7 @@ function QuotePage() {
                   hint={editQuoteId ? "Can't be changed here — call us if this needs to change." : undefined}
                 />
                 <AddressAutocomplete
-                  label="Pick-up address (leave blank to use school name)"
+                  label="Pick-up address (leave blank to use organization name)"
                   value={pickup} onChange={(v) => setPickup(v)}
                   placeholder="e.g. 123 Main St, Maple Ridge, BC"
                 />
@@ -868,6 +1022,8 @@ function QuotePage() {
                 label="Trip date" type="date" required
                 value={date} onChange={(v) => { setDate(v); setErrors((e) => ({ ...e, date: "" })); }}
                 error={errors.date}
+                min={todayDateStr()}
+                max={maxFutureDateStr()}
               />
 
               {tripType === "shuttle" ? (
@@ -959,7 +1115,7 @@ function QuotePage() {
                       className="h-52 w-full"
                     />
                     <p className="px-4 py-2 text-xs text-muted-foreground">
-                      Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your school, your trip, and the return.
+                      Distance shown is one-way from your pick-up. Your quote covers the driver's full day — travel to your pickup location, your trip, and the return.
                       Longer routes mean more hours on the clock.
                     </p>
                   </div>
@@ -968,7 +1124,7 @@ function QuotePage() {
 
               {tripType === "two_way" && (
                 <p className="text-xs text-muted-foreground">
-                  "Pick-up from destination" is when you want us to collect the students and head back to school.
+                  "Pick-up from destination" is when you want us to collect the students and head back to your pickup location.
                 </p>
               )}
               {tripType === "one_way" && (
@@ -1112,6 +1268,9 @@ function QuotePage() {
                     <Row dark label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
                     <Row dark label="Base cost" value={formatMoney(baseCost)} />
                     <Row dark label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />
+                    {overtimeCharge > 0 && (
+                      <Row dark label={`Overtime (${(billHours - OVERTIME_THRESHOLD_HOURS).toFixed(1)} hrs beyond ${OVERTIME_THRESHOLD_HOURS}hr)`} value={formatMoney(overtimeCharge)} />
+                    )}
                     {longDistanceCharge > 0 && (
                       <Row dark label={`Long-distance (${(distanceKm! - LONG_DISTANCE_THRESHOLD_KM).toFixed(1)} km beyond ${LONG_DISTANCE_THRESHOLD_KM}km)`} value={formatMoney(longDistanceCharge)} />
                     )}
