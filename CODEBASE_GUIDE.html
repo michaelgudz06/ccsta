@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How This App Works — A Guide for Non-Coders</title>
+<style>
+  :root {
+    --bg: #f7f5f2;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --ink-soft: #565f75;
+    --border: #e2e0da;
+    --accent: #b5482e;
+    --accent-soft: #f3e2dc;
+    --blue: #2b5c8a;
+    --blue-soft: #e2edf6;
+    --green: #3a7a4e;
+    --green-soft: #e3f0e6;
+    --gold: #92701a;
+    --gold-soft: #f6ecd4;
+    --code-bg: #f0eee8;
+    --shadow: 0 1px 2px rgba(31,36,48,0.06), 0 4px 14px rgba(31,36,48,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171a21;
+      --panel: #20242e;
+      --ink: #e9eaee;
+      --ink-soft: #a4abbb;
+      --border: #333a48;
+      --accent: #e08064;
+      --accent-soft: #3a2620;
+      --blue: #7db2e0;
+      --blue-soft: #1c2c3a;
+      --green: #7fc298;
+      --green-soft: #1b2e21;
+      --gold: #e0bd5c;
+      --gold-soft: #332a12;
+      --code-bg: #262b36;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 18px rgba(0,0,0,0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    padding: 0 0 6rem 0;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 1.5rem; }
+
+  /* ---------- Header ---------- */
+  header.hero {
+    background: linear-gradient(135deg, var(--accent) 0%, #8a3420 100%);
+    color: #fff;
+    padding: 3.5rem 1.5rem 3rem;
+    text-align: center;
+  }
+  header.hero .wrap { max-width: 760px; }
+  header.hero h1 { font-size: 2rem; margin: 0 0 0.6rem; letter-spacing: -0.01em; }
+  header.hero p { margin: 0; font-size: 1.08rem; opacity: 0.92; }
+  header.hero .badge {
+    display: inline-block; margin-top: 1.1rem; font-size: 0.8rem;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.35);
+    padding: 0.3rem 0.8rem; border-radius: 999px;
+  }
+
+  /* ---------- Table of contents ---------- */
+  nav.toc {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    margin: -2.2rem auto 2.5rem; padding: 1.3rem 1.6rem; box-shadow: var(--shadow);
+    max-width: 760px;
+  }
+  nav.toc h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-soft); margin: 0 0 0.7rem; }
+  nav.toc ol { margin: 0; padding-left: 1.2rem; columns: 2; column-gap: 2rem; }
+  nav.toc li { margin-bottom: 0.35rem; font-size: 0.93rem; }
+  nav.toc a { color: var(--blue); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  /* ---------- Sections ---------- */
+  section { max-width: 760px; margin: 0 auto 3.2rem; padding: 0 1.5rem; scroll-margin-top: 1.5rem; }
+  section > .kicker {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--accent); margin-bottom: 0.35rem;
+  }
+  h2 { font-size: 1.55rem; margin: 0 0 1rem; letter-spacing: -0.01em; }
+  h3 { font-size: 1.15rem; margin: 1.6rem 0 0.6rem; }
+  p { color: var(--ink); }
+  .lede { font-size: 1.05rem; color: var(--ink-soft); }
+
+  code, .file {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--code-bg); border-radius: 5px; padding: 0.1rem 0.4rem;
+    font-size: 0.87em; color: var(--ink);
+  }
+  pre.file-tree {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86rem; background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.1rem 1.3rem; overflow-x: auto; line-height: 1.65;
+  }
+  pre.file-tree .comment { color: var(--ink-soft); }
+  pre.file-tree .hi { color: var(--accent); font-weight: 600; }
+
+  /* ---------- Cards / grids ---------- */
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.2rem 1.4rem; box-shadow: var(--shadow); margin-bottom: 1rem;
+  }
+  .card h4 { margin: 0 0 0.4rem; font-size: 1rem; }
+  .card h4 .path { display:block; font-weight: 400; margin-top: 0.15rem; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 620px) { .grid2 { grid-template-columns: 1fr; } nav.toc ol { columns: 1; } }
+
+  .tag {
+    display: inline-block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; padding: 0.15rem 0.5rem; border-radius: 6px; margin-right: 0.4rem;
+  }
+  .tag.customer { background: var(--blue-soft); color: var(--blue); }
+  .tag.driver { background: var(--green-soft); color: var(--green); }
+  .tag.admin { background: var(--gold-soft); color: var(--gold); }
+  .tag.public { background: var(--code-bg); color: var(--ink-soft); }
+
+  /* ---------- Diagrams (pure CSS box diagrams) ---------- */
+  .diagram {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.6rem; box-shadow: var(--shadow); margin: 1.2rem 0;
+  }
+  .diagram .row { display: flex; align-items: center; justify-content: center; gap: 0.6rem; flex-wrap: wrap; }
+  .diagram .col { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+  .box {
+    border: 1.5px solid var(--border); border-radius: 10px; padding: 0.7rem 1rem;
+    background: var(--code-bg); text-align: center; font-size: 0.88rem; min-width: 120px;
+  }
+  .box.strong { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .box.blue { border-color: var(--blue); background: var(--blue-soft); }
+  .box.green { border-color: var(--green); background: var(--green-soft); }
+  .box.gold { border-color: var(--gold); background: var(--gold-soft); }
+  .box small { display: block; color: var(--ink-soft); font-weight: 400; margin-top: 0.15rem; font-size: 0.78rem; }
+  .arrow-down { font-size: 1.3rem; color: var(--ink-soft); line-height: 1; }
+  .arrow-right { font-size: 1.3rem; color: var(--ink-soft); padding: 0 0.2rem; }
+  .flow-step {
+    display: flex; align-items: flex-start; gap: 0.9rem; padding: 0.6rem 0;
+  }
+  .flow-step .num {
+    flex: none; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--accent);
+    color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700;
+  }
+  .flow-step .txt { padding-top: 0.1rem; font-size: 0.95rem; }
+  .flow-connector { width: 1.8rem; display: flex; justify-content: center; }
+  .flow-connector .line { width: 2px; height: 1rem; background: var(--border); }
+
+  /* ---------- Dig deeper prompt box ---------- */
+  .dig {
+    border: 1.5px dashed var(--accent); background: var(--accent-soft); border-radius: 12px;
+    padding: 1rem 1.2rem; margin: 1.3rem 0; font-size: 0.93rem;
+  }
+  .dig .label { font-weight: 700; color: var(--accent); margin-bottom: 0.35rem; font-size: 0.85rem; }
+  .dig .prompt {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.6rem 0.8rem; margin-top: 0.5rem; font-style: italic; color: var(--ink);
+  }
+
+  /* ---------- Recipe steps ---------- */
+  .recipe { counter-reset: step; list-style: none; margin: 0; padding: 0; }
+  .recipe li {
+    counter-increment: step; position: relative; padding: 0.6rem 0 0.6rem 2.6rem; margin-bottom: 0.3rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .recipe li:last-child { border-bottom: none; }
+  .recipe li::before {
+    content: counter(step); position: absolute; left: 0; top: 0.55rem;
+    width: 1.7rem; height: 1.7rem; border-radius: 8px; background: var(--gold-soft); color: var(--gold);
+    font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ---------- Glossary ---------- */
+  dl.glossary dt { font-weight: 700; margin-top: 0.9rem; }
+  dl.glossary dd { margin: 0.15rem 0 0; color: var(--ink-soft); }
+
+  /* ---------- Table ---------- */
+  table.ref { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  table.ref th, table.ref td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.ref th { color: var(--ink-soft); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+  hr.sep { border: none; border-top: 1px solid var(--border); margin: 2.6rem auto; max-width: 760px; }
+
+  footer { text-align: center; color: var(--ink-soft); font-size: 0.85rem; padding-top: 1rem; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>How This App Works</h1>
+    <p>A plain-English guide to the CCSTA charter bus quote &amp; booking codebase — no coding background required.</p>
+    <span class="badge">Generated for a first-time tour of the code · not a technical spec</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#intro">What this app is</a></li>
+    <li><a href="#architecture">The big picture</a></li>
+    <li><a href="#directory">A tour of the folders</a></li>
+    <li><a href="#pages">Every page, explained</a></li>
+    <li><a href="#flow">From quote to trip</a></li>
+    <li><a href="#pricing">How a price gets calculated</a></li>
+    <li><a href="#security">Who can see what</a></li>
+    <li><a href="#glossary">Glossary of terms</a></li>
+    <li><a href="#reference">Quick-reference file index</a></li>
+    <li><a href="#howto">How to use the "dig deeper" prompts</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<section id="intro">
+  <div class="kicker">Start here</div>
+  <h2>What this app is</h2>
+  <p class="lede">
+    This codebase runs the website for a charter bus company. It's the digital
+    version of "call the office to book a bus" — except now customers fill out
+    a form online, office staff review and price the request, and the assigned
+    driver sees their trip details on their own screen.
+  </p>
+  <p>
+    Everyone who uses the app falls into one of three roles, and almost every
+    page and permission in the system exists to serve one of them:
+  </p>
+  <div class="grid2">
+    <div class="card">
+      <h4><span class="tag customer">Customer</span></h4>
+      <p style="margin-bottom:0;">A school, church, or group that wants to book a bus. They fill out a quote request, wait for a price, and confirm or manage their booking.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag driver">Driver</span></h4>
+      <p style="margin-bottom:0;">Company staff who drive the buses. They check which trips they're assigned to and log a safety checklist before each one.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag admin">Admin</span></h4>
+      <p style="margin-bottom:0;">Office staff who review quote requests, set final prices, assign a driver and bus to each trip, and manage the fleet.</p>
+    </div>
+    <div class="card">
+      <h4><span class="tag public">Visitor</span></h4>
+      <p style="margin-bottom:0;">Anyone browsing the public website before they've signed up — sees the homepage, "About," and can start a quote.</p>
+    </div>
+  </div>
+  <div class="dig">
+    <div class="label">💬 Dig deeper</div>
+    Ask Claude Code: <div class="prompt">"Give me a one-paragraph summary of what CCSTA is as a business, based on the homepage copy and company.ts."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="architecture">
+  <div class="kicker">The 30,000-foot view</div>
+  <h2>The big picture</h2>
+  <p>
+    A lot of websites you've used have three layers: something in your
+    browser, a company's own server in the middle, and a database at the
+    back. <strong>This app skips the middle layer.</strong> The website (what
+    you see in your browser) talks almost directly to a cloud database
+    service called <strong>Supabase</strong>, which handles storage, logins,
+    and — importantly — the rules about who's allowed to see or change what.
+    Think of Supabase as "the filing cabinet, the front-desk security guard,
+    and the calculator" all in one hosted service, rather than the company
+    having built its own back-office server from scratch.
+  </p>
+
+  <div class="diagram">
+    <div class="col">
+      <div class="box strong">🖥️ Your Browser<br><small>The React website — pages, forms, buttons</small></div>
+      <div class="arrow-down">⇅</div>
+      <div class="box blue">☁️ Supabase<br><small>Database + login system + pricing/booking rules, hosted in the cloud</small></div>
+      <div class="arrow-down">⇅</div>
+      <div class="row">
+        <div class="box green">✉️ Resend<br><small>Actually delivers emails</small></div>
+        <div class="box gold">🗺️ Google Maps /<br>OpenStreetMap<br><small>Addresses &amp; drive-time</small></div>
+      </div>
+    </div>
+  </div>
+
+  <p>
+    Two consequences of this design that are worth knowing, because they
+    explain a lot of the folder structure you'll see next:
+  </p>
+  <ul>
+    <li><strong>The "rules" mostly live in the database, not the website.</strong>
+      Things like "how much does a trip cost" or "can this person see this
+      booking" are decided inside Supabase, so the website is more of a
+      window into the data than the thing in charge of it.</li>
+    <li><strong>Small helper programs ("edge functions") fill the gaps</strong>
+      Supabase's database can't send an email on its own, so a tiny helper
+      program (<code>notify-send</code>) does that one job.</li>
+  </ul>
+
+  <div class="dig">
+    <div class="label">💬 Dig deeper</div>
+    Ask Claude Code: <div class="prompt">"Explain what Row Level Security is and show me one real example of it from this database."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="directory">
+  <div class="kicker">Folder by folder</div>
+  <h2>A tour of the folders</h2>
+  <p>
+    Here's the shape of the project. Folders you're most likely to care about
+    are marked. Everything else (build tool config, dependency lock files) is
+    plumbing you can safely ignore.
+  </p>
+
+  <pre class="file-tree">ccsta-test/
+├── <span class="hi">src/</span>                     <span class="comment">— the website itself (what customers/staff/drivers see)</span>
+│   ├── routes/                <span class="comment">— one file per page (see next section)</span>
+│   ├── components/            <span class="comment">— reusable building blocks the pages are made of</span>
+│   │   └── ui/                <span class="comment">— generic pieces: buttons, dialogs, tables, calendars…</span>
+│   ├── lib/                   <span class="comment">— the "toolbox": talks to the database, formats dates/prices, handles errors</span>
+│   ├── hooks/                 <span class="comment">— small reusable bits of page behavior (e.g. "is this a phone screen?")</span>
+│   └── assets/                <span class="comment">— images used on the homepage</span>
+├── <span class="hi">supabase/</span>                 <span class="comment">— the cloud database side of things</span>
+│   ├── migrations/            <span class="comment">— the database's history book (see below)</span>
+│   └── functions/              <span class="comment">— small helper programs (sending email, inviting a driver)</span>
+├── CLAUDE.md                  <span class="comment">— the project's own internal "how we work" notes</span>
+├── NEXT_SESSION.md            <span class="comment">— a running handoff note between work sessions</span>
+├── WHATS_NEW.md                <span class="comment">— a changelog of recent work</span>
+├── BUG_BACKLOG.md              <span class="comment">— known issues not yet fixed</span>
+└── package.json                <span class="comment">— the list of external tools/libraries this app depends on</span></pre>
+
+  <h3>Inside <code>src/routes/</code> — the pages</h3>
+  <p>
+    This project uses something called <strong>file-based routing</strong>:
+    each file in this folder automatically becomes a page at a matching web
+    address. For example, the file <code>quote.tsx</code> becomes the page at
+    <code>yoursite.com/quote</code>. There are 11 pages total — they're all
+    explained one by one in the next section.
+  </p>
+
+  <h3>Inside <code>src/components/</code> — the building blocks</h3>
+  <p>
+    Pages are assembled out of smaller, reusable pieces, the way a form
+    letter is assembled from a letterhead, a paragraph template, and a
+    signature block. This folder splits into two tiers:
+  </p>
+  <div class="card">
+    <h4>Generic pieces <span class="path"><code>src/components/ui/</code></span></h4>
+    <p style="margin-bottom:0;">46 small, general-purpose pieces — buttons, dialogs, dropdown menus, tables, calendars, tabs. These aren't specific to buses at all; they're standard interface parts (from a popular open-source design system called shadcn/ui) that any modern web app might use.</p>
+  </div>
+  <div class="card">
+    <h4>Bus-business-specific pieces <span class="path"><code>src/components/*.tsx</code></span></h4>
+    <p style="margin-bottom:0;">9 pieces built specifically for this business: the quote form's field types and passenger counters (<code>QuoteFields.tsx</code>), the address-lookup box (<code>AddressAutocomplete.tsx</code>), the interactive route map (<code>RouteMap.tsx</code>, <code>MultiStopRouteMap.tsx</code>), the header bars shown to logged-in vs. public visitors (<code>AppTopBar.tsx</code>, <code>SiteNav.tsx</code>), the dismissible announcement banner, the logo, and a password field with a show/hide toggle.</p>
+  </div>
+
+  <h3>Inside <code>src/lib/</code> — the toolbox</h3>
+  <p>This is where the "wiring" lives — code that pages reuse rather than duplicate:</p>
+  <table class="ref">
+    <tr><th>File</th><th>What it's for</th></tr>
+    <tr><td><code>supabase.ts</code></td><td>The connection to the database, used by nearly every page to read/write data.</td></tr>
+    <tr><td><code>supabase.server.ts</code></td><td>A more privileged connection used only in server-side code, never sent to your browser.</td></tr>
+    <tr><td><code>auth.ts</code></td><td>Knows who's currently logged in and what role they have (customer/driver/admin).</td></tr>
+    <tr><td><code>company.ts</code></td><td>One place holding the company's name, phone, and email, reused everywhere so it's never out of sync.</td></tr>
+    <tr><td><code>format.ts</code></td><td>Makes dates, times, and prices display consistently and correctly (e.g. avoiding "off by one day" bugs across time zones).</td></tr>
+    <tr><td><code>errors.ts</code></td><td>Turns raw technical error messages into friendly, understandable ones for customers.</td></tr>
+    <tr><td><code>notify.ts</code></td><td>Tells the email system "you've got mail to send" after things like a quote being submitted.</td></tr>
+    <tr><td><code>database.types.ts</code></td><td>An auto-generated description of every database table, so the website's code knows exactly what data looks like (auto-generated — never hand-edited).</td></tr>
+  </table>
+
+  <h3>Inside <code>supabase/migrations/</code> — the database's history book</h3>
+  <p>
+    A <strong>migration</strong> is a small, dated instruction file that changes the
+    database's structure — like "add a new filing cabinet for invoices" or "add
+    a new drawer to the existing quotes cabinet." There are about 51 of them,
+    applied in order from oldest to newest, so together they tell the full
+    story of how the database grew over time. Grouped by theme:
+  </p>
+  <div class="grid2">
+    <div class="card"><h4>Core booking data</h4><p style="margin-bottom:0;">People &amp; login roles, bus fleet, drivers, schools/customers, quotes, quote versions, trips, invoices, payroll.</p></div>
+    <div class="card"><h4>Pricing configuration</h4><p style="margin-bottom:0;">The literal price list — hourly rates by bus size and surcharges (fuel, overtime, long-distance, GST) — kept as data, not hardcoded numbers.</p></div>
+    <div class="card"><h4>Trip assignment</h4><p style="margin-bottom:0;">Which driver is certified for which bus size, who's available on which day, and rules against pairing certain drivers together.</p></div>
+    <div class="card"><h4>Notifications &amp; special trip types</h4><p style="margin-bottom:0;">The outgoing-email queue, plus extra tables for "shuttle" trips (repeated runs) and "multi-destination" trips (several stops).</p></div>
+  </div>
+
+  <h3>Inside <code>supabase/functions/</code> — the helper programs</h3>
+  <div class="card">
+    <h4>notify-send <span class="path"><code>supabase/functions/notify-send/index.ts</code></span></h4>
+    <p style="margin-bottom:0;">The "mail carrier." The database can only <em>write down</em> that an email needs sending; this program actually sends it, using an email delivery service called Resend. If the delivery key isn't configured yet, it just leaves emails queued rather than breaking anything.</p>
+  </div>
+  <div class="card">
+    <h4>invite-driver <span class="path"><code>supabase/functions/invite-driver/index.ts</code></span></h4>
+    <p style="margin-bottom:0;">How an admin adds a brand-new driver account: sends them an invite email and creates their login + driver record. Deliberately locked down so only admins can create new accounts with elevated roles.</p>
+  </div>
+
+  <div class="dig">
+    <div class="label">💬 Dig deeper</div>
+    Ask Claude Code: <div class="prompt">"Open src/components/QuoteFields.tsx and explain what each piece inside it does, in plain English."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="pages">
+  <div class="kicker">Page by page</div>
+  <h2>Every page, explained</h2>
+  <p>Each of these is one file in <code>src/routes/</code>. The file's name becomes the web address.</p>
+
+  <h3>Public pages</h3>
+  <div class="card">
+    <h4><span class="tag public">Everyone</span>Homepage <span class="path"><code>src/routes/index.tsx</code> → <code>/</code></span></h4>
+    <p style="margin-bottom:0;">The marketing front door: hero banner, trust stats, "why choose us," driver credentials, and buttons to "Get a Quote" or "Log In."</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag public">Everyone</span>About / Privacy / Terms <span class="path"><code>about.tsx</code>, <code>privacy.tsx</code>, <code>terms.tsx</code></span></h4>
+    <p style="margin-bottom:0;">Static informational pages — no data loading, just text.</p>
+  </div>
+
+  <h3>Getting a quote</h3>
+  <div class="card">
+    <h4><span class="tag public">Everyone</span>Quote request form <span class="path"><code>quote.tsx</code> → <code>/quote</code></span></h4>
+    <p>The single biggest and busiest page in the app. A step-by-step form covering: trip type (round-trip, one-way, shuttle, multi-destination), contact details, pickup/destination addresses (with autocomplete and a live map), dates and times, and a passenger counter that automatically figures out how many buses are needed.</p>
+    <p style="margin-bottom:0;">While you fill it out, it shows a <strong>live price estimate</strong> pulled straight from the same pricing data the database uses. Your answers auto-save in your own browser as you go, so if you have to sign up partway through, nothing is lost.</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag public">Everyone</span>Log in / Sign up <span class="path"><code>login.tsx</code> → <code>/login</code></span></h4>
+    <p style="margin-bottom:0;">One combined page for logging in, creating an account, or requesting a password reset. After logging in, it automatically sends you to the right dashboard for your role.</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag public">Everyone</span>Reset password <span class="path"><code>reset-password.tsx</code></span></h4>
+    <p style="margin-bottom:0;">Where the link in a "reset your password" email takes you, to set a new one.</p>
+  </div>
+
+  <h3>Dashboards (you must be logged in)</h3>
+  <div class="card">
+    <h4><span class="tag customer">Customer</span>My bookings <span class="path"><code>portal.tsx</code> → <code>/portal</code></span></h4>
+    <p style="margin-bottom:0;">A customer's home base: see all their quotes and trips, accept a priced quote, cancel a still-pending request, ask to cancel a confirmed one, or edit an existing request.</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag driver">Driver</span>My trips <span class="path"><code>driver.tsx</code> → <code>/driver</code></span></h4>
+    <p style="margin-bottom:0;">A driver's home base: upcoming assigned trips, a pre-trip safety checklist to fill out before each one (brakes, exits, walk-around), and a calendar to mark which days they're available.</p>
+  </div>
+  <div class="card">
+    <h4><span class="tag admin">Admin</span>Operations console <span class="path"><code>admin.tsx</code> → <code>/admin</code></span></h4>
+    <p>The largest page in the app — office staff's control room, organized into tabs rather than separate pages:</p>
+    <table class="ref" style="margin-top:0.6rem;">
+      <tr><td><strong>Dashboard</strong></td><td>Stat cards and recent activity at a glance.</td></tr>
+      <tr><td><strong>Quotes</strong></td><td>Review incoming requests, set final prices, approve or reject.</td></tr>
+      <tr><td><strong>Schedule</strong></td><td>Assign a driver and bus to an approved trip.</td></tr>
+      <tr><td><strong>Assets</strong></td><td>Manage the bus fleet, driver roster, and depot locations.</td></tr>
+      <tr><td><strong>Availability</strong></td><td>See which drivers are free on which days.</td></tr>
+      <tr><td><strong>Documents</strong></td><td>File/document management.</td></tr>
+    </table>
+  </div>
+
+  <div class="dig">
+    <div class="label">💬 Dig deeper</div>
+    Ask Claude Code: <div class="prompt">"Walk me through the /quote page step by step, starting at src/routes/quote.tsx, as if explaining it to someone who's never coded."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="flow">
+  <div class="kicker">Following one booking</div>
+  <h2>From quote to trip</h2>
+  <p>Here's the life of a single booking request, start to finish, and which page/piece of the system is responsible at each step:</p>
+
+  <div class="diagram">
+    <div class="flow-step"><div class="num">1</div><div class="txt"><strong>Customer fills out the form</strong> at <code>/quote</code> and submits it.</div></div>
+    <div class="flow-connector"><div class="line"></div></div>
+    <div class="flow-step"><div class="num">2</div><div class="txt">The database creates a <strong>quote</strong> and its first <strong>version</strong> (a locked snapshot of the details + price at that moment), and queues confirmation emails.</div></div>
+    <div class="flow-connector"><div class="line"></div></div>
+    <div class="flow-step"><div class="num">3</div><div class="txt">It shows up in the <strong>admin Quotes queue</strong> for office staff to review and finalize the price.</div></div>
+    <div class="flow-connector"><div class="line"></div></div>
+    <div class="flow-step"><div class="num">4</div><div class="txt">Admin <strong>approves</strong> it — this creates an invoice and emails the customer their price. (Or <strong>rejects</strong> it, which cancels the request and notifies the customer.)</div></div>
+    <div class="flow-connector"><div class="line"></div></div>
+    <div class="flow-step"><div class="num">5</div><div class="txt">Customer <strong>confirms</strong> they accept the price, from their <code>/portal</code> dashboard.</div></div>
+    <div class="flow-connector"><div class="line"></div></div>
+    <div class="flow-step"><div class="num">6</div><div class="txt">Admin assigns a specific <strong>driver and bus</strong> — the system suggests available options and avoids double-booking.</div></div>
+    <div class="flow-connector"><div class="line"></div></div>
+    <div class="flow-step"><div class="num">7</div><div class="txt">The booking becomes an official <strong>trip</strong> and now appears on the assigned driver's <code>/driver</code> dashboard.</div></div>
+    <div class="flow-connector"><div class="line"></div></div>
+    <div class="flow-step"><div class="num">8</div><div class="txt">Driver completes their <strong>pre-trip checklist</strong> and runs the trip; afterward, actual times/mileage get logged for records.</div></div>
+  </div>
+
+  <div class="dig">
+    <div class="label">💬 Dig deeper</div>
+    Ask Claude Code: <div class="prompt">"Show me the approve_quote() database function in supabase/migrations and explain what it does line by line, in plain English."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="pricing">
+  <div class="kicker">The part everyone asks about</div>
+  <h2>How a price gets calculated</h2>
+  <p>
+    Pricing logic lives entirely <strong>inside the database</strong>, in a
+    function called <code>calculate_estimate()</code> — not scattered across
+    website code. That matters because it means there's exactly one place
+    where "how much does this cost" is decided, so the number a customer sees
+    can't quietly drift out of sync with what the office actually charges.
+    Think of it as a recipe the database always follows, in order:
+  </p>
+  <ol class="recipe">
+    <li><strong>Count the seats needed.</strong> Younger kids (Kindergarten–Grade 4) count as ⅓ of a seat; everyone else counts as ½ a seat.</li>
+    <li><strong>Pick a bus size</strong> — 18, 47, or 56 seats — big enough for the group (and how many buses, if the group needs more than one).</li>
+    <li><strong>Look up the hourly rate</strong> for that bus size and the customer's membership tier (member / non-member / church).</li>
+    <li><strong>Work out driver hours</strong> — the trip's actual time window, plus a fixed 1-hour buffer for driver travel.</li>
+    <li><strong>Apply a minimum-hours floor</strong> so short trips still cover a base charge.</li>
+    <li><strong>Add surcharges</strong> — fuel (flat fee, can be waived by an admin), overtime (past a certain number of hours), and long-distance (past ~200km one-way).</li>
+    <li><strong>Add 5% GST</strong> on the subtotal.</li>
+    <li><strong>Save and return the total</strong>, along with a full breakdown, so the price shown always matches what's stored.</li>
+  </ol>
+
+  <div class="dig">
+    <div class="label">💬 Dig deeper</div>
+    Ask Claude Code: <div class="prompt">"Open the current version of calculate_estimate() in supabase/migrations and translate the SQL into plain English, one clause at a time."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="security">
+  <div class="kicker">Trust &amp; safety</div>
+  <h2>Who can see what</h2>
+  <p>
+    Every table in the database has a feature called <strong>Row Level
+    Security (RLS)</strong> turned on — think of it as a bouncer standing at
+    every filing cabinet, checking ID before letting anyone look inside or
+    change anything. It's enforced by the database itself, not just by the
+    website hiding buttons, which is what makes it trustworthy.
+  </p>
+  <table class="ref">
+    <tr><th>Role</th><th>Can see / do</th></tr>
+    <tr><td><span class="tag customer">Customer</span></td><td>Only their own quotes, versions, invoices, and trips.</td></tr>
+    <tr><td><span class="tag driver">Driver</span></td><td>Their own driver record, availability, and the trips assigned to them.</td></tr>
+    <tr><td><span class="tag admin">Admin</span></td><td>Everything — the only role allowed to see and manage all records.</td></tr>
+    <tr><td><span class="tag public">Visitor</span></td><td>Public pricing info only (so the quote form can show an accurate live estimate before anyone signs up) — nothing containing personal information.</td></tr>
+  </table>
+
+  <h3>A real story: catching a security bug</h3>
+  <p>
+    Two migrations (<code>026</code> and <code>028</code>) fixed a genuine
+    security hole worth knowing about, because it's a good example of
+    "software development involves finding and fixing real problems, not
+    just adding features":
+  </p>
+  <p>
+    Originally, when someone signed up, the system trusted whatever "role"
+    they claimed to be — meaning a customer could theoretically sign up and
+    tell the system "I'm an admin," and it would believe them. This was
+    fixed so every new signup is always forced to <code>customer</code>, no
+    exceptions; only an admin (or the driver-invite process) can grant a
+    higher role. A second, sneakier version of the same bug was then found —
+    even after that fix, a logged-in user could still try to sneak a role
+    change into an unrelated "update my profile" request. That was closed
+    with a database-level rule that flatly refuses to let anyone but an
+    admin change a "role" field, no matter how the request is phrased.
+  </p>
+
+  <div class="dig">
+    <div class="label">💬 Dig deeper</div>
+    Ask Claude Code: <div class="prompt">"Explain the role-escalation bug fixed in migrations 026 and 028 as if I'm hearing about a real security incident."</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="glossary">
+  <div class="kicker">Reference</div>
+  <h2>Glossary of terms</h2>
+  <dl class="glossary">
+    <dt>Route / page</dt><dd>A single screen in the app, tied to a web address, defined by one file in <code>src/routes/</code>.</dd>
+    <dt>Component</dt><dd>A reusable chunk of a page — a button, a form field, a whole quote-form section — that can be reused across pages instead of rebuilt each time.</dd>
+    <dt>Database / table</dt><dd>Structured storage, organized like a spreadsheet with named columns — e.g. the "quotes" table has one row per quote request.</dd>
+    <dt>Migration</dt><dd>A dated instruction file that changes the database's structure over time — the database's own change history.</dd>
+    <dt>Supabase</dt><dd>The hosted cloud service this app uses for its database, logins, and permission rules — this app doesn't run its own separate server.</dd>
+    <dt>RLS (Row Level Security)</dt><dd>Database-enforced rules about who can see or edit which rows of data, based on who's logged in and their role.</dd>
+    <dt>Edge function</dt><dd>A small standalone program that runs in the cloud to do something the database can't do on its own, like sending an email.</dd>
+    <dt>RPC (remote procedure call)</dt><dd>The website asking the database to run one of its built-in named actions (like "approve this quote") rather than editing raw data directly.</dd>
+    <dt>API key / environment variable</dt><dd>A private password-like value (e.g. for the email service) kept out of the website's public code and configured separately.</dd>
+    <dt>Git / branch / commit</dt><dd>The tool used to track every change made to the code over time, and to work on new changes safely without touching what's already live.</dd>
+  </dl>
+</section>
+
+<!-- ============================================================ -->
+<section id="reference">
+  <div class="kicker">Cheat sheet</div>
+  <h2>Quick-reference file index</h2>
+  <p>If you're curious about a topic, here's the one file most worth opening:</p>
+  <table class="ref">
+    <tr><th>Curious about…</th><th>Open this file</th></tr>
+    <tr><td>The overall pricing formula</td><td><code>supabase/migrations/034_driver_time_and_fee_controls.sql</code></td></tr>
+    <tr><td>How a quote gets submitted</td><td><code>supabase/migrations/011_submit_quote_fn.sql</code> (and later revisions)</td></tr>
+    <tr><td>The quote request form itself</td><td><code>src/routes/quote.tsx</code></td></tr>
+    <tr><td>The customer dashboard</td><td><code>src/routes/portal.tsx</code></td></tr>
+    <tr><td>The driver dashboard</td><td><code>src/routes/driver.tsx</code></td></tr>
+    <tr><td>The admin console</td><td><code>src/routes/admin.tsx</code></td></tr>
+    <tr><td>Login / signup logic</td><td><code>src/lib/auth.ts</code> and <code>src/routes/login.tsx</code></td></tr>
+    <tr><td>How the database is described to the website</td><td><code>src/lib/database.types.ts</code></td></tr>
+    <tr><td>The core booking tables</td><td><code>supabase/migrations/007_quotes.sql</code>, <code>008_trips.sql</code></td></tr>
+    <tr><td>The security-bug fix story</td><td><code>supabase/migrations/026_fix_role_escalation.sql</code>, <code>028_harden_role_escalation.sql</code></td></tr>
+    <tr><td>How emails actually get sent</td><td><code>supabase/functions/notify-send/index.ts</code></td></tr>
+    <tr><td>How a new driver account is created</td><td><code>supabase/functions/invite-driver/index.ts</code></td></tr>
+    <tr><td>The company's own working notes</td><td><code>CLAUDE.md</code>, <code>NEXT_SESSION.md</code>, <code>WHATS_NEW.md</code></td></tr>
+  </table>
+</section>
+
+<hr class="sep">
+
+<!-- ============================================================ -->
+<section id="howto">
+  <div class="kicker">Keep exploring</div>
+  <h2>How to use the "dig deeper" prompts</h2>
+  <p>
+    Scattered through this guide are boxes like the one below. Each one is a
+    ready-to-copy question, tied to whatever section it's sitting under. When
+    something catches your interest, open Claude Code in this project and
+    paste the prompt in — you don't need to know any coding vocabulary
+    yourself, just curiosity.
+  </p>
+  <div class="dig">
+    <div class="label">💬 Example</div>
+    <div class="prompt">"I'm reading a guide to this codebase and I don't understand what 'Row Level Security' means in practice — can you show me a real example from this project's database and explain it like I'm new to coding?"</div>
+  </div>
+  <p>
+    A few good general-purpose starting prompts if you want to keep going
+    beyond what's in this guide:
+  </p>
+  <ul>
+    <li><span class="prompt" style="display:inline; font-style: normal;"></span>"Pick one page I haven't asked about yet and explain it to me the way you'd explain it to a beginner."</li>
+    <li>"What's changed most recently in this codebase, and why?"</li>
+    <li>"If I wanted to change [some specific thing], which files would be involved?"</li>
+  </ul>
+</section>
+
+<footer>
+  <div class="wrap">This guide was generated by exploring the codebase as it stood on 2026-07-23. Code changes over time — if something here looks off, ask Claude Code to double-check it against the current files.</div>
+</footer>
+
+</body>
+</html>
