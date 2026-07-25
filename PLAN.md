@@ -1,0 +1,206 @@
+# Plan — everything after migration 051
+
+_Written 2026-07-24. This is the **sequencing** document: what order to do
+the remaining work in and why. It deliberately does not restate detail that
+already lives elsewhere — `BUG_BACKLOG.md` has the full 22-item bug detail,
+`WHATS_NEW.md` has feature history and the raw backlog, `NEXT_SESSION.md` is
+the per-session handoff. Delete sections here as they land; don't let this
+file grow into a third changelog._
+
+**Ordering principle:** things that can quietly charge a customer the wrong
+amount or lose a booking come first. Then things that cost Melody time every
+day. Then polish. Anything blocked on a decision from Melody or Mila is
+parked at the bottom rather than guessed at.
+
+---
+
+## Phase 0 — Ship 051 ✅ DONE 2026-07-24
+
+Committed (`6ade961`), pushed, migration applied, `notify-send` deployed,
+`RESEND_API_KEY` confirmed, and both emails verified in a real inbox. The
+HTML email pipeline works end to end for the first time.
+
+Two findings worth carrying forward, both recorded in `NEXT_SESSION.md`:
+production had an **unversioned draft of 051** applied directly to the DB
+that existed in no migration file, and **nothing drains the email queue on a
+schedule** (see Phase 5).
+
+Remaining crumb: check off the admin-confirmation-email item in
+`WHATS_NEW.md`'s "Still on the backlog" section.
+
+---
+
+## Phase 1 — Close the open unknowns (short, do it first)
+
+None of this is building; it's replacing assumptions with facts. It's first
+because several later decisions depend on the answers, and because right now
+nobody can truthfully say what's live.
+
+1. **Is ccsta.net actually serving the post-launch build?** Load the live
+   site and confirm the trip-type selector and multi-destination option are
+   present. The 07-21 publish was believed to have gone through but was
+   never verified.
+2. **Does Lovable auto-publish on push to `main`, or is it a manual click?**
+   This has been guessed at twice and never resolved. Needs Mila to look at
+   the Lovable dashboard once and write the answer down — it changes the
+   deploy checklist permanently.
+3. **Is `RESEND_API_KEY` set?** Supabase → Edge Functions → notify-send →
+   Secrets. If it isn't, no email has ever sent at all, which reframes
+   several backlog items.
+4. **Is the Google Maps API key set in Lovable's project settings?** It
+   degrades gracefully when missing, so the site looks fine either way —
+   but a missing key means every geocode fails, which per bug #6 means
+   long-distance surcharges are silently being left off quotes. That makes
+   this a money-correctness question, not a config chore.
+5. **Confirm the CRITICAL-bugs risk acceptance.** `BUG_BACKLOG.md` flags
+   that #1 and #2 shipped as fast-follow rather than pre-launch fixes and
+   asks for explicit confirmation that this was intentional. Answer it
+   before Phase 2 so the priority is real rather than inherited.
+
+---
+
+## Phase 2 — The two CRITICAL data-integrity bugs
+
+Both are silent-wrong-money bugs on a live system taking real bookings, and
+both get more expensive the more quotes exist. This is the first real build
+phase.
+
+**Bug #1 — editing an approved quote orphans its draft invoice.** A price
+Melody set can persist on an invoice row after the trip it priced has
+changed underneath it. Decide the intended behaviour first (void the draft
+invoice on edit? regenerate it? flag it stale and make Melody re-approve?)
+— it's a business rule, not a code detail, so it needs Melody's answer
+before implementation. Then it's a change to `edit_own_quote` plus a
+staleness indicator in `admin.tsx`.
+
+**Bug #2 — no optimistic lock on pricing writes.** Melody pricing a quote
+at the same moment a customer edits it can write to a superseded version
+with no error on either side. Implementation is a version stamp checked by
+`edit_own_quote`, `calculate_estimate`, and the override/confirm functions,
+returning a clear conflict error the UI can show. This is the fix most
+likely to touch `submit_quote`-family functions, so re-read the
+`CREATE OR REPLACE` gotcha in `NEXT_SESSION.md` §6 before starting: pull the
+live function bodies with `pg_get_functiondef`, don't work from repo files.
+
+Pair bug **#5** (no unique constraint on `(quote_id, version_number)`, next
+version computed with an unlocked `MAX+1`) into this phase — it's the same
+concurrency surface and the same set of functions. Doing it separately means
+touching those functions twice.
+
+---
+
+## Phase 3 — Admin UI redesign (its own multi-session project)
+
+The largest item, and the one Melody feels daily. Do it as a design project
+like the customer quote-form redesign was, not a series of tweaks.
+
+**Step 1 is discovery, not code:** sit with Melody and get specifics on what
+she needs to see, in what order. Scope gathered on 07-20 is already in
+`WHATS_NEW.md` — use it as the starting agenda, not the final spec.
+
+Build order within the phase, roughly:
+
+1. **Quote detail view clarity** — explicitly her top priority.
+2. **Simplify the calculations display** (admin and customer side).
+3. **Inline editing of any price component**, replacing the "waive fuel"
+   toggle — she should be able to zero the fuel fee or drop an overtime
+   line directly. Note this interacts with Phase 2's optimistic locking:
+   more editable fields means more write paths that need the version check.
+   Doing Phase 2 first is deliberate.
+4. **Stage-based sections** — reviewed / priced-but-not-customer-approved /
+   scheduled / completed / invoiced.
+5. **Sort/filter** by date, organization, destination.
+6. **Invoiced records grouped by organization.**
+
+Small items to fold in rather than schedule separately: the quote-number
+edit not persisting (a real bug, not a design question — worth checking
+whether it's a quick fix that shouldn't wait), "Enter to save" on admin
+edits, showing quote `created_at` somewhere, and the multi-destination stops
+display. Also re-check the live-reloading bug Melody reported — it may have
+been a pre-deploy artifact, so confirm it still reproduces before debugging it.
+
+---
+
+## Phase 4 — Finish the email work
+
+Once 051 has proven the HTML pipeline actually delivers, the rest is
+mechanical and cheap by comparison.
+
+1. Extend the branded HTML treatment to the **priced / rejected / cancelled**
+   customer emails, reusing 051's template.
+2. **New "Quote approved" email with an "Approve pricing" button** — the
+   customer approves the price and the quote moves to scheduling. This one
+   is a feature, not a template change: it needs a tokenized action link and
+   a state transition, so it's the largest piece here.
+3. Make **day-of contact optional** — estimate-only customers shouldn't have
+   to fill it in. Small, but it's an email/form correctness item that keeps
+   getting deferred.
+
+---
+
+## Phase 5 — Remaining fast-follow bugs, in batches
+
+~15 items left in `BUG_BACKLOG.md` once Phase 2 absorbs #1, #2, and #5.
+Batch them by the file they touch rather than by severity — the severities
+are all MEDIUM/LOW and the batching saves more time than the ordering does.
+
+- **Error-surfacing batch:** #13 (portal query failures render as "no
+  quotes"), #20 (404 vs. transient failure conflated), #21 (`handleSubmit`
+  has no try/catch), #22 (empty catches). Same theme: failures currently
+  look like empty states.
+- **Draft/localStorage batch:** #9 (cross-tab clobbering), #12 (no shape
+  validation on restore).
+- **Input-bounds batch:** #10 (no cap on shuttle run count), #11
+  (midnight-wraparound masking data-entry errors), #15 (portal `canEdit`
+  doesn't check the 7-day rule).
+- **Network resilience:** #14 (no timeout on geocoding/routing fetches).
+- **Email queue has no scheduled drain** (found 2026-07-24, not in
+  `BUG_BACKLOG.md`): `notify-send` runs only when the frontend invokes it
+  after a user action, and `src/lib/notify.ts` swallows failures. A failed
+  dispatch leaves the row `pending` indefinitely until an unrelated action
+  flushes it. Fix is a pg_cron job (or Supabase scheduled function) calling
+  `notify-send` every few minutes as a safety net. Small, and it removes a
+  class of "the customer never got the email" mystery.
+- **Cosmetic:** #17 (dead-code-wrong billable-hours label), #18 (member-rate
+  display jump), #19 ("0h" chip).
+
+**First, re-check #16** (hardcoded client-side rate constants). Commit
+`5dce11d` plus migration 050 made the customer estimate preview read
+`rate_config`/`surcharge_config` live, which was the whole point of #16 — it
+is probably already fixed and just not marked. Verify the remaining
+hardcoded constants in `quote.tsx` are gone, then check it off rather than
+scheduling work for it.
+
+---
+
+## Blocked on a decision — do not build
+
+- **Member special pricing tiers** ("Member w/i 1hr" $63/$78.75, "Driver
+  Only" $47.25). Genuinely ambiguous — nobody currently knows whether "within
+  1 hour" means driving distance or trip duration, or what the two numbers
+  represent. Mis-charging risk on a real business; needs Melody's answer
+  first. Highest-value item in this section once unblocked, because it
+  affects what customers are charged.
+- **Editing `scheduled` quotes** — pending Melody's decision on how bus and
+  driver unassignment should work.
+- **Multi-destination schedule feasibility validation** — needs decisions on
+  buffer time, tolerance, and warn-vs-block. Useful head start: the OSRM
+  call in `MultiStopRouteMap.tsx` already returns per-leg durations, unused.
+
+## Not blocked, but genuinely later
+
+Calendar//availability system (the trip-type time data was built
+calendar-readable for it), address autofill with seeded favorites, parent
+bus-tracking portal, 5% first-online-quote discount, hourly driver and bus
+availability windows.
+
+---
+
+## Repo hygiene, whenever convenient
+
+- `.claude/` is untracked in the repo root — decide whether it belongs in
+  `.gitignore`.
+- `CODEBASE_GUIDE.html` was flagged as mystery/untracked in an earlier
+  handoff. It's accounted for: committed as `b5a28b5`, "plain-English
+  codebase guide for non-coders." No action needed beyond removing the
+  stale warning.
