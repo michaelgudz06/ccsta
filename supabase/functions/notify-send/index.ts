@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
 
     const { data: rows, error } = await admin
       .from("notification_log")
-      .select("id, recipient, subject, body")
+      .select("id, recipient, subject, body, body_html")
       .eq("type", "email")
       .eq("status", "pending")
       .order("created_at", { ascending: true })
@@ -79,6 +79,7 @@ Deno.serve(async (req) => {
           to: [row.recipient],
           subject: row.subject ?? "CCSTA notification",
           text: row.body,
+          ...(row.body_html ? { html: row.body_html } : {}),
         }),
       });
 
