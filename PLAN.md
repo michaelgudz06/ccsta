@@ -30,21 +30,23 @@ Remaining crumb: check off the admin-confirmation-email item in
 
 ---
 
-## Phase 1 — Close the open unknowns (mostly done)
+## Phase 1 — Close the open unknowns (all but one done)
 
-None of this is building; it's replacing assumptions with facts. **Three of
-the five are now closed** (items 1, 3, 4). What remains is item 2 (Lovable's
-publish behaviour) and item 5 (confirming the CRITICAL-bugs risk
-acceptance) — both are questions to answer, not work to do.
+None of this is building; it's replacing assumptions with facts. **Four of
+the five are now closed** (items 1–4). Only item 5 remains — confirming the
+CRITICAL-bugs risk acceptance — and that's a decision, not work.
 
 1. ~~**Is ccsta.net actually serving the post-launch build?**~~ **Yes —
    confirmed 2026-07-25.** The live `/quote` page renders the trip-type
    selector with Round trip, Shuttle and Multi-destination all present. The
    07-21 publish did go through.
-2. **Does Lovable auto-publish on push to `main`, or is it a manual click?**
-   This has been guessed at twice and never resolved. Needs Mila to look at
-   the Lovable dashboard once and write the answer down — it changes the
-   deploy checklist permanently.
+2. ~~**Does Lovable auto-publish on push to `main`?**~~ **RESOLVED
+   2026-07-25 — no. Publishing is a required manual click.** GitHub sync
+   and publishing are separate: Lovable auto-pulls pushed commits into the
+   project editor within seconds, but the live site changes only on
+   Publish. Written into the deploy checklist at `NEXT_SESSION.md` §3,
+   including the trap that the auto-synced editor makes unpublished code
+   look deployed.
 3. ~~**Is `RESEND_API_KEY` set?**~~ **Yes — confirmed 2026-07-24**, and
    emails were verified arriving in a real inbox as part of Phase 0.
 4. ~~**Is `VITE_GOOGLE_MAPS_API_KEY` set?**~~ **Done 2026-07-25** — it was

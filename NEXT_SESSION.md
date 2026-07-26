@@ -62,10 +62,19 @@ section 4.
 4. Merge into `main` with **"Create a merge commit"** — not squash, not
    rebase. One merge commit gives one clean `git revert -m 1 <sha>` undo
    point.
-5. **Publish is a SEPARATE manual/auto step in Lovable, not automatic on
-   git push** — confirm whether Lovable auto-publishes on push to `main`
-   or needs a manual click in its dashboard. This was never definitively
-   resolved (see Vercel/Lovable gotcha below).
+5. **Click Publish in Lovable. RESOLVED 2026-07-25 — this is a required
+   manual step; pushing to `main` does NOT put anything live.** Two
+   separate systems: Lovable's GitHub sync pulls your pushed commits into
+   the project editor automatically within seconds, but the live site
+   changes only when you click Publish. Confirmed against Lovable's own
+   docs and consistent with how Mila has been working (manual publish
+   after big changes).
+   - **The trap:** because the editor auto-pulls, Lovable will show your
+     latest code right after a push. It looks deployed. It isn't. The
+     editor reflects the repo; only Publish reflects to customers. Never
+     infer "it's live" from what the Lovable editor shows.
+   - Corollary: a `git push` alone is safe — it cannot surprise-deploy to
+     real customers. Publishing is always a deliberate act.
 6. Smoke-test live on ccsta.net immediately after: submit a real-looking
    quote across at least two trip types, check admin dashboard loads,
    check confirmation email.
