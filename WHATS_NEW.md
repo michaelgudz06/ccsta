@@ -415,8 +415,23 @@ deployed `main` site.
   - Admin confirmation email needs the full trip info, not a summary —
     basically the whole quote. Mila has mockup screenshots (Claude Code
     mockups) to reference when this is picked up.
-  - Make day-of contact **optional** — estimate-only customers shouldn't
-    have to fill it in.
+  - ~~Make day-of contact **optional** — estimate-only customers shouldn't
+    have to fill it in.~~ **Investigated 2026-07-25 — no code change needed;
+    the premise was wrong.** Estimate-only customers already don't have to
+    fill it in: the estimate is section 5 and renders live from trip details
+    alone, and `validateAll()` runs only inside `handleSubmit`. Day-of
+    contact is already enforced at submission and nowhere else.
+    - The real (cosmetic) issue is ordering: "Contact info" is **section 2**,
+      above trip details, riders and the estimate, so an estimate-only
+      visitor meets a block of asterisked required fields before reaching a
+      price. Nothing blocks them scrolling past it; it just reads like a wall.
+    - If this is ever picked up, the fix is layout, not validation — move the
+      two day-of fields down next to the submit button so the flow reads
+      trip → riders → price → who to call on the day → submit. Considered
+      2026-07-25 and explicitly declined as not worth doing right now.
+    - Note the two answers that shaped this: day-of contact should stay
+      **mandatory to submit** a quote but not to see a price — which is
+      exactly the behaviour that already exists.
   - **New feature:** a "Quote approved" email to the customer with an
     **"Approve pricing"** button — customer reviews the price, clicks
     approve, and the quote moves to scheduling.

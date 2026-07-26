@@ -30,28 +30,47 @@ Remaining crumb: check off the admin-confirmation-email item in
 
 ---
 
-## Phase 1 — Close the open unknowns (short, do it first)
+## Phase 1 — Close the open unknowns (mostly done)
 
-None of this is building; it's replacing assumptions with facts. It's first
-because several later decisions depend on the answers, and because right now
-nobody can truthfully say what's live.
+None of this is building; it's replacing assumptions with facts. **Three of
+the five are now closed** (items 1, 3, 4). What remains is item 2 (Lovable's
+publish behaviour) and item 5 (confirming the CRITICAL-bugs risk
+acceptance) — both are questions to answer, not work to do.
 
-1. **Is ccsta.net actually serving the post-launch build?** Load the live
-   site and confirm the trip-type selector and multi-destination option are
-   present. The 07-21 publish was believed to have gone through but was
-   never verified.
+1. ~~**Is ccsta.net actually serving the post-launch build?**~~ **Yes —
+   confirmed 2026-07-25.** The live `/quote` page renders the trip-type
+   selector with Round trip, Shuttle and Multi-destination all present. The
+   07-21 publish did go through.
 2. **Does Lovable auto-publish on push to `main`, or is it a manual click?**
    This has been guessed at twice and never resolved. Needs Mila to look at
    the Lovable dashboard once and write the answer down — it changes the
    deploy checklist permanently.
-3. **Is `RESEND_API_KEY` set?** Supabase → Edge Functions → notify-send →
-   Secrets. If it isn't, no email has ever sent at all, which reframes
-   several backlog items.
-4. **Is the Google Maps API key set in Lovable's project settings?** It
-   degrades gracefully when missing, so the site looks fine either way —
-   but a missing key means every geocode fails, which per bug #6 means
-   long-distance surcharges are silently being left off quotes. That makes
-   this a money-correctness question, not a config chore.
+3. ~~**Is `RESEND_API_KEY` set?**~~ **Yes — confirmed 2026-07-24**, and
+   emails were verified arriving in a real inbox as part of Phase 0.
+4. ~~**Is `VITE_GOOGLE_MAPS_API_KEY` set?**~~ **Done 2026-07-25** — it was
+   NOT set (verified on the live site: no Google script tag injected,
+   `window.google` undefined, both address fields showing the no-key
+   fallback hint). A referrer-restricted key was created in Google Cloud
+   with Maps JavaScript API + Places API enabled, added to the tracked
+   `.env`, committed and published, and autocomplete confirmed working.
+   - **Note for future config work: this project does NOT use Lovable's
+     environment-variable UI.** Public `VITE_` config lives in the committed
+     `.env` file — that's how the Supabase vars reach the build, and
+     `src/lib/config.server.ts` documents the convention. Don't go looking
+     for an env settings panel in Lovable; there isn't one in use here.
+   - **Scope correction, because an earlier draft of this plan overstated
+     it:** the key is used in exactly one place — `AddressAutocomplete`, for
+     the address-suggestion dropdown. Distance (and therefore the
+     long-distance surcharge) comes from **Nominatim** for geocoding and
+     **OSRM** for routing, neither of which uses a key. A missing key cost
+     address quality and typing convenience, **not** surcharge correctness.
+     The earlier claim that it was a money-correctness issue was wrong.
+   - The genuine money-correctness question in this area is bug #6 itself
+     plus #14 (no timeout on those fetches). Nominatim asks for ≤1 request
+     per second and the public OSRM demo server has no SLA — those are the
+     dependencies that can silently drop a surcharge. Better autocomplete
+     helps only indirectly, by producing cleaner addresses that Nominatim is
+     more likely to resolve.
 5. **Confirm the CRITICAL-bugs risk acceptance.** `BUG_BACKLOG.md` flags
    that #1 and #2 shipped as fast-follow rather than pre-launch fixes and
    asks for explicit confirmation that this was intentional. Answer it
