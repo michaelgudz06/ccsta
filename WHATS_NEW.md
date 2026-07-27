@@ -411,6 +411,21 @@ deployed `main` site.
       can ride along with it.
     - "Enter to save" on admin edits — currently you have to click out of
       the field for it to save.
+- **Driver time — changes wanted** *(2026-07-27, specifics not yet
+  captured)*: Mila has several edits in mind for how driver time works or is
+  presented. **Ask her for the details before touching this** — nothing is
+  written down yet and guessing would be wrong.
+  - Context for whoever picks it up: driver time is currently a **flat
+    buffer**, `surcharges.driver_time_buffer_hours` (default 1 hr), added on
+    top of billable trip time on both the client preview (`quote.tsx`) and
+    the server (`calculate_estimate`). It is NOT derived from the route.
+    Melody can override it per quote afterwards via `approved_driver_hours`.
+  - So "edits to driver time" could mean any of: the buffer value, making it
+    vary by trip/distance rather than flat, how it's labelled to customers,
+    or how Melody overrides it. Worth pinning down which before scoping.
+  - Any change to the number itself must move **together** on client and
+    server, or the preview and the real price drift apart — the exact class
+    of bug that migration 050 and commit `5dce11d` were cleaning up.
 - **Post-launch — other items** *(do NOT build now)*:
   - Admin confirmation email needs the full trip info, not a summary —
     basically the whole quote. Mila has mockup screenshots (Claude Code

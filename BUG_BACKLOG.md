@@ -144,11 +144,19 @@ against migrations 014/034), but nothing would catch future drift if
 rates are updated in the DB (this app's normal workflow) without a
 matching frontend deploy.
 
-### #17 — "Billable hours (...actual)" label is dead-code-wrong ⏭ FAST-FOLLOW (post-launch)
+### #17 — "Billable hours (...actual)" label is dead-code-wrong ✅ FIXED 2026-07-27
 `quote.tsx:1119`'s `billHours > minHours` check can never be false given
 the actual math, so the "(X hr minimum)" wording can never display even
 when the floor is exactly what's happening. Cosmetic — doesn't affect any
 charged number.
+
+**Fixed** as part of simplifying the customer estimate breakdown. The
+dead condition is gone; a new `minimumApplied` flag (`tripHoursCalc === null
+|| tripHoursCalc < minHours`) drives an honest "N hr minimum applied" note.
+Note the original writeup put the test on the wrong variable — the minimum
+floors *trip* hours (`billableTripHours`), and the driver-time buffer is
+then added on top, so `billHours` can never equal `minHours`. That's why
+the condition was unreachable.
 
 ---
 

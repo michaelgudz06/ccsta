@@ -34,6 +34,15 @@ const isValidPhone = (v: string) => {
 // new Date().toISOString() would introduce near midnight.
 const dateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const todayDateStr = () => dateStr(new Date());
+// Human-readable trip date for display only. The T00:00:00 suffix forces
+// local-time parsing — bare "YYYY-MM-DD" is parsed as UTC and renders as the
+// previous day for anyone west of Greenwich, which is everyone here.
+const prettyDate = (d: string) =>
+  d
+    ? new Date(`${d}T00:00:00`).toLocaleDateString(undefined, {
+        weekday: "short", month: "short", day: "numeric", year: "numeric",
+      })
+    : "—";
 const maxFutureDateStr = () => {
   const d = new Date();
   d.setFullYear(d.getFullYear() + 2);
@@ -575,6 +584,10 @@ function QuotePage() {
   const DRIVER_TIME_BUFFER_HOURS = surcharges.driver_time_buffer_hours ?? 1;
   const driverHours = billableTripHours + DRIVER_TIME_BUFFER_HOURS;
   const billHours  = driverHours;
+  // True when the trip is shorter than the minimum (or no times are entered
+  // yet), so billableTripHours above is the floor rather than the real trip
+  // length. Display-only — it explains why the hours shown exceed the trip.
+  const minimumApplied = tripHoursCalc === null || tripHoursCalc < minHours;
   const baseCost   = billHours * hourlyRate * busCount;
   const fuelSurcharge = (surcharges.fuel_surcharge_per_trip ?? 50) * busCount;
   // Matches calculate_estimate's overtime_threshold_hours/overtime_rate_per_hour
@@ -1278,44 +1291,71 @@ function QuotePage() {
                       {tripType === "multi_destination" ? multiDestinationSummary : (destination || "Your destination")}
                     </div>
                     <div className="text-sm text-white/70">
-                      {date || "—"} · {envelopeDepart || "—"} → {envelopeReturn || "—"} · {totalStudents || "—"} students
+                      {prettyDate(date)} · {envelopeDepart || "—"} → {envelopeReturn || "—"} · {totalStudents || "—"} students
                     </div>
                   </div>
-                  <span className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white">
-                    Estimate
-                  </span>
                 </div>
 
                 <table className="mt-5 w-full text-sm">
                   <tbody className="divide-y divide-white/15">
-                    <Row dark label="Suggested bus" value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""} (${isMemberSchool ? "member" : "non-member"} rate)`} />
-                    <Row dark label="Hourly rate" value={`${formatMoney(hourlyRate)}/hr`} />
-                    <Row dark label="Trip time" value={`${billableTripHours.toFixed(1)} hrs`} />
-                    <Row dark label="Driver time" value={`${(billHours - billableTripHours).toFixed(1)} hrs`} />
-                    <Row dark label={`Billable hours (${billHours > minHours ? `${billHours.toFixed(1)} hrs actual` : `${minHours} hr minimum`})`} value={`${billHours.toFixed(1)} hrs`} />
-                    <Row dark label="Base cost" value={formatMoney(baseCost)} />
-                    <Row dark label="Fuel surcharge (flat)" value={formatMoney(fuelSurcharge)} />
+                    <Row
+                      dark
+                      label="Suggested bus"
+                      value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""}`}
+                      sub={`${isMemberSchool ? "Member" : "Non-member"} rate · ${formatMoney(hourlyRate)}/hr`}
+                    />
+                    <Row
+                      dark
+                      label="Billable hours"
+                      value={`${billHours.toFixed(1)} hrs`}
+                      sub={
+                        `${billableTripHours.toFixed(1)} hrs trip + ${DRIVER_TIME_BUFFER_HOURS} hr driver time`
+                        + (minimumApplied ? ` · ${minHours} hr minimum applied` : "")
+                      }
+                    />
+                    <Row
+                      dark
+                      label="Base cost"
+                      value={formatMoney(baseCost)}
+                      sub={`${billHours.toFixed(1)} hrs × ${formatMoney(hourlyRate)}/hr${busCount > 1 ? ` × ${busCount} buses` : ""}`}
+                    />
+                    <Row
+                      dark
+                      label="Fuel surcharge"
+                      value={formatMoney(fuelSurcharge)}
+                      sub={busCount > 1 ? `${formatMoney(fuelSurcharge / busCount)} per bus` : undefined}
+                    />
                     {overtimeCharge > 0 && (
-                      <Row dark label={`Overtime (${(billHours - OVERTIME_THRESHOLD_HOURS).toFixed(1)} hrs beyond ${OVERTIME_THRESHOLD_HOURS}hr)`} value={formatMoney(overtimeCharge)} />
+                      <Row
+                        dark
+                        label="Overtime"
+                        value={formatMoney(overtimeCharge)}
+                        sub={`${(billHours - OVERTIME_THRESHOLD_HOURS).toFixed(1)} hrs beyond ${OVERTIME_THRESHOLD_HOURS} hrs`}
+                      />
                     )}
                     {longDistanceCharge > 0 && (
-                      <Row dark label={`Long-distance (${(distanceKm! - LONG_DISTANCE_THRESHOLD_KM).toFixed(1)} km beyond ${LONG_DISTANCE_THRESHOLD_KM}km)`} value={formatMoney(longDistanceCharge)} />
+                      <Row
+                        dark
+                        label="Long-distance"
+                        value={formatMoney(longDistanceCharge)}
+                        sub={`${(distanceKm! - LONG_DISTANCE_THRESHOLD_KM).toFixed(1)} km beyond ${LONG_DISTANCE_THRESHOLD_KM} km`}
+                      />
                     )}
                     <Row dark label="Subtotal" value={formatMoney(subtotal)} />
-                    <Row dark label="GST (5%)" value={formatMoney(gst)} />
+                    <Row dark label={`GST (${GST_RATE_PCT}%)`} value={formatMoney(gst)} />
                     <Row dark label="Estimated total" value={formatMoney(estimatedTotal)} emphasize />
                   </tbody>
                 </table>
                 <p className="mt-4 text-xs leading-relaxed text-white/50">
-                  "Driver time" covers time on the clock beyond the trip itself — getting the bus to your pickup and
-                  back, plus our minimum booking length. Ballpark only, based on bus size and trip length. Melody or
-                  Alan will confirm the exact amount after reviewing your request — it may be higher or lower based
-                  on the actual route. No surprise billing.
+                  Driver time is the {DRIVER_TIME_BUFFER_HOURS} hr we add for getting the bus to your pickup and back.
+                  {minimumApplied && ` We bill a ${minHours} hr minimum on trip time, which is why the hours above may look longer than your trip.`}
+                  {" "}Melody or Alan will confirm the exact amount after reviewing your request — it may be higher or
+                  lower based on the actual route. No surprise billing.
                 </p>
               </section>
 
               <ul className="space-y-1.5 rounded-2xl border border-dashed border-border bg-card p-4 text-xs text-muted-foreground">
-                <li>• Estimate only — exact rate confirmed after admin review.</li>
+                <li>• Exact rate confirmed after admin review.</li>
                 <li>• Parking and other destination fees not included.</li>
                 <li>• Cancellations: one week notice required.</li>
               </ul>
@@ -1408,18 +1448,26 @@ function Disclosure({
 }
 
 function Row({
-  label, value, emphasize, dark,
+  label, value, emphasize, dark, sub,
 }: {
   label: string; value: string; emphasize?: boolean; dark?: boolean;
+  // Optional second line under the label — used to show the working behind a
+  // number (e.g. "6.0 hrs × $95.00/hr") so the customer can check the math
+  // without needing a separate row for every intermediate value.
+  sub?: string;
 }) {
   const labelCls = dark ? "text-white/60" : "text-muted-foreground";
+  const subCls = dark ? "text-white/40" : "text-muted-foreground/70";
   const valueCls = dark
     ? emphasize ? "text-lg font-extrabold text-white" : "text-white/90"
     : emphasize ? "text-base font-bold text-foreground" : "text-foreground";
   return (
     <tr>
-      <td className={`py-2 ${labelCls}`}>{label}</td>
-      <td className={`py-2 text-right ${valueCls}`}>{value}</td>
+      <td className={`py-2 ${labelCls}`}>
+        {label}
+        {sub && <span className={`mt-0.5 block text-xs ${subCls}`}>{sub}</span>}
+      </td>
+      <td className={`py-2 text-right align-top ${valueCls}`}>{value}</td>
     </tr>
   );
 }
