@@ -101,6 +101,27 @@ git push origin main --force-with-lease
 - **Migrations applied to the live DB: through `051`** (051 applied
   2026-07-24, confirmed live via `has_trip_type_row` / `has_students_row` /
   `has_dropoff_row` all true).
+- **`052` and `053` are written and committed but NOT applied** (2026-07-27):
+  - **052 — fiscal-year quote numbers.** `Q-2026-0126` becomes `Q-2027-001`.
+    CCSTA's fiscal year runs July→June, so July 2026 onward is FY2027. Adds
+    `_fiscal_year()` and a `quote_number_counters` table; the counter
+    restarts each July. Uses `INSERT … ON CONFLICT DO UPDATE … RETURNING`,
+    which row-locks per fiscal year — deliberately not `max()+1`, which
+    would race (the BUG_BACKLOG #5 class). `quote_number_seq` is kept, not
+    dropped, so reverting doesn't need it rebuilt.
+    - The `submit_quote` body was diffed against **051** (the verified live
+      version) and differs by exactly the one quote-number line.
+  - **053 — renumbers the 6 existing quotes** to `Q-2027-001…006` by
+    `created_at`, logs old→new in a new `quote_number_renumber_log` table,
+    and seeds the counter so the next submission gets 007. **Apply 052
+    first** — 053 depends on both objects it creates.
+  - **Known consequence, accepted by Mila:** two of those six belong to real
+    schools (`marianne@the-grove.net`, which is past `requested`, and
+    `info@dasmeshacademy.ca`). Their confirmation emails quote the old
+    number. The portal reads live so it stays correct; the renumber log
+    exists so Melody can still find them by the old number.
+  - Existing `invoices.invoice_number` values are deliberately NOT
+    renumbered and no longer mirror their quote's number.
 - **Drift found and closed on the way there — read this before touching any
   `CREATE OR REPLACE`'d function.** Before applying, the live
   `submit_quote` turned out to be **an unversioned draft of 051 applied

@@ -322,12 +322,9 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const [quotes, setQuotes] = useState<AdminQuoteRow[]>([]);
   const [qLoading, setQLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
-  const [invoiceNos, setInvoiceNos] = useState<Record<string, string>>({});
-  // The REAL invoice number as stored in the invoices table, keyed by quote id.
-  // Only quotes that have actually been approved have a row here. Anything not
-  // in this map has no invoice yet, so its number is still just a proposal that
-  // gets written when the quote is approved.
-  const [savedInvoiceNos, setSavedInvoiceNos] = useState<Record<string, string>>({});
+  // In-progress quote-number edits, keyed by quote id. Absent means "not being
+  // edited" and the stored quote.quote_number is shown.
+  const [quoteNoEdits, setQuoteNoEdits] = useState<Record<string, string>>({});
   // Per-field save feedback for inline admin edits: "saving" | "saved" | error text.
   const [fieldStatus, setFieldStatus] = useState<Record<string, string>>({});
 
@@ -399,25 +396,6 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
         setQuotes(merged);
         const preselect = initialQuoteId && merged.some((q) => q.id === initialQuoteId) ? initialQuoteId : merged[0]?.id;
         if (preselect) setSelected(preselect);
-        // Read the ACTUAL invoice numbers rather than deriving them. The old
-        // code assumed every invoice number is the quote number with Q- swapped
-        // for INV-, which is only approve_quote's *default* — any number Melody
-        // typed at approval was then displayed incorrectly after a reload.
-        const { data: invRows } = await supabase
-          .from("invoices")
-          .select("quote_id, invoice_number")
-          .in("quote_id", merged.map((q) => q.id));
-        const saved = Object.fromEntries(
-          (invRows ?? [])
-            .filter((r) => r.quote_id)
-            .map((r) => [r.quote_id as string, r.invoice_number]),
-        );
-        setSavedInvoiceNos(saved);
-        setInvoiceNos(
-          Object.fromEntries(
-            merged.map((q) => [q.id, saved[q.id] ?? q.quote_number.replace(/^Q-/, "INV-")]),
-          ),
-        );
         setQLoading(false);
       });
     // Only consult initialQuoteId once, at mount — QuoteQueue fully remounts
@@ -446,50 +424,51 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     // One step: make sure a fresh price is calculated/persisted, then approve.
     const { error: calcErr } = await supabase.rpc("calculate_estimate" as never, { p_quote_id: quoteId } as never);
     if (calcErr) { setActionBusy(null); setActionError(friendlyError(calcErr.message)); return; }
+    // p_invoice_number is left null so approve_quote generates its default.
+    // Invoice numbers are deliberately not surfaced in the admin UI for now.
     const { data, error } = await supabase.rpc("approve_quote" as never, {
       p_quote_id: quoteId,
-      p_invoice_number: invoiceNos[quoteId] ?? null,
+      p_invoice_number: null,
     } as never);
     setActionBusy(null);
     if (error) { setActionError(friendlyError(error.message)); return; }
-    const result = data as { invoice_number: string };
+    void data;
     setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "approved" } : q));
-    setInvoiceNos((m) => ({ ...m, [quoteId]: result.invoice_number }));
-    // An invoice row now exists, so the field stops being a proposal and
-    // becomes directly editable from here on.
-    setSavedInvoiceNos((m) => ({ ...m, [quoteId]: result.invoice_number }));
     dispatchNotifications();
   }
 
-  // Persist an edited invoice number for a quote that already has an invoice.
-  // Before approval there is no invoice row to write to — the typed value is
-  // passed to approve_quote instead, which is why this no-ops in that case.
-  async function handleSaveInvoiceNumber(quoteId: string) {
-    const next = (invoiceNos[quoteId] ?? "").trim();
-    const current = savedInvoiceNos[quoteId];
-    if (current === undefined) return;      // not approved yet — nothing to write
-    if (next === current) return;           // unchanged
+  // Persist an edited quote number. quotes.quote_number is UNIQUE, so a
+  // collision is a real possibility and is reported plainly rather than as a
+  // raw Postgres error.
+  async function handleSaveQuoteNumber(quoteId: string) {
+    const stored = quotes.find((q) => q.id === quoteId)?.quote_number ?? "";
+    const next = (quoteNoEdits[quoteId] ?? stored).trim();
+    const revert = () => setQuoteNoEdits((m) => {
+      const { [quoteId]: _drop, ...rest } = m;
+      return rest;
+    });
+    if (next === stored) { revert(); return; }
     if (!next) {
-      setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: "Invoice number can't be blank." }));
-      setInvoiceNos((m) => ({ ...m, [quoteId]: current }));
+      setFieldStatus((s) => ({ ...s, [`qno-${quoteId}`]: "Quote number can't be blank." }));
+      revert();
       return;
     }
-    setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: "saving" }));
+    setFieldStatus((s) => ({ ...s, [`qno-${quoteId}`]: "saving" }));
     const { error } = await supabase
-      .from("invoices")
-      .update({ invoice_number: next })
-      .eq("quote_id", quoteId);
+      .from("quotes")
+      .update({ quote_number: next })
+      .eq("id", quoteId);
     if (error) {
-      // 23505 is the unique constraint on invoices.invoice_number.
       const msg = error.code === "23505"
-        ? "That invoice number is already used on another invoice."
+        ? "Another quote already uses that number."
         : friendlyError(error.message);
-      setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: msg }));
-      setInvoiceNos((m) => ({ ...m, [quoteId]: current }));   // revert to what's stored
+      setFieldStatus((s) => ({ ...s, [`qno-${quoteId}`]: msg }));
+      revert();
       return;
     }
-    setSavedInvoiceNos((m) => ({ ...m, [quoteId]: next }));
-    setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: "saved" }));
+    setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, quote_number: next } : q));
+    revert();
+    setFieldStatus((s) => ({ ...s, [`qno-${quoteId}`]: "saved" }));
   }
 
   // Shared key handling for inline admin edits: Enter commits (via blur),
@@ -610,12 +589,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
 
   const quote = quotes.find((q) => q.id === selected) ?? quotes[0];
   const ver = quote.quote_versions;
-  const invoiceNo = invoiceNos[quote.id] ?? quote.quote_number.replace(/^Q-/, "INV-");
-  // Has an invoice row been created yet (i.e. has this quote been approved)?
-  // Determines whether editing the field writes straight through or is just a
-  // proposal for approve_quote to use.
-  const hasInvoice = savedInvoiceNos[quote.id] !== undefined;
-  const invoiceFieldStatus = fieldStatus[`inv-${quote.id}`] ?? "";
+  const quoteNoValue = quoteNoEdits[quote.id] ?? quote.quote_number;
+  const quoteNoStatus = fieldStatus[`qno-${quote.id}`] ?? "";
   const tripDate = formatTripDate(ver?.trip_date);
 
   const canApprove = ["requested", "in_review"].includes(quote.status);
@@ -745,8 +720,37 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">Quote #</div>
-              <div className="text-xl font-bold text-foreground">{quote.quote_number}</div>
+              <label className="block">
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">Quote # (editable)</span>
+                <input
+                  value={quoteNoValue}
+                  onChange={(e) => {
+                    setQuoteNoEdits((m) => ({ ...m, [quote.id]: e.target.value }));
+                    setFieldStatus((s) => ({ ...s, [`qno-${quote.id}`]: "" }));
+                  }}
+                  onBlur={() => handleSaveQuoteNumber(quote.id)}
+                  onKeyDown={inlineEditKeys(() =>
+                    setQuoteNoEdits((m) => {
+                      const { [quote.id]: _drop, ...rest } = m;
+                      return rest;
+                    }),
+                  )}
+                  className="mt-0.5 block w-48 rounded-lg border border-input bg-background px-2.5 py-1 text-xl font-bold text-foreground shadow-sm outline-none ring-ring focus:ring-2"
+                />
+              </label>
+              <span className="block h-4 text-[11px]">
+                {quoteNoStatus === "saving" ? (
+                  <span className="text-muted-foreground">Saving…</span>
+                ) : quoteNoStatus === "saved" ? (
+                  <span className="text-emerald-600">Saved</span>
+                ) : quoteNoStatus ? (
+                  <span className="text-destructive">{quoteNoStatus}</span>
+                ) : (
+                  // The customer already has the original number in their
+                  // confirmation email; changing it here doesn't rewrite that.
+                  <span className="text-muted-foreground">Won't update emails already sent</span>
+                )}
+              </span>
               <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[quote.status] ?? ""}`}>
                 {STATUS_LABEL[quote.status] ?? quote.status}
               </span>
@@ -759,35 +763,6 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                 {new Date(quote.created_at).toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" })}
               </div>
             </div>
-            <label className="flex flex-col items-end gap-1">
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                {hasInvoice ? "Invoice #" : "Invoice # (proposed)"}
-              </span>
-              <input
-                value={invoiceNo}
-                onChange={(e) => {
-                  setInvoiceNos((m) => ({ ...m, [quote.id]: e.target.value }));
-                  setFieldStatus((s) => ({ ...s, [`inv-${quote.id}`]: "" }));
-                }}
-                onBlur={() => handleSaveInvoiceNumber(quote.id)}
-                onKeyDown={inlineEditKeys(() => {
-                  const saved = savedInvoiceNos[quote.id];
-                  if (saved !== undefined) setInvoiceNos((m) => ({ ...m, [quote.id]: saved }));
-                })}
-                className="w-44 rounded-lg border border-input bg-background px-2.5 py-1 text-right text-sm font-semibold text-foreground shadow-sm outline-none ring-ring focus:ring-2"
-              />
-              <span className="h-4 text-[11px]">
-                {invoiceFieldStatus === "saving" ? (
-                  <span className="text-muted-foreground">Saving…</span>
-                ) : invoiceFieldStatus === "saved" ? (
-                  <span className="text-emerald-600">Saved</span>
-                ) : invoiceFieldStatus ? (
-                  <span className="text-destructive">{invoiceFieldStatus}</span>
-                ) : !hasInvoice ? (
-                  <span className="text-muted-foreground">Saved when you approve</span>
-                ) : null}
-              </span>
-            </label>
           </div>
         </div>
 
