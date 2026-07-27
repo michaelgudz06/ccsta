@@ -323,6 +323,13 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const [qLoading, setQLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [invoiceNos, setInvoiceNos] = useState<Record<string, string>>({});
+  // The REAL invoice number as stored in the invoices table, keyed by quote id.
+  // Only quotes that have actually been approved have a row here. Anything not
+  // in this map has no invoice yet, so its number is still just a proposal that
+  // gets written when the quote is approved.
+  const [savedInvoiceNos, setSavedInvoiceNos] = useState<Record<string, string>>({});
+  // Per-field save feedback for inline admin edits: "saving" | "saved" | error text.
+  const [fieldStatus, setFieldStatus] = useState<Record<string, string>>({});
 
   // Action state
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -392,7 +399,25 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
         setQuotes(merged);
         const preselect = initialQuoteId && merged.some((q) => q.id === initialQuoteId) ? initialQuoteId : merged[0]?.id;
         if (preselect) setSelected(preselect);
-        setInvoiceNos(Object.fromEntries(merged.map((q) => [q.id, q.quote_number.replace(/^Q-/, "INV-")])));
+        // Read the ACTUAL invoice numbers rather than deriving them. The old
+        // code assumed every invoice number is the quote number with Q- swapped
+        // for INV-, which is only approve_quote's *default* — any number Melody
+        // typed at approval was then displayed incorrectly after a reload.
+        const { data: invRows } = await supabase
+          .from("invoices")
+          .select("quote_id, invoice_number")
+          .in("quote_id", merged.map((q) => q.id));
+        const saved = Object.fromEntries(
+          (invRows ?? [])
+            .filter((r) => r.quote_id)
+            .map((r) => [r.quote_id as string, r.invoice_number]),
+        );
+        setSavedInvoiceNos(saved);
+        setInvoiceNos(
+          Object.fromEntries(
+            merged.map((q) => [q.id, saved[q.id] ?? q.quote_number.replace(/^Q-/, "INV-")]),
+          ),
+        );
         setQLoading(false);
       });
     // Only consult initialQuoteId once, at mount — QuoteQueue fully remounts
@@ -430,7 +455,50 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     const result = data as { invoice_number: string };
     setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "approved" } : q));
     setInvoiceNos((m) => ({ ...m, [quoteId]: result.invoice_number }));
+    // An invoice row now exists, so the field stops being a proposal and
+    // becomes directly editable from here on.
+    setSavedInvoiceNos((m) => ({ ...m, [quoteId]: result.invoice_number }));
     dispatchNotifications();
+  }
+
+  // Persist an edited invoice number for a quote that already has an invoice.
+  // Before approval there is no invoice row to write to — the typed value is
+  // passed to approve_quote instead, which is why this no-ops in that case.
+  async function handleSaveInvoiceNumber(quoteId: string) {
+    const next = (invoiceNos[quoteId] ?? "").trim();
+    const current = savedInvoiceNos[quoteId];
+    if (current === undefined) return;      // not approved yet — nothing to write
+    if (next === current) return;           // unchanged
+    if (!next) {
+      setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: "Invoice number can't be blank." }));
+      setInvoiceNos((m) => ({ ...m, [quoteId]: current }));
+      return;
+    }
+    setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: "saving" }));
+    const { error } = await supabase
+      .from("invoices")
+      .update({ invoice_number: next })
+      .eq("quote_id", quoteId);
+    if (error) {
+      // 23505 is the unique constraint on invoices.invoice_number.
+      const msg = error.code === "23505"
+        ? "That invoice number is already used on another invoice."
+        : friendlyError(error.message);
+      setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: msg }));
+      setInvoiceNos((m) => ({ ...m, [quoteId]: current }));   // revert to what's stored
+      return;
+    }
+    setSavedInvoiceNos((m) => ({ ...m, [quoteId]: next }));
+    setFieldStatus((s) => ({ ...s, [`inv-${quoteId}`]: "saved" }));
+  }
+
+  // Shared key handling for inline admin edits: Enter commits (via blur),
+  // Escape abandons the edit and restores the last saved value.
+  function inlineEditKeys(onCancel?: () => void) {
+    return (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+      else if (e.key === "Escape") { e.preventDefault(); onCancel?.(); e.currentTarget.blur(); }
+    };
   }
 
   async function handleReject(quoteId: string) {
@@ -543,6 +611,11 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const quote = quotes.find((q) => q.id === selected) ?? quotes[0];
   const ver = quote.quote_versions;
   const invoiceNo = invoiceNos[quote.id] ?? quote.quote_number.replace(/^Q-/, "INV-");
+  // Has an invoice row been created yet (i.e. has this quote been approved)?
+  // Determines whether editing the field writes straight through or is just a
+  // proposal for approve_quote to use.
+  const hasInvoice = savedInvoiceNos[quote.id] !== undefined;
+  const invoiceFieldStatus = fieldStatus[`inv-${quote.id}`] ?? "";
   const tripDate = formatTripDate(ver?.trip_date);
 
   const canApprove = ["requested", "in_review"].includes(quote.status);
@@ -590,9 +663,19 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                   <div className="font-semibold text-foreground">{q.quote_number}</div>
                   <div className="text-xs text-muted-foreground">
                     {q.schools?.name ?? "Unknown organization"} ·{" "}
+                    {/* Was `new Date(trip_date)`, which parses a bare
+                        "YYYY-MM-DD" as UTC midnight and renders the PREVIOUS
+                        day in Pacific time — the off-by-one that formatTripDate
+                        exists to prevent. */}
                     {q.quote_versions?.trip_date
-                      ? new Date(q.quote_versions.trip_date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })
+                      ? formatTripDate(q.quote_versions.trip_date, { month: "short", day: "numeric" })
                       : "no date"}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground/70">
+                    {/* created_at is a full timestamp, not a plain calendar
+                        date, so it's safe to format directly — the UTC-midnight
+                        trap only applies to bare "YYYY-MM-DD" values. */}
+                    Submitted {new Date(q.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -667,14 +750,43 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
               <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[quote.status] ?? ""}`}>
                 {STATUS_LABEL[quote.status] ?? quote.status}
               </span>
+              <div className="mt-1.5 text-xs text-muted-foreground">
+                Submitted{" "}
+                {new Date(quote.created_at).toLocaleDateString("en-CA", {
+                  weekday: "short", month: "short", day: "numeric", year: "numeric",
+                })}
+                {" · "}
+                {new Date(quote.created_at).toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" })}
+              </div>
             </div>
             <label className="flex flex-col items-end gap-1">
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">Invoice # (editable)</span>
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                {hasInvoice ? "Invoice #" : "Invoice # (proposed)"}
+              </span>
               <input
                 value={invoiceNo}
-                onChange={(e) => setInvoiceNos((m) => ({ ...m, [quote.id]: e.target.value }))}
+                onChange={(e) => {
+                  setInvoiceNos((m) => ({ ...m, [quote.id]: e.target.value }));
+                  setFieldStatus((s) => ({ ...s, [`inv-${quote.id}`]: "" }));
+                }}
+                onBlur={() => handleSaveInvoiceNumber(quote.id)}
+                onKeyDown={inlineEditKeys(() => {
+                  const saved = savedInvoiceNos[quote.id];
+                  if (saved !== undefined) setInvoiceNos((m) => ({ ...m, [quote.id]: saved }));
+                })}
                 className="w-44 rounded-lg border border-input bg-background px-2.5 py-1 text-right text-sm font-semibold text-foreground shadow-sm outline-none ring-ring focus:ring-2"
               />
+              <span className="h-4 text-[11px]">
+                {invoiceFieldStatus === "saving" ? (
+                  <span className="text-muted-foreground">Saving…</span>
+                ) : invoiceFieldStatus === "saved" ? (
+                  <span className="text-emerald-600">Saved</span>
+                ) : invoiceFieldStatus ? (
+                  <span className="text-destructive">{invoiceFieldStatus}</span>
+                ) : !hasInvoice ? (
+                  <span className="text-muted-foreground">Saved when you approve</span>
+                ) : null}
+              </span>
             </label>
           </div>
         </div>
@@ -797,19 +909,37 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           <h4 className="mb-3 text-sm font-semibold text-foreground">Price</h4>
           {estimate ? (
             <div className="grid gap-1.5 text-sm">
+              {/* Hours live in one caption instead of being interleaved as
+                  rows among the dollar amounts — mixing the two units in a
+                  single list was the main thing making this hard to read. */}
+              <div className="rounded-lg bg-surface/60 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{estimate.billable_hours}h billable</span>
+                {" — "}
+                {estimate.billable_trip_hours}h trip + {(estimate.billable_hours - estimate.billable_trip_hours).toFixed(1)}h driver time
+                {estimate.approved_driver_hours != null ? " (Melody-approved)" : " (system estimate)"}
+                {estimate.billable_trip_hours > estimate.trip_hours && (
+                  <> · {estimate.min_hours}h minimum applied to trip time</>
+                )}
+              </div>
               <Kv
                 label="Base cost"
-                value={`${estimate.bus_count} × $${estimate.hourly_rate}/hr × ${estimate.billable_hours}h = ${formatMoney(estimate.base_cost)}`}
+                value={formatMoney(estimate.base_cost)}
+                sub={`${estimate.billable_hours}h × ${formatMoney(estimate.hourly_rate)}/hr${estimate.bus_count > 1 ? ` × ${estimate.bus_count} buses` : ""}`}
               />
-              <Kv label="Trip time" value={`${estimate.billable_trip_hours}h`} />
-              <Kv label="Driver time" value={`${(estimate.billable_hours - estimate.billable_trip_hours).toFixed(1)}h`} />
               <Kv label="Fuel fee" value={estimate.fuel_waived ? "Waived" : formatMoney(estimate.fuel_surcharge)} />
               {estimate.overtime_charge > 0 && (
                 <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
               )}
               {estimate.long_distance_charge > 0 && (
-                <Kv label={`Long-distance (${estimate.distance_km}km)`} value={formatMoney(estimate.long_distance_charge)} />
+                <Kv
+                  label="Long-distance"
+                  value={formatMoney(estimate.long_distance_charge)}
+                  sub={`${estimate.distance_km} km round trip`}
+                />
               )}
+              {/* Subtotal was missing entirely, so there was no way to check
+                  that GST was the right percentage of the right number. */}
+              <Kv label="Subtotal" value={formatMoney(estimate.subtotal)} />
               <Kv label={`GST (${estimate.gst_pct}%)`} value={formatMoney(estimate.gst)} />
               <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-semibold">
                 <span className="text-xs uppercase tracking-wide text-primary">Total</span>
@@ -846,6 +976,11 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                     defaultValue={currentApprovedHours ?? ""}
                     placeholder="system estimate"
                     onBlur={(e) => handleSetApprovedHours(quote.id, e.target.value)}
+                    onKeyDown={inlineEditKeys(() => {
+                      // Uncontrolled input (defaultValue) — restore by hand.
+                      const el = document.activeElement as HTMLInputElement | null;
+                      if (el) el.value = currentApprovedHours != null ? String(currentApprovedHours) : "";
+                    })}
                     className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
                   />
                 </label>
@@ -1036,11 +1171,16 @@ function fmtContact(c?: { name?: string; email?: string; phone?: string } | null
   return parts.length ? parts.join(" · ") : "—";
 }
 
-function Kv({ label, value }: { label: string; value: string }) {
+function Kv({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-3 py-2">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium text-foreground">{value}</span>
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+        {/* Optional second line for the working behind a number, so the
+            breakdown doesn't need a separate row per intermediate value. */}
+        {sub && <span className="mt-0.5 block normal-case tracking-normal text-[11px] text-muted-foreground/70">{sub}</span>}
+      </span>
+      <span className="shrink-0 text-sm font-medium text-foreground">{value}</span>
     </div>
   );
 }

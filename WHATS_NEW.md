@@ -383,18 +383,28 @@ deployed `main` site.
     being built as a functional addition in the near term. That's a
     content addition to the existing layout; this item is the broader
     visual/layout redesign, deferred and separate.
-  - **Small near-term addition, same category as the stops display
-    above** *(2026-07-20, low priority)*: show the quote **submission
-    date** (`created_at`) somewhere sensible in the admin UI — the list
-    row or the detail panel, whichever's easiest — it's not there today.
-    Just put it wherever fits for now rather than waiting on the redesign;
-    it's a small display addition, not worth its own design pass.
+  - ~~**Small near-term addition** *(2026-07-20)*: show the quote
+    **submission date** (`created_at`) somewhere sensible in the admin UI.~~
+    **DONE 2026-07-27** — added in both places: a compact "Submitted <date>"
+    line on each quote-queue row, and date + time on the quote detail panel.
+    - While in there, fixed a real off-by-one: the quote-queue list was
+      formatting `trip_date` with raw `new Date("YYYY-MM-DD")`, which parses
+      as UTC midnight and renders the **previous day** in Pacific time. It
+      now uses `formatTripDate`, the helper that exists specifically to
+      prevent this and was already imported in the same file.
   - **Concrete scope for this batch, gathered 2026-07-20 — do together
     post-launch, do NOT build now:**
     - **Quote detail view is hard to read/confusing — redesign for
       clarity.** Top priority within this batch.
-    - Simplify the calculations display (both admin and customer side) —
-      currently hard to read.
+    - ~~Simplify the calculations display (both admin and customer side).~~
+      **DONE 2026-07-27, both sides.** Customer estimate went from twelve
+      rows to eight; the three competing hours rows became one with the
+      breakdown as a sub-line, and Base cost now shows its own working.
+      Admin Price card no longer interleaves hours among dollar amounts —
+      hours moved into a single caption — and **gained a Subtotal row,
+      which was missing entirely**, so there was previously no way to check
+      GST against the number it's charged on. Display only; no pricing
+      variable was touched on either side.
     - Remove the "waive fuel" toggle section entirely; replace it with
       letting Melody directly edit *any* number inline (driver time, fuel
       fee, overtime — e.g. set fuel to $0, remove the overtime line).
@@ -405,12 +415,27 @@ deployed `main` site.
     - Invoiced section: organize completed+invoiced quotes into folders
       **by organization**, for record-keeping.
     - Sort/filter all quotes by date, organization, destination.
-    - **Bug, not a design question** — quote number editing on the admin
-      page doesn't actually save to the quote list; edits don't persist.
-      Confirm whether this needs its own quick fix before the redesign or
-      can ride along with it.
-    - "Enter to save" on admin edits — currently you have to click out of
-      the field for it to save.
+    - ~~**Bug** — quote number editing on the admin page doesn't save.~~
+      **FIXED 2026-07-27**, and the writeup had it slightly wrong: the
+      editable field is **Invoice #**, not Quote # (Quote # was always
+      display-only). Two real problems behind it:
+      1. Typing only updated React state. The value was passed to
+         `approve_quote` at approval time, so editing without approving —
+         or reloading — silently discarded it.
+      2. Worse: for already-approved quotes the page never read the stored
+         invoice number at all. It derived one by swapping `Q-` for `INV-`
+         on the quote number. That matches `approve_quote`'s *default*, so
+         it usually looked right — but any custom number Melody typed at
+         approval was then displayed incorrectly forever after.
+      Now reads real numbers from the `invoices` table, writes edits
+      straight through (the `invoices_admin_write` RLS policy already
+      allowed this — no migration needed), shows Saving/Saved feedback,
+      handles the unique-constraint collision with a plain-English message,
+      and labels the field "proposed" before approval when there's no
+      invoice row to write to yet.
+    - ~~"Enter to save" on admin edits.~~ **DONE 2026-07-27** — Enter
+      commits, Escape abandons the edit and restores the saved value. Applies
+      to both inline fields (invoice number, accurate driver time).
 - **Driver time — changes wanted** *(2026-07-27, specifics not yet
   captured)*: Mila has several edits in mind for how driver time works or is
   presented. **Ask her for the details before touching this** — nothing is
