@@ -339,6 +339,9 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const [quoteNoEdits, setQuoteNoEdits] = useState<Record<string, string>>({});
   // Per-field save feedback for inline admin edits: "saving" | "saved" | error text.
   const [fieldStatus, setFieldStatus] = useState<Record<string, string>>({});
+  // Two-step confirm for permanent deletion, plus a short-lived confirmation note.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletedNote, setDeletedNote] = useState<string | null>(null);
 
   // Action state
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -561,6 +564,25 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     const { error } = await supabase.rpc("set_quote_approved_driver_hours" as never, { p_quote_id: quoteId, p_hours: hours } as never);
     if (error) { setActionError(friendlyError(error.message)); return; }
     await handleEstimate(quoteId);
+  }
+
+  // Permanently remove a quote. The server refuses if it has a non-draft
+  // invoice or a completed trip, and snapshots everything to
+  // deleted_quote_log first — so this can clear test data but can't erase a
+  // real booking or a sent invoice.
+  async function handleDeleteQuote(quoteId: string) {
+    setActionBusy("delete"); setActionError(null);
+    const { data, error } = await supabase.rpc("delete_quote" as never, { p_quote_id: quoteId } as never);
+    setActionBusy(null);
+    if (error) { setActionError(friendlyError(error.message)); setConfirmDelete(false); return; }
+    const result = data as { quote_number: string };
+    setConfirmDelete(false);
+    setQuotes((prev) => {
+      const next = prev.filter((q) => q.id !== quoteId);
+      setSelected(next[0]?.id ?? null);
+      return next;
+    });
+    setDeletedNote(`${result.quote_number} deleted.`);
   }
 
   // Type over one price component, or pass null to clear the override and
@@ -1065,6 +1087,54 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
             >
               {quote.status === "confirmed" || quote.status === "scheduled" ? "Cancel booking" : "Reject quote"}
             </button>
+          </div>
+        )}
+
+        {/* Permanent deletion — deliberately separated from the reject/cancel
+            actions above, which are reversible status changes. This one isn't. */}
+        <div className="rounded-2xl border border-dashed border-rose-200 bg-rose-50/40 p-4">
+          {!confirmDelete ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">Delete permanently.</span>{" "}
+                Removes the quote, its versions and any draft invoice. Blocked if an invoice has
+                been sent or a trip was completed.
+              </div>
+              <button
+                onClick={() => { setConfirmDelete(true); setActionError(null); }}
+                className="shrink-0 rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+              >
+                Delete quote
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-rose-800">
+                Permanently delete <span className="font-semibold">{quote.quote_number}</span>? This can't be undone
+                from the app — a snapshot is kept in the deletion log for recovery by hand.
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={actionBusy === "delete"}
+                  onClick={() => handleDeleteQuote(quote.id)}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {actionBusy === "delete" ? "Deleting…" : "Yes, delete"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {deletedNote && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            {deletedNote}
           </div>
         )}
 

@@ -123,7 +123,10 @@ function DriverPage() {
   }
 
   if (loading) return null;
-  if (role !== "driver") return <Navigate to="/login" />;
+  // Admins may open the driver view to see what a driver sees. They have no
+  // assigned trips, so the lists render empty — that's the honest result, not
+  // a bug. Everyone else still gets bounced.
+  if (role !== "driver" && role !== "admin") return <Navigate to="/login" />;
 
   const today = todayISO();
   const todayLabel = new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" });
@@ -135,6 +138,12 @@ function DriverPage() {
   return (
     <div className="min-h-screen bg-surface">
       <AppTopBar />
+      {role === "admin" && (
+        <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-xs text-amber-900">
+          Viewing the driver dashboard as an admin — you have no assigned trips, so these lists are empty.{" "}
+          <a href="/admin" className="font-semibold underline">Back to admin</a>
+        </div>
+      )}
       {saveNote && (
         <div className={`fixed inset-x-0 bottom-4 z-50 mx-auto w-fit rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg ${saveNote.ok ? "bg-emerald-600" : "bg-rose-600"}`}>
           {saveNote.text}

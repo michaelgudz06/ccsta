@@ -79,7 +79,7 @@ type TripRow = {
 };
 
 function PortalPage() {
-  const { role, email, loading } = useAuth();
+  const { role, email, loading, user } = useAuth();
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [trips, setTrips] = useState<TripRow[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(true);
@@ -91,10 +91,16 @@ function PortalPage() {
 
   const load = useCallback(async () => {
     setQuotesLoading(true);
-    const { data: rows } = await supabase
+    // Explicitly scoped to the signed-in user. For customers this is what RLS
+    // enforces anyway, so it changes nothing — but an admin viewing this page
+    // would otherwise see EVERY customer's quotes here, which defeats the
+    // purpose of looking at the customer view.
+    let q = supabase
       .from("quotes")
       .select("id, quote_number, status, created_at, current_version_id, cancellation_requested_at, schools(name)")
       .order("created_at", { ascending: false });
+    if (user?.id) q = q.eq("customer_id", user.id);
+    const { data: rows } = await q;
     if (!rows) { setQuotesLoading(false); return; }
 
     const versionIds = rows.map((r: any) => r.current_version_id).filter(Boolean) as string[];
@@ -142,10 +148,10 @@ function PortalPage() {
       .order("trip_date", { ascending: true });
     setTrips((tripRows as TripRow[]) ?? []);
     setQuotesLoading(false);
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
-    if (loading || role !== "customer") return;
+    if (loading || (role !== "customer" && role !== "admin")) return;
     load();
   }, [loading, role, load]);
 
@@ -177,7 +183,9 @@ function PortalPage() {
 
   if (loading) return null;
   if (!role) return <Navigate to="/login" />;
-  if (role === "admin") return <Navigate to="/admin" />;
+  // Admins are allowed in so they can walk the customer journey themselves.
+  // They see only their OWN quotes here (the query filters by customer_id),
+  // not the whole queue — the point is to see what a customer sees.
   if (role === "driver") return <Navigate to="/driver" />;
 
   // Profile is derived from the customer's most recent quote.
@@ -189,6 +197,12 @@ function PortalPage() {
   return (
     <div className="min-h-screen bg-surface">
       <AppTopBar />
+      {role === "admin" && (
+        <div className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-xs text-amber-900">
+          Viewing the customer portal as an admin — showing only your own quotes.{" "}
+          <Link to="/admin" className="font-semibold underline">Back to admin</Link>
+        </div>
+      )}
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
