@@ -36,6 +36,16 @@ type Props = {
 export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUpdate, className }: Props) {
   const mapEl = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<Stage>({ status: "idle" });
+  // Same fix as RouteMap: both callbacks arrive as inline arrows from the
+  // quote form, so keeping them in the dependency array restarted this effect
+  // on every render and cancelled the in-flight geocoding before it could
+  // report a distance. Refs keep the latest callback without re-triggering.
+  const onResultRef = useRef(onResult);
+  const onGeocodeUpdateRef = useRef(onGeocodeUpdate);
+  useEffect(() => {
+    onResultRef.current = onResult;
+    onGeocodeUpdateRef.current = onGeocodeUpdate;
+  });
 
   useEffect(() => {
     const trimmed = addresses.map((a) => a.trim());
@@ -61,14 +71,14 @@ export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUp
           cache.set(key, coords);
         }
         points.push({ address: trimmed[i], lat: coords?.[0] ?? null, lng: coords?.[1] ?? null });
-        onGeocodeUpdate?.([...points]);
+        onGeocodeUpdateRef.current?.([...points]);
       }
       if (cancelled) return;
 
       const unresolved = points.filter((p) => p.lat == null);
       if (unresolved.length > 0) {
         setStage({ status: "partial", unresolved: unresolved.map((p) => p.address) });
-        onResult?.(null);
+        onResultRef.current?.(null);
         return;
       }
 
@@ -88,7 +98,7 @@ export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUp
       const route = rData.routes?.[0];
       if (!route) {
         setStage({ status: "error", message: "No driving route found through those stops." });
-        onResult?.(null);
+        onResultRef.current?.(null);
         return;
       }
 
@@ -103,7 +113,7 @@ export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUp
         isRush,
         bufferPct: Math.round(pct * 100),
       };
-      onResult?.(res);
+      onResultRef.current?.(res);
 
       if (!mapEl.current) { setStage({ status: "ready", result: res }); return; }
       const container = mapEl.current as HTMLDivElement & { _leaflet_id?: number };
@@ -126,7 +136,7 @@ export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUp
     })().catch((e) => {
       if (cancelled) return;
       setStage({ status: "error", message: "Map service is temporarily unavailable." });
-      onResult?.(null);
+      onResultRef.current?.(null);
       console.error("MultiStopRouteMap error:", e);
     });
 
@@ -137,7 +147,7 @@ export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUp
     // addresses is compared by content (JSON.stringify) since a fresh array
     // reference is expected on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(addresses), departTime, onResult, onGeocodeUpdate]);
+  }, [JSON.stringify(addresses), departTime]);
 
   if (stage.status === "idle") {
     return (

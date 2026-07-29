@@ -68,7 +68,37 @@ the next version number is computed via an unlocked `MAX+1`. The UI's
 edits to the same quote — both could succeed, producing duplicate version
 rows and a non-deterministic "last write wins" on `current_version_id`.
 
-### #6 — Failed geocode tells the customer "your estimate is still accurate" while a real surcharge may be missing 🔧 FIXING PRE-LAUNCH (paired with #8)
+### #6 — Failed geocode tells the customer "your estimate is still accurate" while a real surcharge may be missing ✅ FIXED 2026-07-27
+**Root cause was bigger than this writeup.** Investigated after Mila noticed
+"distance unavailable" on a test quote; **all six quotes in the database had
+`distance_km` null**, including ones whose addresses geocode perfectly.
+Three stacked problems:
+
+1. **The real one — effect restart cancelled every lookup.** `RouteMap`'s
+   effect listed `onResult` in its dependency array, and the quote form
+   passes it as an inline arrow, so its identity changed on every render.
+   Every keystroke anywhere in the form restarted the effect, setting
+   `cancelled = true` on the in-flight geocode before it could call back.
+   Since the chain takes 1–2s, the distance only ever landed if the customer
+   stopped typing entirely while the map was on screen. Fixed by holding the
+   callback in a ref and dropping it from the deps. `MultiStopRouteMap` had
+   the identical bug with `onResult` *and* `onGeocodeUpdate`.
+   - Side effect of the bug: every keystroke fired two Nominatim lookups plus
+     an OSRM route — abusive of free services and a rate-limit risk.
+2. **Unit numbers break Nominatim.** `2755 Lougheed Hwy #9, Port Coquitlam,
+   BC V3B 5Y9` returns an empty array (HTTP 200, zero results); the same
+   address without `#9` resolves first try. Verified live. Added
+   `addressVariants()`, which retries without unit/suite designators and then
+   without the postal code, spaced to respect the ≤1 req/sec policy.
+3. **The silent failure this bug was originally about.** Now surfaces an
+   honest message saying the estimate may not include a long-distance charge,
+   instead of nulling the error and claiming the estimate is still accurate.
+
+Note the two geocodes were also fired back-to-back under a comment claiming
+they were spaced for rate limiting — they weren't. Now actually spaced.
+
+Original writeup follows.
+
 `src/components/RouteMap.tsx:94-98` sets the error message to null on a
 failed geocode, rendering "Route preview not available for this address —
 your estimate is still accurate." But `distanceKm` stays null, so the

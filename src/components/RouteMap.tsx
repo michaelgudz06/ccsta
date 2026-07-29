@@ -60,19 +60,59 @@ export function loadLeaflet(): Promise<typeof import("leaflet")> {
   });
 }
 
+/**
+ * Progressively simpler forms of an address to try against Nominatim.
+ *
+ * Nominatim returns an empty array — not an error — for addresses it can't
+ * parse, and unit designators are a reliable way to trip it up. A real
+ * example from production: "2755 Lougheed Hwy #9, Port Coquitlam, BC V3B 5Y9"
+ * returns zero results, while the identical address without "#9" resolves
+ * first try. Customers type unit numbers all the time, so retry rather than
+ * silently losing the distance (and with it the long-distance surcharge).
+ */
+export function addressVariants(q: string): string[] {
+  const raw = q.trim();
+  const out = [raw];
+  // Drop "#9", "Unit 5", "Suite 200", "Apt 3B" and friends.
+  const noUnit = raw
+    .replace(/\s*#\s*[\w-]+/gi, "")
+    .replace(/\s*\b(unit|suite|ste|apt|apartment)\b\.?\s*[\w-]+/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+,/g, ",")
+    .trim();
+  if (noUnit && noUnit !== raw) out.push(noUnit);
+  // Drop a trailing Canadian postal code — occasionally the only bad token.
+  const noPostal = noUnit.replace(/,?\s*[A-Za-z]\d[A-Za-z]\s*\d[A-Za-z]\d\s*$/, "").trim();
+  if (noPostal && !out.includes(noPostal)) out.push(noPostal);
+  return out;
+}
+
 export async function geocode(q: string): Promise<[number, number] | null> {
   if (!q.trim()) return null;
   // Bias toward British Columbia, Canada for school-trip addresses.
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) return null;
-  const data = (await res.json()) as Array<{ lat: string; lon: string }>;
-  if (!data.length) return null;
-  return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  for (const variant of addressVariants(q)) {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(variant)}`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+    if (data.length) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+    // Only reached when a variant found nothing; Nominatim asks for <=1
+    // request per second, so pause before trying a simpler form.
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  return null;
 }
 
 export function RouteMap({ pickup, destination, departTime, onResult, className }: Props) {
   const mapEl = useRef<HTMLDivElement>(null);
+  // onResult is passed as an inline arrow from the quote form, so its identity
+  // changes on EVERY render. Having it in the effect's dependency array meant
+  // the effect restarted on every keystroke anywhere in the form, cancelling
+  // the in-flight geocode before it could report back — which is why quotes
+  // were being submitted with distance_km null regardless of address quality.
+  // Holding it in a ref keeps the latest callback without re-triggering.
+  const onResultRef = useRef(onResult);
+  useEffect(() => { onResultRef.current = onResult; });
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [result, setResult] = useState<RouteResult | null>(null);
@@ -87,12 +127,21 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
       setErrorMsg(null);
       try {
         const L = await loadLeaflet();
-        // Nominatim asks for <=1 req/sec — sequence the two geocodes.
+        // Nominatim asks for <=1 req/sec — space the two geocodes rather than
+        // just sequencing them, which is what the old comment claimed but
+        // didn't actually do.
         const from = await geocode(pickup);
+        await new Promise((r) => setTimeout(r, 1100));
         const to = await geocode(destination);
         if (cancelled) return;
         if (!from || !to) {
-          setErrorMsg(null); // silent — map just won't show, estimate still works
+          // Was silent, with the customer told their estimate was still
+          // accurate. It isn't necessarily: with no coordinates there's no
+          // distance, so any long-distance surcharge is quietly omitted.
+          // Say so plainly instead (BUG_BACKLOG #6).
+          setErrorMsg(
+            "We couldn't locate one of these addresses on the map, so this estimate may not include a long-distance charge. Your request will still go through and we'll confirm the final price.",
+          );
           setStatus("error");
           return;
         }
@@ -123,7 +172,7 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
           bufferPct: Math.round(pct * 100),
         };
         setResult(res);
-        onResult?.(res);
+        onResultRef.current?.(res);
 
         if (!mapEl.current) return;
         // Tear down any previous instance (re-render with new addresses).
@@ -154,7 +203,7 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
       cancelled = true;
       if (map) map.remove();
     };
-  }, [pickup, destination, departTime, onResult]);
+  }, [pickup, destination, departTime]);
 
   if (status === "idle") {
     return (
