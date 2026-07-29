@@ -437,8 +437,10 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     // One step: make sure a fresh price is calculated/persisted, then approve.
     const { error: calcErr } = await supabase.rpc("calculate_estimate" as never, { p_quote_id: quoteId } as never);
     if (calcErr) { setActionBusy(null); setActionError(friendlyError(calcErr.message)); return; }
-    // p_invoice_number is left null so approve_quote generates its default.
-    // Invoice numbers are deliberately not surfaced in the admin UI for now.
+    // p_invoice_number is vestigial: as of migration 057a, approve_quote no
+    // longer creates an invoice at all. Invoices are the post-trip bill and
+    // will be generated when that flow is built. The parameter is kept in the
+    // signature so older callers don't break.
     const { data, error } = await supabase.rpc("approve_quote" as never, {
       p_quote_id: quoteId,
       p_invoice_number: null,
@@ -556,12 +558,23 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
 
   // Melody's overrides — persisted immediately (independent of quote status),
   // then recalculated so she sees the updated total right away.
+  // The version id the admin is currently looking at. Passed to pricing
+  // writes so the server can refuse if the customer edited the quote in the
+  // meantime, instead of silently applying the change to their new version.
+  function expectedVersionId(quoteId: string): string | null {
+    return quotes.find((q) => q.id === quoteId)?.current_version_id ?? null;
+  }
+
   async function handleSetApprovedHours(quoteId: string, raw: string) {
     const trimmed = raw.trim();
     const hours = trimmed === "" ? null : Number(trimmed);
     if (hours !== null && (Number.isNaN(hours) || hours < 0)) return;
     setActionError(null);
-    const { error } = await supabase.rpc("set_quote_approved_driver_hours" as never, { p_quote_id: quoteId, p_hours: hours } as never);
+    const { error } = await supabase.rpc("set_quote_approved_driver_hours" as never, {
+      p_quote_id: quoteId,
+      p_hours: hours,
+      p_expected_version_id: expectedVersionId(quoteId),
+    } as never);
     if (error) { setActionError(friendlyError(error.message)); return; }
     await handleEstimate(quoteId);
   }
@@ -592,7 +605,10 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   async function handleSetPriceOverride(quoteId: string, field: string, value: number | null) {
     setActionError(null);
     const { error } = await supabase.rpc("set_quote_price_override" as never, {
-      p_quote_id: quoteId, p_field: field, p_value: value,
+      p_quote_id: quoteId,
+      p_field: field,
+      p_value: value,
+      p_expected_version_id: expectedVersionId(quoteId),
     } as never);
     if (error) { setActionError(friendlyError(error.message)); return; }
     await handleEstimate(quoteId);

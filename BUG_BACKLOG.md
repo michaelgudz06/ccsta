@@ -12,16 +12,29 @@ marked.
 - 🔧 **FIXING PRE-LAUNCH** — going in before deploy.
 - ⏭ **FAST-FOLLOW (post-launch)** — tracked, not blocking launch.
 
-Note: the two CRITICAL findings (#1, #2) are currently FAST-FOLLOW, not
-part of the four pre-launch fixes — flagging that explicitly since they're
-the most severe items on this list; confirm that's an intentional
-acceptance of risk for launch, not an oversight.
+~~Note: the two CRITICAL findings (#1, #2) are currently FAST-FOLLOW...~~
+**Both CRITICAL findings were fixed 2026-07-27**, along with #5, #6 and #17.
+The risk-acceptance question this note asked was answered on 2026-07-27:
+Mila had not been told about them, so they were fixed immediately rather
+than left as accepted risk.
 
 ---
 
 ## CRITICAL
 
-### #1 — Editing an approved/confirmed quote silently orphans its invoice ⏭ FAST-FOLLOW (post-launch)
+### #1 — Editing an approved/confirmed quote silently orphans its invoice ✅ RESOLVED 2026-07-27
+**Fixed by removing the cause, not the symptom (migration 057a).** The
+premise turned out to be wrong: `approve_quote` was creating an invoice at
+*approval*, long before the trip. Mila confirmed an invoice should be the
+bill a school pays AFTER the trip — and nothing in the system ever advanced
+an invoice past `draft` anyway, so the post-trip billing flow simply hadn't
+been built. The row was a price snapshot wearing an invoice costume.
+`approve_quote` no longer creates one; the approved price already lives on
+the quote version. Also fixed a latent failure nobody had hit: because
+`invoice_number` derives from the unchanging quote number, re-approving an
+edited quote would have hit a unique-constraint violation.
+
+Original writeup follows.
 `edit_own_quote` (migration 042) allows editing while status is `approved`
 or `confirmed`. `approve_quote` had already inserted a `draft` invoice row
 snapshotting the price at that point. No function ever updates or deletes
@@ -33,7 +46,20 @@ pricing fields nulled and status reset to `in_review`, but the $850 draft
 invoice just sits there, unlinked to reality, with nothing telling Melody
 it's stale.
 
-### #2 — No optimistic lock; admin pricing writes can race a customer's edit ⏭ FAST-FOLLOW (post-launch)
+### #2 — No optimistic lock; admin pricing writes can race a customer's edit ✅ FIXED 2026-07-27
+**Fixed in migration 057c.** `set_quote_approved_driver_hours` and
+`set_quote_price_override` now take the version id the admin was looking at
+and refuse the write if it no longer matches, with a message telling her to
+refresh. NULL skips the check so un-updated callers still work; the parameter
+was added with a DEFAULT and the old signature dropped, so it's backward
+compatible with no deploy ordering.
+
+Deliberately unguarded: `calculate_estimate` recomputes from the current
+version, so running it against a newer one is correct rather than a race.
+`approve_quote` was already protected — an edit nulls the new version's
+pricing and approval refuses a quote with no total.
+
+Original writeup follows.
 Neither `edit_own_quote` nor the admin pricing functions
 (`calculate_estimate`, driver-hours/fuel-waiver overrides, `confirm_trip`)
 check a version stamp before writing.
@@ -60,7 +86,14 @@ picked. No `min` on the date `<input>`, no server-side check either.
 **Scenario:** A customer can submit a brand-new quote for yesterday, or
 for the year 2099, with zero warning anywhere in the stack.
 
-### #5 — No DB-level protection against duplicate/racing edit submissions ⏭ FAST-FOLLOW (post-launch)
+### #5 — No DB-level protection against duplicate/racing edit submissions ✅ FIXED 2026-07-27
+**Fixed in migration 057b**, folded in with #2 since it's the same code.
+Added a UNIQUE constraint on `(quote_id, version_number)` so the database
+refuses duplicates outright, plus a `FOR UPDATE` row lock on the parent quote
+before reading `MAX(version_number)` so the second writer waits rather than
+racing and then failing.
+
+Original writeup follows.
 `quote_versions` has no unique constraint on `(quote_id, version_number)`;
 the next version number is computed via an unlocked `MAX+1`. The UI's
 `disabled={submitting}` only stops a literal double-click.
