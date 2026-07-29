@@ -315,6 +315,18 @@ type EstimateBreakdown = {
   gst_pct: number;
   gst: number;
   total: number;
+  // Migration 054: what the system would charge, alongside whichever fields
+  // Melody has typed over. `overrides` is null-per-field when not overridden.
+  system_base_cost: number;
+  system_fuel_surcharge: number;
+  system_overtime_charge: number;
+  system_long_distance_charge: number;
+  overrides: {
+    base_cost: number | null;
+    fuel: number | null;
+    overtime: number | null;
+    long_distance: number | null;
+  };
   destination_matched: string | null;
 };
 
@@ -339,7 +351,6 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   // Confirm step for approving a cancellation request
   const [confirmCancelTrip, setConfirmCancelTrip] = useState(false);
   // "Adjust" section (driver-time override + fuel waiver) — expanded by default
-  const [adjustExpanded, setAdjustExpanded] = useState(true);
 
   // Assignment panel
   const [assignment, setAssignment] = useState<AssignmentResult | null>(null);
@@ -411,7 +422,6 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     setActionError(null);
     setEstimate(null);
     setConfirmCancelTrip(false);
-    setAdjustExpanded(true);
     const q = quotes.find((x) => x.id === selected);
     if (q && ["requested", "in_review"].includes(q.status) && q.quote_versions?.total == null) {
       handleEstimate(q.id);
@@ -553,9 +563,15 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     await handleEstimate(quoteId);
   }
 
-  async function handleToggleFuelWaived(quoteId: string, waived: boolean) {
+  // Type over one price component, or pass null to clear the override and
+  // fall back to the system value. Recalculating afterwards re-derives
+  // subtotal/GST/total — those are never overridable, so the invoice can't
+  // disagree with its own line items.
+  async function handleSetPriceOverride(quoteId: string, field: string, value: number | null) {
     setActionError(null);
-    const { error } = await supabase.rpc("set_quote_fuel_waived" as never, { p_quote_id: quoteId, p_waived: waived } as never);
+    const { error } = await supabase.rpc("set_quote_price_override" as never, {
+      p_quote_id: quoteId, p_field: field, p_value: value,
+    } as never);
     if (error) { setActionError(friendlyError(error.message)); return; }
     await handleEstimate(quoteId);
   }
@@ -599,12 +615,6 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const canSchedule = quote.status === "approved" || quote.status === "confirmed";
   const isScheduled = quote.status === "scheduled";
   const isCancelled = quote.status === "cancelled";
-
-  // Melody's overrides — sourced from the latest recalculation if there's
-  // been one this session, otherwise from the persisted column. Editable
-  // regardless of quote status ("anytime, even after approval").
-  const currentApprovedHours = estimate?.approved_driver_hours ?? ver?.approved_driver_hours ?? null;
-  const currentFuelWaived = estimate?.fuel_waived ?? ver?.fuel_waived ?? false;
 
   // Passenger breakdown — aggregated the same way calculate_estimate classifies
   // young (K-4) vs older riders, so it works for both the new calculator's two
@@ -879,41 +889,114 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           )}
         </div>
 
-        {/* Section 2: Price — clean, only what the customer sees */}
+        {/* Section 2: Price — every component editable in place. Melody's
+            typed values survive recalculation; only untouched fields refresh. */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h4 className="mb-3 text-sm font-semibold text-foreground">Price</h4>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold text-foreground">Price</h4>
+            <button
+              disabled={estimateBusy || isCancelled}
+              onClick={() => handleEstimate(quote.id)}
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
+            >
+              {estimateBusy ? "Calculating…" : "Recalculate"}
+            </button>
+          </div>
           {estimate ? (
             <div className="grid gap-1.5 text-sm">
               {/* Hours live in one caption instead of being interleaved as
                   rows among the dollar amounts — mixing the two units in a
                   single list was the main thing making this hard to read. */}
-              <div className="rounded-lg bg-surface/60 px-3 py-2 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg bg-surface/60 px-3 py-2 text-xs text-muted-foreground">
                 <span className="font-semibold text-foreground">{estimate.billable_hours}h billable</span>
                 {" — "}
-                {estimate.billable_trip_hours}h trip + {(estimate.billable_hours - estimate.billable_trip_hours).toFixed(1)}h driver time
-                {estimate.approved_driver_hours != null ? " (Melody-approved)" : " (system estimate)"}
+                {estimate.billable_trip_hours}h trip +
+                {/* Driver time was the one override that used to live in the
+                    Adjust panel. It's editable here now, in the same place
+                    it's displayed, like every other number. */}
+                <input
+                  key={`dh-${quote.id}-${estimate.driver_hours_used}`}
+                  type="number" min={0} step={0.5}
+                  disabled={isCancelled}
+                  defaultValue={(estimate.billable_hours - estimate.billable_trip_hours).toFixed(1)}
+                  title="Driver time — total billable hours minus trip hours"
+                  onBlur={(e) => {
+                    const raw = e.target.value.trim();
+                    if (raw === "") { handleSetApprovedHours(quote.id, ""); return; }
+                    const driverPart = Number(raw);
+                    if (Number.isNaN(driverPart) || driverPart < 0) return;
+                    // approved_driver_hours is TOTAL billable hours, not just
+                    // the buffer — add the trip portion back before saving.
+                    handleSetApprovedHours(quote.id, String(estimate.billable_trip_hours + driverPart));
+                  }}
+                  onKeyDown={inlineEditKeys(() => {
+                    const el = document.activeElement as HTMLInputElement | null;
+                    if (el) el.value = (estimate.billable_hours - estimate.billable_trip_hours).toFixed(1);
+                  })}
+                  className="w-16 rounded border border-input bg-background px-1.5 py-0.5 text-xs text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+                />
+                h driver time
+                {estimate.approved_driver_hours != null ? " (manual)" : " (system)"}
                 {estimate.billable_trip_hours > estimate.trip_hours && (
                   <> · {estimate.min_hours}h minimum applied to trip time</>
                 )}
               </div>
-              <Kv
+              <PriceRowEditable
                 label="Base cost"
-                value={formatMoney(estimate.base_cost)}
                 sub={`${estimate.billable_hours}h × ${formatMoney(estimate.hourly_rate)}/hr${estimate.bus_count > 1 ? ` × ${estimate.bus_count} buses` : ""}`}
+                disabled={isCancelled}
+                effective={estimate.base_cost}
+                system={estimate.system_base_cost}
+                override={estimate.overrides.base_cost}
+                onSave={(v) => handleSetPriceOverride(quote.id, "base_cost", v)}
+                rowKey={`base-${quote.id}`}
               />
-              <Kv label="Fuel fee" value={estimate.fuel_waived ? "Waived" : formatMoney(estimate.fuel_surcharge)} />
-              {estimate.overtime_charge > 0 && (
-                <Kv label="Overtime" value={formatMoney(estimate.overtime_charge)} />
-              )}
-              {estimate.long_distance_charge > 0 && (
-                <Kv
-                  label="Long-distance"
-                  value={formatMoney(estimate.long_distance_charge)}
-                  sub={`${estimate.distance_km} km round trip`}
+              <PriceRowEditable
+                label="Fuel fee"
+                disabled={isCancelled}
+                effective={estimate.fuel_surcharge}
+                system={estimate.system_fuel_surcharge}
+                override={estimate.overrides.fuel}
+                onSave={(v) => handleSetPriceOverride(quote.id, "fuel", v)}
+                rowKey={`fuel-${quote.id}`}
+                // Waive is just "set this component to zero" — one mechanism
+                // instead of a separate boolean that could disagree with the
+                // typed value.
+                action={
+                  estimate.fuel_surcharge === 0
+                    ? { label: "Un-waive", onClick: () => handleSetPriceOverride(quote.id, "fuel", null) }
+                    : { label: "Waive", onClick: () => handleSetPriceOverride(quote.id, "fuel", 0) }
+                }
+              />
+              {/* Overtime and long-distance stay hidden while they're zero AND
+                  untouched — showing two permanent $0.00 rows to every quote
+                  was noise. They appear as soon as either the system charges
+                  them or Melody types one in. */}
+              {(estimate.system_overtime_charge > 0 || estimate.overrides.overtime != null) && (
+                <PriceRowEditable
+                  label="Overtime"
+                  disabled={isCancelled}
+                  effective={estimate.overtime_charge}
+                  system={estimate.system_overtime_charge}
+                  override={estimate.overrides.overtime}
+                  onSave={(v) => handleSetPriceOverride(quote.id, "overtime", v)}
+                  rowKey={`ot-${quote.id}`}
                 />
               )}
-              {/* Subtotal was missing entirely, so there was no way to check
-                  that GST was the right percentage of the right number. */}
+              {(estimate.system_long_distance_charge > 0 || estimate.overrides.long_distance != null) && (
+                <PriceRowEditable
+                  label="Long-distance"
+                  sub={`${estimate.distance_km} km`}
+                  disabled={isCancelled}
+                  effective={estimate.long_distance_charge}
+                  system={estimate.system_long_distance_charge}
+                  override={estimate.overrides.long_distance}
+                  onSave={(v) => handleSetPriceOverride(quote.id, "long_distance", v)}
+                  rowKey={`ld-${quote.id}`}
+                />
+              )}
+              {/* Subtotal, GST and Total are derived, never editable — that's
+                  what keeps GST an honest calculation on a real subtotal. */}
               <Kv label="Subtotal" value={formatMoney(estimate.subtotal)} />
               <Kv label={`GST (${estimate.gst_pct}%)`} value={formatMoney(estimate.gst)} />
               <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-semibold">
@@ -924,71 +1007,6 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           ) : (
             <div className="grid gap-2 text-sm">
               <Kv label="Estimated total" value={ver?.total != null ? formatMoney(Number(ver.total)) : "Calculating…"} />
-            </div>
-          )}
-        </div>
-
-        {/* Section 3: Adjust — collapsible, expanded by default. Melody's
-            overrides + the pricing-internal working numbers live here. */}
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <button onClick={() => setAdjustExpanded((v) => !v)} className="flex w-full items-center justify-between text-left">
-            <h4 className="text-sm font-semibold text-foreground">
-              Adjust <span className="font-normal text-muted-foreground">(overrides &amp; working numbers)</span>
-            </h4>
-            <span className="text-xs text-muted-foreground">{adjustExpanded ? "Hide ▲" : "Show ▼"}</span>
-          </button>
-
-          {adjustExpanded && (
-            <div className="mt-3 space-y-3">
-              <div className="grid gap-3 rounded-xl border border-dashed border-border p-3 sm:grid-cols-2">
-                <label className="text-sm">
-                  <span className="font-medium text-foreground">Accurate driver time (hrs)</span>
-                  <span className="ml-1 text-xs text-muted-foreground">— overrides the system estimate</span>
-                  <input
-                    key={quote.id}
-                    type="number" min={0} step={0.5}
-                    disabled={isCancelled}
-                    defaultValue={currentApprovedHours ?? ""}
-                    placeholder="system estimate"
-                    onBlur={(e) => handleSetApprovedHours(quote.id, e.target.value)}
-                    onKeyDown={inlineEditKeys(() => {
-                      // Uncontrolled input (defaultValue) — restore by hand.
-                      const el = document.activeElement as HTMLInputElement | null;
-                      if (el) el.value = currentApprovedHours != null ? String(currentApprovedHours) : "";
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    disabled={isCancelled}
-                    checked={currentFuelWaived}
-                    onChange={(e) => handleToggleFuelWaived(quote.id, e.target.checked)}
-                    className="h-4 w-4 rounded border-input"
-                  />
-                  <span className="font-medium text-foreground">Waive $50 fuel fee</span>
-                </label>
-              </div>
-
-              {estimate && (
-                <div className="grid gap-1.5 text-sm">
-                  <Kv label="Per-location reference (informational)" value={`${estimate.reference_driver_hours}h`} />
-                  <Kv label="System estimate (flat 1hr buffer)" value={`${estimate.system_driver_hours}h`} />
-                  <Kv
-                    label="Driver time used for billing"
-                    value={`${estimate.driver_hours_used}h ${estimate.approved_driver_hours != null ? "(Melody-approved)" : "(system estimate)"}`}
-                  />
-                </div>
-              )}
-
-              <button
-                disabled={estimateBusy || isCancelled}
-                onClick={() => handleEstimate(quote.id)}
-                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
-              >
-                {estimateBusy ? "Calculating…" : "Recalculate"}
-              </button>
             </div>
           )}
         </div>
@@ -1146,16 +1164,105 @@ function fmtContact(c?: { name?: string; email?: string; phone?: string } | null
   return parts.length ? parts.join(" · ") : "—";
 }
 
+/**
+ * One editable money row in the admin price breakdown.
+ *
+ * `effective` is what's actually charged, `system` is what the pricing
+ * function would charge on its own, and `override` is non-null only when
+ * Melody has typed a value in. Clearing the box restores the system value —
+ * that's the only way back, which is why the reset affordance is always
+ * visible while an override is active.
+ */
+function PriceRowEditable({
+  label, sub, effective, system, override, onSave, disabled, rowKey, action,
+}: {
+  label: string;
+  sub?: string;
+  effective: number;
+  system: number;
+  override: number | null;
+  onSave: (value: number | null) => void;
+  disabled?: boolean;
+  // Remounts the uncontrolled input when the underlying number changes, so a
+  // recalculation is reflected instead of leaving a stale value on screen.
+  rowKey: string;
+  action?: { label: string; onClick: () => void };
+}) {
+  const isOverridden = override != null;
+  const commit = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === "") { onSave(null); return; }          // cleared -> system value
+    const n = Number(trimmed.replace(/[$,]/g, ""));
+    if (Number.isNaN(n) || n < 0) return;
+    if (n === effective) return;                            // no change
+    onSave(n);
+  };
+  return (
+    <div className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 ${
+      isOverridden ? "border-amber-300 bg-amber-50/60" : "border-border bg-surface"
+    }`}>
+      <span className="min-w-0 text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+        {(sub || isOverridden) && (
+          <span className="mt-0.5 block normal-case tracking-normal text-[11px] text-muted-foreground/70">
+            {isOverridden ? `Manually set · system says ${formatMoney(system)}` : sub}
+          </span>
+        )}
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        {isOverridden && (
+          <button
+            onClick={() => onSave(null)}
+            disabled={disabled}
+            className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+          >
+            Reset
+          </button>
+        )}
+        {action && (
+          <button
+            onClick={action.onClick}
+            disabled={disabled}
+            className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+          >
+            {action.label}
+          </button>
+        )}
+        <input
+          key={`${rowKey}-${effective}`}
+          defaultValue={effective.toFixed(2)}
+          disabled={disabled}
+          inputMode="decimal"
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+            else if (e.key === "Escape") {
+              e.preventDefault();
+              e.currentTarget.value = effective.toFixed(2);
+              e.currentTarget.blur();
+            }
+          }}
+          className="w-24 rounded border border-input bg-background px-2 py-0.5 text-right text-sm font-medium text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+        />
+      </span>
+    </div>
+  );
+}
+
 function Kv({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+      <span className="min-w-0 shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
         {label}
         {/* Optional second line for the working behind a number, so the
             breakdown doesn't need a separate row per intermediate value. */}
         {sub && <span className="mt-0.5 block normal-case tracking-normal text-[11px] text-muted-foreground/70">{sub}</span>}
       </span>
-      <span className="shrink-0 text-sm font-medium text-foreground">{value}</span>
+      {/* min-w-0 + break-words let long values (addresses especially) wrap
+          inside the box instead of overflowing it. A shrink-0 here would keep
+          money amounts on one line but pushes a long street address out the
+          side, which is the wrong trade for a shared component. */}
+      <span className="min-w-0 break-words text-right text-sm font-medium text-foreground">{value}</span>
     </div>
   );
 }

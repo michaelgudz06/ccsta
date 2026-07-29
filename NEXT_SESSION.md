@@ -101,16 +101,49 @@ git push origin main --force-with-lease
 - **Migrations applied to the live DB: through `051`** (051 applied
   2026-07-24, confirmed live via `has_trip_type_row` / `has_students_row` /
   `has_dropoff_row` all true).
-- **`052` and `053` are written and committed but NOT applied** (2026-07-27):
-  - **052 — fiscal-year quote numbers.** `Q-2026-0126` becomes `Q-2027-001`.
-    CCSTA's fiscal year runs July→June, so July 2026 onward is FY2027. Adds
-    `_fiscal_year()` and a `quote_number_counters` table; the counter
-    restarts each July. Uses `INSERT … ON CONFLICT DO UPDATE … RETURNING`,
-    which row-locks per fiscal year — deliberately not `max()+1`, which
-    would race (the BUG_BACKLOG #5 class). `quote_number_seq` is kept, not
-    dropped, so reverting doesn't need it rebuilt.
-    - The `submit_quote` body was diffed against **051** (the verified live
-      version) and differs by exactly the one quote-number line.
+- **`052` and `054` are APPLIED; `053` is written but deliberately NOT
+  applied** (2026-07-27).
+- **`054` — price overrides + invoice tax fix. APPLIED.** Adds four nullable
+  override columns to `quote_versions` (base cost, fuel, overtime,
+  long-distance) plus a `set_quote_price_override` RPC, so Melody types over
+  any component in place. Subtotal/GST/total stay derived and are NOT
+  overridable — that's what keeps an invoice consistent with its own line
+  items. Overrides survive recalculation by design; only untouched fields
+  refresh.
+  - **Fixed a real invoice bug in the same pass.** `approve_quote` was
+    writing `quote_versions.subtotal` (which holds BASE COST) into
+    `invoices.subtotal`, and `surcharge_total` (FEES) into
+    `invoices.tax_amount`. So every invoice labelled the fuel fee as tax and
+    omitted GST entirely — observed as 555.00 + 50.00 = 605.00 against a
+    total of 635.25, the missing 30.25 being GST. Now subtotal = base + fees
+    and tax = total − subtotal, so the parts always add up. **Existing
+    invoice rows were left alone** (only one, a draft on a test quote).
+  - **Restored a guard that had been silently reverted:** migration 022's
+    "never approve a quote with no price" was missing from the live body —
+    a later migration was based on a pre-022 version. Without it, approving
+    an unpriced quote created a $0 invoice.
+  - Both function bodies were pulled from the live DB with
+    `pg_get_functiondef` immediately before editing, not copied from
+    migration files.
+- **A Supabase MCP connector is now available in Cowork sessions**, so the
+  paste-SQL-into-Studio-and-report-back workflow is no longer necessary —
+  live function bodies and data can be read directly. Note
+  `calculate_estimate` still can't be *called* through it: it requires
+  `auth.uid()`, which the connector has no context for. Exercise it via the
+  UI instead.
+- **`052` — fiscal-year quote numbers. APPLIED 2026-07-27.** `Q-2026-0126`
+  becomes `Q-2027-001`. CCSTA's fiscal year runs July→June, so July 2026
+  onward is FY2027. Adds `_fiscal_year()` and a `quote_number_counters`
+  table; the counter restarts each July. Uses `INSERT … ON CONFLICT DO
+  UPDATE … RETURNING`, which row-locks per fiscal year — deliberately not
+  `max()+1`, which would race (the BUG_BACKLOG #5 class).
+  `quote_number_seq` is kept, not dropped, so reverting doesn't need it
+  rebuilt. The `submit_quote` body was diffed against 051 (the verified live
+  version) and differs by exactly the one quote-number line.
+  - Counter table is currently empty, so **the next new quote will be
+    `Q-2027-001`** while the six existing quotes keep their `Q-2026-xxxx`
+    numbers. That mixed state is intentional pending the 053 decision.
+- **`053` is written and committed but NOT applied** (2026-07-27):
   - **053 — renumbers the 6 existing quotes** to `Q-2027-001…006` by
     `created_at`, logs old→new in a new `quote_number_renumber_log` table,
     and seeds the counter so the next submission gets 007. **Apply 052
