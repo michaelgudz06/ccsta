@@ -153,7 +153,18 @@ clicking Cancel/Accept in the portal sees a literal
 **Scenario:** Customer loses connection mid-submit, sees a raw
 stack-trace-flavored error string instead of a friendly message.
 
-### #8 — Best-effort follow-up RPCs after a successful submit discard their errors 🔧 FIXING PRE-LAUNCH (paired with #6)
+### #8 — Best-effort follow-up RPCs after a successful submit discard their errors ✅ FIXED 2026-07-27
+`set_quote_distance_km` and `set_quote_driver_preference` fire after the quote
+is already saved and only `console.error`'d on failure — so a transient blip
+produced a quote with no distance, and therefore no long-distance charge,
+with nobody the wiser. Now routed through `saveWithRetry()`: one retry after
+600ms, and a persistent failure is recorded against the quote via
+`log_client_issue` (migration 058) so it lands somewhere a human looks rather
+than in a console the customer will never open. Deliberately still not shown
+to the customer — their quote *did* submit, and alarming them would be wrong.
+The admin "distance unavailable" flag remains the visible backstop.
+
+Original writeup follows.
 `quote.tsx:606-608, 621-623, 625-627` (`set_quote_distance_km`,
 `set_quote_driver_preference`) are bare `await supabase.rpc(...)` calls
 with no `error` read at all. The success screen shows regardless.
@@ -174,7 +185,16 @@ tabs silently overwrite each other's in-progress draft, no warning.
 Typing "999" instantly renders 999 pickup/dropoff pairs and would submit a
 999-element array.
 
-### #11 — Midnight-wraparound math silently masks data-entry errors ⏭ FAST-FOLLOW (post-launch)
+### #11 — Midnight-wraparound math silently masks data-entry errors ✅ FIXED 2026-07-27
+Submission is now blocked when the return time is at or before the departure
+time, with a message pointing at the likely AM/PM slip. Previously the
+duration helper added 24 hours and carried on, so 9:00 AM → 4:00 AM became a
+19-hour billable trip instead of an obvious typo. The wraparound arithmetic is
+kept so the live preview never flashes a negative duration mid-edit, but it's
+no longer reachable at submit. Checked the live database first: no existing
+quote crosses midnight, so there was no bad data to correct.
+
+Original writeup follows.
 `quote.tsx:403-410`'s `if (diff < 0) diff += 24*60` applies uncritically.
 A customer who swaps depart/return by mistake gets a silent 17-hour
 "overnight" interpretation feeding straight into the live price estimate,
@@ -190,7 +210,15 @@ Every `.from(...)` call in `portal.tsx:load()` (lines 93-142) ignores
 `error`. A failed query looks identical to a customer who genuinely has
 zero quotes.
 
-### #14 — No timeout on geocoding/routing fetches ⏭ FAST-FOLLOW (post-launch)
+### #14 — No timeout on geocoding/routing fetches ✅ FIXED 2026-07-27
+Added `fetchWithTimeout` (8s, AbortController) and routed every Nominatim and
+OSRM call in both `RouteMap` and `MultiStopRouteMap` through it. Nominatim and
+the public OSRM demo server are free services with no SLA; a hung request left
+the chain waiting forever, so `distance_km` stayed null and the long-distance
+charge silently vanished — same outcome as a failed geocode but with no error
+to react to. Verified in-browser that the abort fires rather than hanging.
+
+Original writeup follows.
 `RouteMap.tsx`/`MultiStopRouteMap.tsx` never use `AbortController`. A hung
 Nominatim/OSRM request looks identical to "still working," indefinitely.
 

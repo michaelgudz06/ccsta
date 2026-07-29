@@ -87,12 +87,30 @@ export function addressVariants(q: string): string[] {
   return out;
 }
 
+/**
+ * fetch with a hard timeout (BUG_BACKLOG #14).
+ *
+ * Nominatim and the public OSRM demo server are free services with no SLA. A
+ * request that hangs rather than fails leaves the route chain waiting forever,
+ * so distance_km stays null and the long-distance charge silently disappears —
+ * the same end result as a failed geocode, but with no error to react to.
+ */
+export async function fetchWithTimeout(url: string, ms = 8000, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function geocode(q: string): Promise<[number, number] | null> {
   if (!q.trim()) return null;
   // Bias toward British Columbia, Canada for school-trip addresses.
   for (const variant of addressVariants(q)) {
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ca&q=${encodeURIComponent(variant)}`;
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    const res = await fetchWithTimeout(url, 8000, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const data = (await res.json()) as Array<{ lat: string; lon: string }>;
     if (data.length) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
@@ -148,7 +166,7 @@ export function RouteMap({ pickup, destination, departTime, onResult, className 
 
         // OSRM driving route (free-flow, no live traffic).
         const osrm = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
-        const rRes = await fetch(osrm);
+        const rRes = await fetchWithTimeout(osrm);
         const rData = (await rRes.json()) as {
           routes?: Array<{ distance: number; duration: number; geometry: { coordinates: [number, number][] } }>;
         };

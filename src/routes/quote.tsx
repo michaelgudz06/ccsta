@@ -49,6 +49,45 @@ const maxFutureDateStr = () => {
   return dateStr(d);
 };
 
+/**
+ * Run a follow-up write that happens AFTER the quote is already safely
+ * submitted, retrying once before giving up (BUG_BACKLOG #8).
+ *
+ * These writes can't fail loudly at the customer — their quote did submit, and
+ * an alarming error would be both confusing and wrong. But swallowing the
+ * failure entirely is how a quote ends up with no distance and therefore no
+ * long-distance charge. So: retry once for the transient case, and on a
+ * persistent failure record it against the quote so it surfaces to an admin
+ * rather than dying in a console the customer will never open.
+ */
+async function saveWithRetry(
+  fn: () => PromiseLike<{ error: unknown }>,
+  label: string,
+  quoteId: string,
+): Promise<void> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const { error } = await fn();
+    if (!error) return;
+    if (attempt === 1) {
+      await new Promise((r) => setTimeout(r, 600));
+      continue;
+    }
+    console.error(`${label} failed after retry:`, error);
+    // Best-effort breadcrumb. If even this fails there's nothing further the
+    // browser can usefully do, and the admin "distance unavailable" flag
+    // remains the backstop.
+    try {
+      await supabase.rpc("log_client_issue" as never, {
+        p_quote_id: quoteId,
+        p_source: label,
+        p_detail: String((error as { message?: string })?.message ?? error).slice(0, 500),
+      } as never);
+    } catch {
+      /* nothing left to try */
+    }
+  }
+}
+
 const TRIP_TYPE_OPTIONS: { value: TripType; label: string; hint: string }[] = [
   { value: "two_way", label: "Two-way", hint: "Round trip — we drop your group off and pick them back up." },
   { value: "one_way", label: "One-way", hint: "Drop-off only, no return." },
@@ -539,7 +578,12 @@ function QuotePage() {
     ? allMultiStopArrivals.reduce((max, t) => (t > max ? t : max), "")
     : returnTime;
 
-  // Trip-duration helper (minutes)
+  // Trip-duration helper (minutes).
+  //
+  // The +24h wraparound is kept so the live preview never shows a negative
+  // duration while someone is mid-edit, but submission is now blocked when the
+  // return is at or before the departure (BUG_BACKLOG #11) — otherwise an
+  // AM/PM slip quietly becomes a 19-hour billable trip.
   const tripMinutes = (() => {
     if (!envelopeDepart || !envelopeReturn) return null;
     const [dh, dm] = envelopeDepart.split(":").map(Number);
@@ -649,6 +693,15 @@ function QuotePage() {
         e.returnTime = tripType === "one_way"
           ? "Please enter the drop-off time."
           : "Please enter the pick-up time from the destination.";
+      } else if (departTime && returnTime <= departTime) {
+        // BUG_BACKLOG #11. The duration helper adds 24h when the return is
+        // earlier than the departure, treating it as an overnight trip. For a
+        // single-date school field trip that's almost always an AM/PM slip,
+        // and silently turning a 5-hour trip into a 19-hour one is a real
+        // money error. Catch it here rather than quietly billing it.
+        e.returnTime = returnTime === departTime
+          ? "The end time is the same as the start time — please check these."
+          : "This time is earlier in the day than the departure time — please check whether it should be AM or PM.";
       }
     }
 
@@ -784,16 +837,24 @@ function QuotePage() {
     // the quote itself is already submitted successfully at this point, so a
     // failure here isn't worth alarming the customer over.
     if (driverPref.trim() && result.quote_id) {
-      const { error: prefErr } = await supabase.rpc("set_quote_driver_preference" as never, { p_quote_id: result.quote_id, p_pref: driverPref.trim() } as never);
-      if (prefErr) console.error("set_quote_driver_preference failed:", prefErr);
+      await saveWithRetry(
+        () => supabase.rpc("set_quote_driver_preference" as never, { p_quote_id: result.quote_id, p_pref: driverPref.trim() } as never),
+        "set_quote_driver_preference",
+        result.quote_id,
+      );
     }
     // Save the route distance so the server-side estimate can apply the
-    // long-distance surcharge (best-effort). If this fails, distance_km
-    // stays null on the quote -- caught by the admin-side "distance
-    // unavailable" flag, which is the real safety net for the money here.
+    // long-distance surcharge. BUG_BACKLOG #8: this used to log to the console
+    // and move on, which meant a transient network blip silently produced a
+    // quote with no distance -- and therefore no long-distance charge -- with
+    // nobody the wiser. Retried once, and a persistent failure is reported to
+    // the server so it lands somewhere a human looks.
     if (distanceKm != null && result.quote_id) {
-      const { error: distErr } = await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: result.quote_id, p_distance_km: distanceKm } as never);
-      if (distErr) console.error("set_quote_distance_km failed:", distErr);
+      await saveWithRetry(
+        () => supabase.rpc("set_quote_distance_km" as never, { p_quote_id: result.quote_id, p_distance_km: distanceKm } as never),
+        "set_quote_distance_km",
+        result.quote_id,
+      );
     }
     dispatchNotifications();
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { type RouteResult, geocode, loadLeaflet, rushBuffer } from "@/components/RouteMap";
+import { type RouteResult, geocode, loadLeaflet, rushBuffer, fetchWithTimeout } from "@/components/RouteMap";
 
 // Multi-destination route: pickup -> stop 1 -> stop 2 -> ... -> return leg,
 // geocoded in order and routed as ONE OSRM multi-waypoint request (OSRM
@@ -90,7 +90,7 @@ export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUp
       // stops reordered). OSRM returns the TOTAL distance across every leg.
       const coordStr = points.map((p) => `${p.lng},${p.lat}`).join(";");
       const osrm = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
-      const rRes = await fetch(osrm);
+      const rRes = await fetchWithTimeout(osrm);
       const rData = (await rRes.json()) as {
         routes?: Array<{ distance: number; duration: number; geometry: { coordinates: [number, number][] } }>;
       };
