@@ -161,7 +161,7 @@ export function MultiStopRouteMap({ addresses, departTime, onResult, onGeocodeUp
     return (
       <div className={`rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 ${className ?? ""}`}>
         ⚠ Route preview not available — {stage.unresolved.length} address{stage.unresolved.length > 1 ? "es" : ""} couldn't
-        be located: {stage.unresolved.join(", ")}. Your request will still go through — Melody will confirm the route by hand.
+        be located: {stage.unresolved.join(", ")}. Your request will still go through — we'll confirm the route by hand.
       </div>
     );
   }

@@ -276,8 +276,8 @@ function Contact() {
             />
           </div>
           <div className="flex h-full flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-soft sm:p-8">
-            <ContactRow icon={<Phone className="h-4 w-4" />} label="ALAN - OPERATIONS MANAGER" value={COMPANY.phoneAlan} />
-            <ContactRow icon={<Phone className="h-4 w-4" />} label="MELODY - DISPATCH OFFICE" value={COMPANY.phoneMelody} />
+            <ContactRow icon={<Phone className="h-4 w-4" />} label="OPERATIONS" value={COMPANY.phoneOperations} />
+            <ContactRow icon={<Phone className="h-4 w-4" />} label="DISPATCH OFFICE" value={COMPANY.phoneDispatch} />
             <ContactRow icon={<Mail className="h-4 w-4" />} label="Email" value={COMPANY.email} />
             <div className="pt-2">
               <Button asChild variant="accent" size="lg" className="w-full">
@@ -323,8 +323,8 @@ function SiteFooter() {
           <div className="text-sm font-semibold text-foreground">Contact</div>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
             <li>{COMPANY.email}</li>
-            <li>Operations : {COMPANY.phoneAlan}</li>
-            <li>Dispatch : {COMPANY.phoneMelody}</li>
+            <li>Operations : {COMPANY.phoneOperations}</li>
+            <li>Dispatch : {COMPANY.phoneDispatch}</li>
           </ul>
         </div>
       </div>

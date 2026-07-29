@@ -159,7 +159,7 @@ function PortalPage() {
     const { error } = await supabase.rpc(fn as any, { p_quote_id: quoteId, ...extraArgs });
     setActionBusy(null);
     if (error) {
-      setActionError(friendlyError(error, `Something went wrong. Please try again, or call us at ${COMPANY.phoneMelody} if it keeps happening.`));
+      setActionError(friendlyError(error, `Something went wrong. Please try again, or call us at ${COMPANY.phoneDispatch} if it keeps happening.`));
       return;
     }
     dispatchNotifications();
@@ -334,7 +334,7 @@ function PortalPage() {
                         {cancelPending && (
                           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                             We've received your cancellation request — the office will confirm it shortly.
-                            Need it urgently? Call us at {COMPANY.phoneMelody}.
+                            Need it urgently? Call us at {COMPANY.phoneDispatch}.
                           </p>
                         )}
 
@@ -468,7 +468,7 @@ function PortalPage() {
               <ProfRow label="Phone" value={profileContact?.phone || "—"} />
               <p className="mt-4 flex items-center gap-2 rounded-xl bg-accent/20 px-3 py-2 text-xs text-primary">
                 <Phone className="h-3.5 w-3.5" />
-                Need help? Contact Melody at {COMPANY.phoneMelody}
+                Need help? Call us at {COMPANY.phoneDispatch}
               </p>
             </div>
           </div>

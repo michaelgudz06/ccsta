@@ -752,7 +752,7 @@ function QuotePage() {
       } as never);
       setSubmitting(false);
       if (error) {
-        setSubmitError(friendlyError(error, `We couldn't save your changes. Please try again, or call us at ${COMPANY.phoneMelody}.`));
+        setSubmitError(friendlyError(error, `We couldn't save your changes. Please try again, or call us at ${COMPANY.phoneDispatch}.`));
         return;
       }
       // Save the route distance so the server-side estimate can apply the
@@ -776,7 +776,7 @@ function QuotePage() {
     });
     setSubmitting(false);
     if (error) {
-      setSubmitError(friendlyError(error, `We couldn't submit your quote request. Please try again, or call us at ${COMPANY.phoneMelody}.`));
+      setSubmitError(friendlyError(error, `We couldn't submit your quote request. Please try again, or call us at ${COMPANY.phoneDispatch}.`));
       return;
     }
     const result = data as { quote_number: string; quote_id: string };
@@ -899,7 +899,7 @@ function QuotePage() {
             <h1 className="mt-5 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Request received!</h1>
             <p className="mt-3 text-muted-foreground">
               Your quote number is <span className="font-semibold text-foreground">{submittedQuoteNo}</span>.
-              Melody or Alan will review it and send you a confirmed price — usually within one business day.
+              Our staff will review it and send you a confirmed price — usually within one business day.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <Button variant="hero" size="lg" onClick={() => navigate({ to: "/portal" })}>
@@ -965,14 +965,14 @@ function QuotePage() {
                 <h2 className="text-lg font-bold text-foreground">Booking across multiple days?</h2>
                 <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
                   Planning several separate trips on different days is arranged directly with our office
-                  rather than through this instant-estimate form. Reach out and Melody will put a custom
+                  rather than through this instant-estimate form. Reach out and we'll put a custom
                   quote together for you.
                 </p>
                 <a
                   href={`mailto:${COMPANY.email}`}
                   className="mt-4 inline-block font-semibold text-primary hover:underline"
                 >
-                  Contact Melody — {COMPANY.email}
+                  Contact us — {COMPANY.email}
                 </a>
               </div>
             ) : (
@@ -1181,7 +1181,7 @@ function QuotePage() {
               {tripType === "multi_destination" && (
                 <p className="text-xs text-muted-foreground">
                   Your bus is booked from the earliest stop time to the latest. If an address can't be located
-                  automatically, your request still goes through — Melody will confirm the route by hand.
+                  automatically, your request still goes through — we'll confirm the route by hand.
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
@@ -1349,7 +1349,7 @@ function QuotePage() {
                 <p className="mt-4 text-xs leading-relaxed text-white/50">
                   Driver time is the {DRIVER_TIME_BUFFER_HOURS} hr we add for getting the bus to your pickup and back.
                   {minimumApplied && ` We bill a ${minHours} hr minimum on trip time, which is why the hours above may look longer than your trip.`}
-                  {" "}Melody or Alan will confirm the exact amount after reviewing your request — it may be higher or
+                  {" "}Our staff will confirm the exact amount after reviewing your request — it may be higher or
                   lower based on the actual route. No surprise billing.
                 </p>
               </section>

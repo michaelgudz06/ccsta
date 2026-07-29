@@ -30,7 +30,7 @@ export function friendlyError(error: unknown, fallback?: string): string {
   console.error(fallback ?? "Error:", error);
 
   const genericFallback = fallback ??
-    `Something went wrong. Please try again, or call us at ${COMPANY.phoneMelody} if it keeps happening.`;
+    `Something went wrong. Please try again, or call us at ${COMPANY.phoneDispatch} if it keeps happening.`;
 
   if (!raw || raw.includes("\n") || RAW_ERROR_PATTERNS.some((re) => re.test(raw))) {
     return genericFallback;
