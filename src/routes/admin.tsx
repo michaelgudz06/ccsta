@@ -1415,7 +1415,9 @@ function Leg({
         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{placeLabel}: </span>
         {place || "—"}
       </div>
-      {address && <div className="text-xs leading-snug text-muted-foreground">{address}</div>}
+      {/* Addresses are read aloud down a phone and typed into a sat-nav, so
+          they get the same size as the place name rather than fine print. */}
+      {address && <div className="mt-0.5 text-sm leading-snug text-foreground/80">{address}</div>}
     </div>
   );
 }
