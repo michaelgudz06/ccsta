@@ -80,7 +80,14 @@ CRITICAL-bugs risk acceptance — and that's a decision, not work.
 
 ---
 
-## Phase 2 — The two CRITICAL data-integrity bugs
+## Phase 2 — The two CRITICAL data-integrity bugs ✅ DONE 2026-07-27
+
+Both fixed, plus #5, in migration 057 (applied live). #1 was resolved by
+removing its cause rather than patching it: `approve_quote` was creating an
+invoice at approval, which is the wrong moment — an invoice is the post-trip
+bill. That decision opened a new gap, now Phase 6 below.
+
+Original plan follows.
 
 Both are silent-wrong-money bugs on a live system taking real bookings, and
 both get more expensive the more quotes exist. This is the first real build
@@ -159,7 +166,19 @@ mechanical and cheap by comparison.
 
 ---
 
-## Phase 5 — Remaining fast-follow bugs, in batches
+## Phase 5 — Remaining fast-follow bugs, in batches (partly done)
+
+**Done 2026-07-27:** #6, #8, #11, #14 and #17. #7 and #16 were found to be
+already handled. The "money-correctness cluster" (#8, #11, #14) was taken
+first deliberately — all three ended the same way, with a quote priced wrong
+and nobody told.
+
+**Still open:** #9, #10, #12, #13, #15, #18, #19, #20, #21, #22 — none of
+them money-related now. #15 is the most user-visible: the portal lets a
+customer fill an entire edit form before the server rejects it under the
+7-day rule.
+
+Original batching follows.
 
 ~15 items left in `BUG_BACKLOG.md` once Phase 2 absorbs #1, #2, and #5.
 Batch them by the file they touch rather than by severity — the severities
@@ -193,6 +212,30 @@ hardcoded constants in `quote.tsx` are gone, then check it off rather than
 scheduling work for it.
 
 ---
+
+## Phase 6 — Post-trip invoicing (NEW, and now the real gap)
+
+Created by Phase 2's decision. `approve_quote` no longer creates an invoice,
+which is correct — but nothing creates one after a trip either, so there is
+currently no billing flow at all. In practice this changes nothing today
+(no invoice was ever sent), but it's now an explicit hole rather than a
+half-built one.
+
+Everything needed already exists and is unused: the `invoices` table,
+`invoice_status` (draft/sent/paid/overdue/cancelled), and the `invoiced`
+quote status.
+
+Needs decisions before building: invoice numbering (still derived from the
+quote number?), payment terms, what Melody actually sends a school, and
+whether "completed trip" or an explicit admin action triggers generation.
+
+## Phase 7 — Email queue safety net
+
+Nothing drains the queue on a schedule. `notify-send` runs only when the
+frontend invokes it after a user action, and `src/lib/notify.ts` deliberately
+swallows failures — so a failed dispatch sits `pending` until an unrelated
+action flushes it. A pg_cron job calling it every few minutes closes a whole
+class of "the customer never got the email" mystery. Small.
 
 ## Blocked on a decision — do not build
 
