@@ -816,37 +816,76 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
 
         {/* Section 1: Trip details */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h4 className="mb-3 text-sm font-semibold text-foreground">Trip details</h4>
-          <div className="grid gap-3 text-sm sm:grid-cols-2">
-            <Kv label="Organization" value={quote.schools?.name ?? "—"} />
-            <Kv label="Trip date" value={tripDate} />
-            <Kv label="Trip type" value={formatTripType(ver?.trip_type)} />
-            {ver?.trip_type === "shuttle" || ver?.trip_type === "multi_destination" ? (
-              <Kv label="Bus engaged" value={`${formatTime(ver?.departure_time ?? null)} → ${formatTime(ver?.return_time ?? null)}`} />
+          {/* The organization is the heading of the sheet, not another box —
+              it's the one thing that identifies whose trip this is. */}
+          <h3 className="text-lg font-bold leading-tight text-foreground">
+            {quote.schools?.name ?? "Unknown organization"}
+          </h3>
+
+          {/* Four at-a-glance facts. Deliberately just four: date, who's
+              going, what's needed, what shape of trip. */}
+          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <Stat label="Trip date" value={tripDate} />
+            <Stat label="Group size" value={`${ver?.student_count ?? 0} students + ${ver?.adults_count ?? 0} adults`} />
+            <Stat
+              label="Bus needed"
+              // Bus size comes from the estimate, which only auto-runs for
+              // quotes with no price yet. Saying "Calculating…" when nothing
+              // is running was misleading — it never resolved on its own.
+              value={
+                estimate ? `${estimate.bus_count} × ${estimate.bench_count}-passenger`
+                : estimateBusy ? "Calculating…"
+                : "Press Recalculate"
+              }
+            />
+            <Stat label="Trip type" value={formatTripType(ver?.trip_type)} />
+          </div>
+
+          {/* The journey, read top to bottom in the order it happens: leave
+              from here at this time, come back from there at that time. The
+              old layout scattered these across a two-column grid, so the
+              times and the places they belonged to never lined up. */}
+          <div className="mt-4 space-y-3 border-l-2 border-border pl-4">
+            <Leg
+              time={formatTime(ver?.departure_time ?? null)}
+              timeLabel={ver?.trip_type === "shuttle" || ver?.trip_type === "multi_destination" ? "Bus engaged from" : "Departure"}
+              place={quote.schools?.name ?? null}
+              address={ver?.pickup_address || null}
+              placeLabel="Pickup"
+            />
+            {ver?.trip_type === "multi_destination" ? (
+              <Leg
+                time={formatTime(ver?.return_time ?? null)}
+                timeLabel="Bus released"
+                place={`${ver.multi_stops.length} stop${ver.multi_stops.length === 1 ? "" : "s"} — listed below`}
+                address={null}
+                placeLabel="Destinations"
+              />
             ) : (
-              <>
-                <Kv label="Departure" value={formatTime(ver?.departure_time ?? null)} />
-                <Kv label={ver?.trip_type === "one_way" ? "Drop-off" : "Return"} value={formatTime(ver?.return_time ?? null)} />
-              </>
+              <Leg
+                time={formatTime(ver?.return_time ?? null)}
+                timeLabel={
+                  ver?.trip_type === "one_way" ? "Drop-off"
+                  : ver?.trip_type === "shuttle" ? "Bus released"
+                  : "Return pickup"
+                }
+                place={ver?.destination_name || null}
+                address={ver?.destination_address || null}
+                placeLabel="Destination"
+              />
             )}
-            <Kv label="Pickup address" value={ver?.pickup_address || "—"} />
-            {ver?.trip_type !== "multi_destination" && (
-              <>
-                <Kv label="Destination" value={ver?.destination_name || "—"} />
-                <Kv label="Destination address" value={ver?.destination_address || "—"} />
-              </>
-            )}
+          </div>
+
+          <div className="mt-3">
             {ver?.distance_km != null ? (
-              <Kv label="Distance (one-way)" value={`${ver.distance_km} km`} />
+              <div className="text-xs text-muted-foreground">
+                One-way distance: <span className="font-medium text-foreground">{ver.distance_km} km</span>
+              </div>
             ) : (
-              <div className="flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                ⚠ Distance unavailable — estimate may be inaccurate
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                ⚠ Distance unavailable — any long-distance charge may be missing from this estimate
               </div>
             )}
-            <Kv label="Students" value={ver?.student_count != null ? String(ver.student_count) : "—"} />
-            <Kv label="Group size" value={`${ver?.student_count ?? 0} students + ${ver?.adults_count ?? 0} adults`} />
-            <Kv label="Bus needed" value={estimate ? `${estimate.bus_count}× ${estimate.bench_count}-passenger bus` : "Calculating…"} />
-            <Kv label="Primary contact" value={fmtContact(ver?.contact_primary)} />
           </div>
 
           {/* Route map — tucked under the distance figure above; onResult also
@@ -904,16 +943,22 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           <div className="mt-3">
             <Kv label="Cargo needed" value={ver?.cargo_needed ? "Yes" : "No"} />
           </div>
-          {fmtContact(ver?.contact_secondary) !== "—" && (
-            <div className="mt-3">
-              <Kv label="Secondary contact" value={fmtContact(ver?.contact_secondary)} />
+
+          {/* Contacts grouped at the foot of the sheet rather than scattered
+              between trip facts — they're who to phone, not what the trip is. */}
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Kv label="Primary" value={fmtContact(ver?.contact_primary)} />
+              {fmtContact(ver?.contact_secondary) !== "—" && (
+                <Kv label="Secondary" value={fmtContact(ver?.contact_secondary)} />
+              )}
+              <Kv
+                label="Day of trip"
+                value={fmtContact(ver?.contact_day_of) !== "—" ? fmtContact(ver?.contact_day_of) : "Not provided"}
+              />
             </div>
-          )}
-          {fmtContact(ver?.contact_day_of) !== "—" && (
-            <div className="mt-3">
-              <Kv label="Day-of contact" value={fmtContact(ver?.contact_day_of)} />
-            </div>
-          )}
+          </div>
           {ver?.special_requests && (
             <div className="mt-3 rounded-xl border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">Special requests: </span>{ver.special_requests}
@@ -1331,6 +1376,46 @@ function PriceRowEditable({
           className="w-24 rounded border border-input bg-background px-2 py-0.5 text-right text-sm font-medium text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
         />
       </span>
+    </div>
+  );
+}
+
+/** One of the four at-a-glance facts under the organization heading. */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold leading-snug text-foreground">{value}</div>
+    </div>
+  );
+}
+
+/**
+ * One leg of the journey: a time, then the place it applies to, then that
+ * place's address. Keeping the three together is the whole point — in the
+ * previous two-column grid a time could sit beside an unrelated address.
+ */
+function Leg({
+  time, timeLabel, place, address, placeLabel,
+}: {
+  time: string;
+  timeLabel: string;
+  place: string | null;
+  address: string | null;
+  placeLabel: string;
+}) {
+  return (
+    <div className="relative">
+      <span className="absolute -left-[22px] top-1.5 h-2 w-2 rounded-full bg-primary" aria-hidden />
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{timeLabel}</span>
+        <span className="text-sm font-bold text-foreground">{time}</span>
+      </div>
+      <div className="mt-0.5 text-sm text-foreground">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{placeLabel}: </span>
+        {place || "—"}
+      </div>
+      {address && <div className="text-xs leading-snug text-muted-foreground">{address}</div>}
     </div>
   );
 }
