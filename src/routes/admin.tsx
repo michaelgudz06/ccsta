@@ -628,42 +628,51 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           endless scroll, so each stage is now its own page: pick a tab, see
           only those quotes. Counts follow the search, so you can tell which
           stage a match is hiding in. */}
-      <div className="rounded-2xl border border-border bg-card p-3 shadow-soft">
-        <div className="flex flex-wrap gap-2">
-          {QUOTE_SECTIONS.map((section) => {
-            const count = matchedQuotes.filter((q) => section.statuses.includes(q.status)).length;
-            const active = section.key === activeSection.key;
-            return (
-              <button
-                key={section.key}
-                onClick={() => { setActiveTab(section.key); setSelected(null); }}
-                className={`rounded-xl px-3 py-2 text-left transition-colors ${
-                  active ? "bg-primary text-primary-foreground" : "bg-surface text-foreground hover:bg-accent/20"
-                }`}
-              >
-                <span className="block text-xs font-semibold">{section.tabLabel}</span>
-                <span className={`block text-[11px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                  {count} quote{count === 1 ? "" : "s"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+      {/* Search sits top-right, sized to itself — a full-width bar implied the
+          page was mostly about searching, when it's mostly about the stages. */}
+      <div className="flex justify-end">
+        <div className="w-full sm:w-80">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search quote #, school, or destination…"
-            className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
+            className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm shadow-soft outline-none ring-ring focus:ring-2"
           />
           {search.trim() && (
-            <span className="text-xs text-muted-foreground">
+            <div className="mt-1 text-right text-xs text-muted-foreground">
               {matchedQuotes.length} of {quotes.length} match
               <button onClick={() => setSearch("")} className="ml-2 font-semibold underline">clear</button>
-            </span>
+            </div>
           )}
         </div>
+      </div>
+
+      {/* The five stages, as big targets. Count first and large — it's the
+          number Melody scans for; the label explains it. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {QUOTE_SECTIONS.map((section) => {
+          const count = matchedQuotes.filter((q) => section.statuses.includes(q.status)).length;
+          const active = section.key === activeSection.key;
+          return (
+            <button
+              key={section.key}
+              onClick={() => { setActiveTab(section.key); setSelected(null); }}
+              className={`rounded-2xl border p-4 text-left shadow-soft transition-all ${
+                active
+                  ? "border-primary bg-primary text-primary-foreground shadow-elevated"
+                  : "border-border bg-card text-foreground hover:border-primary/40 hover:shadow-elevated"
+              }`}
+            >
+              <span className="block text-3xl font-bold leading-none">{count}</span>
+              <span className="mt-2 block text-sm font-semibold leading-tight">{section.tabLabel}</span>
+              <span className={`mt-0.5 block text-[11px] leading-tight ${
+                active ? "text-primary-foreground/75" : "text-muted-foreground"
+              }`}>
+                {section.cardHint}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Either the list for this stage, or the quote you picked ── */}
@@ -1394,8 +1403,10 @@ function PriceRowEditable({
  */
 const QUOTE_SECTIONS: {
   key: string;
-  /** Short label for the tab button. */
+  /** Short label for the stage button. */
   tabLabel: string;
+  /** One-line explanation under the count on the stage button. */
+  cardHint: string;
   /** Fuller heading shown above the list once a tab is open. */
   label: string;
   statuses: string[];
@@ -1404,6 +1415,7 @@ const QUOTE_SECTIONS: {
 }[] = [
   {
     key: "new",
+    cardHint: "Waiting on review",
     tabLabel: "New",
     label: "New — needs review",
     statuses: ["requested", "in_review"],
@@ -1411,6 +1423,7 @@ const QUOTE_SECTIONS: {
   },
   {
     key: "approved",
+    cardHint: "Priced, trip upcoming",
     tabLabel: "Approved",
     label: "Approved — awaiting trip date",
     statuses: ["approved", "confirmed", "scheduled"],
@@ -1418,6 +1431,7 @@ const QUOTE_SECTIONS: {
   },
   {
     key: "completed",
+    cardHint: "Trip done, not invoiced",
     tabLabel: "Completed",
     label: "Completed — ready to invoice",
     statuses: ["completed"],
@@ -1425,6 +1439,7 @@ const QUOTE_SECTIONS: {
   },
   {
     key: "invoiced",
+    cardHint: "Awaiting payment",
     tabLabel: "Invoiced",
     label: "Invoiced — awaiting payment",
     statuses: ["invoiced"],
@@ -1433,6 +1448,7 @@ const QUOTE_SECTIONS: {
   },
   {
     key: "cancelled",
+    cardHint: "No longer going ahead",
     tabLabel: "Cancelled",
     label: "Cancelled",
     statuses: ["cancelled"],
