@@ -342,6 +342,11 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   // Two-step confirm for permanent deletion, plus a short-lived confirmation note.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletedNote, setDeletedNote] = useState<string | null>(null);
+  // Queue organisation: one search box across all sections, plus which
+  // sections and which school folders are expanded.
+  const [search, setSearch] = useState("");
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
 
   // Action state
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -643,6 +648,20 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
 
   const quote = quotes.find((q) => q.id === selected) ?? quotes[0];
   const ver = quote.quote_versions;
+  // Search across the three things you'd have in hand when a school phones:
+  // the quote number, who they are, or where they're going.
+  const searchTerm = search.trim().toLowerCase();
+  const matchedQuotes = !searchTerm
+    ? quotes
+    : quotes.filter((q) =>
+        [
+          q.quote_number,
+          q.schools?.name,
+          q.quote_versions?.destination_name,
+          q.quote_versions?.destination_address,
+        ].some((field) => (field ?? "").toLowerCase().includes(searchTerm)),
+      );
+
   const quoteNoValue = quoteNoEdits[quote.id] ?? quote.quote_number;
   const quoteNoStatus = fieldStatus[`qno-${quote.id}`] ?? "";
   const tripDate = formatTripDate(ver?.trip_date);
@@ -670,54 +689,96 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     <div className="grid gap-6 lg:grid-cols-5">
       {/* ── Quote list sidebar ── */}
       <div className="lg:col-span-2 rounded-2xl border border-border bg-card shadow-soft">
-        <div className="border-b border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground">Quote queue ({quotes.length})</h3>
+        <div className="space-y-3 border-b border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground">Quotes ({quotes.length})</h3>
+          {/* One search across all sections — matches quote number, school and
+              destination, since those are the three things you'd have in hand
+              when someone phones up. Sections with no match collapse away. */}
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search quote #, school, or destination…"
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
+          />
+          {search.trim() && (
+            <div className="text-xs text-muted-foreground">
+              {matchedQuotes.length} of {quotes.length} match “{search.trim()}”
+              <button onClick={() => setSearch("")} className="ml-2 font-semibold underline">clear</button>
+            </div>
+          )}
         </div>
-        <ul className="divide-y divide-border">
-          {quotes.map((q) => (
-            <li key={q.id}>
-              <button
-                onClick={() => setSelected(q.id)}
-                className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors ${
-                  selected === q.id ? "bg-primary/5" : "hover:bg-surface"
-                }`}
-              >
-                <div>
-                  <div className="font-semibold text-foreground">{q.quote_number}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {q.schools?.name ?? "Unknown organization"} ·{" "}
-                    {/* Was `new Date(trip_date)`, which parses a bare
-                        "YYYY-MM-DD" as UTC midnight and renders the PREVIOUS
-                        day in Pacific time — the off-by-one that formatTripDate
-                        exists to prevent. */}
-                    {q.quote_versions?.trip_date
-                      ? formatTripDate(q.quote_versions.trip_date, { month: "short", day: "numeric" })
-                      : "no date"}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground/70">
-                    {/* created_at is a full timestamp, not a plain calendar
-                        date, so it's safe to format directly — the UTC-midnight
-                        trap only applies to bare "YYYY-MM-DD" values. */}
-                    Submitted {new Date(q.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {q.status !== "cancelled" && q.quote_versions?.distance_km == null && (
-                    <span
-                      title="Distance unavailable — long-distance surcharge may be missing from this estimate"
-                      className="text-amber-600"
-                    >
-                      ⚠
-                    </span>
-                  )}
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${q.cancellation_requested_at && q.status !== "cancelled" ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"}`}>
-                    {q.cancellation_requested_at && q.status !== "cancelled" ? "Cancel requested" : STATUS_LABEL[q.status] ?? q.status}
+
+        <div className="divide-y divide-border">
+          {QUOTE_SECTIONS.map((section) => {
+            const rows = matchedQuotes.filter((q) => section.statuses.includes(q.status));
+            // While searching, an empty section is noise — hide it. Otherwise
+            // keep it visible so the pipeline is legible even when empty.
+            if (search.trim() && rows.length === 0) return null;
+            // While searching, force sections open. Otherwise a match inside a
+            // collapsed section (Cancelled, by default) shows the section
+            // header with the row still hidden — the search appears broken.
+            const open = searchTerm ? true : openSections[section.key] ?? section.defaultOpen;
+            return (
+              <div key={section.key}>
+                <button
+                  onClick={() => setOpenSections((s) => ({ ...s, [section.key]: !open }))}
+                  className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-surface"
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wide text-foreground">{section.label}</span>
+                    <span className="text-[11px] text-muted-foreground">{rows.length}</span>
                   </span>
-                </div>
-              </button>
-            </li>
-          ))}
-        </ul>
+                  <span className="text-xs text-muted-foreground">{open ? "▾" : "▸"}</span>
+                </button>
+
+                {open && (
+                  rows.length === 0 ? (
+                    <div className="px-4 pb-3 text-xs text-muted-foreground/70">{section.emptyHint}</div>
+                  ) : section.groupBySchool ? (
+                    // Invoiced quotes are filed per school, so chasing payment
+                    // for one organization means opening one folder.
+                    <div className="pb-1">
+                      {groupBySchool(rows).map(([schoolName, schoolRows]) => {
+                        const folderKey = `${section.key}:${schoolName}`;
+                        // Same reasoning as sections: a search match buried in
+                        // a closed folder is worse than no result at all.
+                        const folderOpen = searchTerm ? true : openFolders[folderKey] ?? false;
+                        return (
+                          <div key={folderKey}>
+                            <button
+                              onClick={() => setOpenFolders((f) => ({ ...f, [folderKey]: !folderOpen }))}
+                              className="flex w-full items-center justify-between px-6 py-2 text-left text-xs hover:bg-surface"
+                            >
+                              <span className="font-semibold text-foreground">
+                                {folderOpen ? "📂" : "📁"} {schoolName}
+                              </span>
+                              <span className="text-muted-foreground">{schoolRows.length}</span>
+                            </button>
+                            {folderOpen && schoolRows.map((q) => (
+                              <QuoteRow
+                                key={q.id}
+                                q={q}
+                                selected={selected === q.id}
+                                onSelect={() => setSelected(q.id)}
+                                indent
+                              />
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="pb-1">
+                      {rows.map((q) => (
+                        <QuoteRow key={q.id} q={q} selected={selected === q.id} onSelect={() => setSelected(q.id)} />
+                      ))}
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* ── Detail panel ── */}
@@ -1377,6 +1438,131 @@ function PriceRowEditable({
         />
       </span>
     </div>
+  );
+}
+
+/**
+ * The queue, filed into the stages a quote actually moves through.
+ *
+ * These group the eight `quote_status` values into the four stages Melody
+ * works in, plus a collapsed Cancelled section so nothing silently vanishes.
+ *
+ * Note "Approved" deliberately covers approved + confirmed + scheduled:
+ * Melody confirms and schedules in one action, so splitting them would create
+ * a box that's empty in practice. Each row still shows its own badge, so an
+ * unaccepted price is distinguishable from a booked bus.
+ *
+ * IMPORTANT: nothing in the system currently sets a quote to `completed` or
+ * `invoiced` — those transitions don't exist yet (see PLAN.md Phase 6). Those
+ * two sections will stay empty until the "mark trip completed" and "send
+ * invoice" steps are built. The empty hints say so rather than looking broken.
+ */
+const QUOTE_SECTIONS: {
+  key: string;
+  label: string;
+  statuses: string[];
+  defaultOpen: boolean;
+  groupBySchool?: boolean;
+  emptyHint: string;
+}[] = [
+  {
+    key: "new",
+    label: "New — needs review",
+    statuses: ["requested", "in_review"],
+    defaultOpen: true,
+    emptyHint: "Nothing waiting for review.",
+  },
+  {
+    key: "approved",
+    label: "Approved — awaiting trip date",
+    statuses: ["approved", "confirmed", "scheduled"],
+    defaultOpen: true,
+    emptyHint: "No priced quotes waiting on a trip date.",
+  },
+  {
+    key: "completed",
+    label: "Completed — ready to invoice",
+    statuses: ["completed"],
+    defaultOpen: true,
+    emptyHint: "Nothing here yet — marking a trip completed isn't built yet.",
+  },
+  {
+    key: "invoiced",
+    label: "Invoiced — awaiting payment",
+    statuses: ["invoiced"],
+    defaultOpen: true,
+    groupBySchool: true,
+    emptyHint: "Nothing here yet — sending an invoice isn't built yet.",
+  },
+  {
+    key: "cancelled",
+    label: "Cancelled",
+    statuses: ["cancelled"],
+    defaultOpen: false,
+    emptyHint: "No cancelled quotes.",
+  },
+];
+
+/** Group rows by organization name, alphabetically — the invoiced "folders". */
+function groupBySchool(rows: AdminQuoteRow[]): [string, AdminQuoteRow[]][] {
+  const map = new Map<string, AdminQuoteRow[]>();
+  for (const q of rows) {
+    const name = q.schools?.name ?? "Unknown organization";
+    const list = map.get(name);
+    if (list) list.push(q);
+    else map.set(name, [q]);
+  }
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+/** One row in the queue. Extracted so folders and flat sections share it. */
+function QuoteRow({
+  q, selected, onSelect, indent,
+}: {
+  q: AdminQuoteRow;
+  selected: boolean;
+  onSelect: () => void;
+  indent?: boolean;
+}) {
+  const cancelRequested = !!q.cancellation_requested_at && q.status !== "cancelled";
+  return (
+    <button
+      onClick={onSelect}
+      className={`flex w-full items-center justify-between py-2.5 pr-4 text-left text-sm transition-colors ${
+        indent ? "pl-9" : "pl-4"
+      } ${selected ? "bg-primary/5" : "hover:bg-surface"}`}
+    >
+      <div className="min-w-0">
+        <div className="font-semibold text-foreground">{q.quote_number}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {q.schools?.name ?? "Unknown organization"}
+          {q.quote_versions?.destination_name ? ` → ${q.quote_versions.destination_name}` : ""}
+        </div>
+        <div className="text-[11px] text-muted-foreground/70">
+          {/* trip_date is a bare "YYYY-MM-DD" and must go through
+              formatTripDate, or it renders a day early in Pacific time.
+              created_at is a full timestamp, so it's safe to format directly. */}
+          Trip {q.quote_versions?.trip_date ? formatTripDate(q.quote_versions.trip_date, { month: "short", day: "numeric" }) : "TBD"}
+          {" · submitted "}
+          {new Date(q.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {q.status !== "cancelled" && q.quote_versions?.distance_km == null && (
+          <span
+            title="Distance unavailable — long-distance surcharge may be missing from this estimate"
+            className="text-amber-600"
+          >
+            ⚠
+          </span>
+        )}
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+          cancelRequested ? "bg-amber-100 text-amber-800" : statusStyle[q.status] ?? "bg-slate-100 text-slate-700"
+        }`}>
+          {cancelRequested ? "Cancel requested" : STATUS_LABEL[q.status] ?? q.status}
+        </span>
+      </div>
+    </button>
   );
 }
 
