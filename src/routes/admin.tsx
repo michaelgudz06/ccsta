@@ -345,7 +345,9 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   // Queue organisation: one search box across all sections, plus which
   // sections and which school folders are expanded.
   const [search, setSearch] = useState("");
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  // Which pipeline stage is being viewed. Each stage is its own page now, so
+  // a growing queue doesn't become an endless scroll.
+  const [activeTab, setActiveTab] = useState<string>("new");
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
 
   // Action state
@@ -413,8 +415,16 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           quote_versions: r.current_version_id ? (versionMap[r.current_version_id] ?? null) : null,
         }));
         setQuotes(merged);
-        const preselect = initialQuoteId && merged.some((q) => q.id === initialQuoteId) ? initialQuoteId : merged[0]?.id;
-        if (preselect) setSelected(preselect);
+        // Only deep-link into a quote when one was explicitly requested (e.g.
+        // from a notification link). Otherwise land on the stage list — with
+        // the tabbed layout, auto-opening the newest quote skipped past the
+        // page Melody actually came to look at.
+        if (initialQuoteId && merged.some((q) => q.id === initialQuoteId)) {
+          setSelected(initialQuoteId);
+          const target = merged.find((q) => q.id === initialQuoteId);
+          const section = QUOTE_SECTIONS.find((sec) => target && sec.statuses.includes(target.status));
+          if (section) setActiveTab(section.key);
+        }
         setQLoading(false);
       });
     // Only consult initialQuoteId once, at mount — QuoteQueue fully remounts
@@ -597,7 +607,9 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     setConfirmDelete(false);
     setQuotes((prev) => {
       const next = prev.filter((q) => q.id !== quoteId);
-      setSelected(next[0]?.id ?? null);
+      // Return to the stage list rather than jumping into whichever quote
+      // happens to be next — the one you were looking at no longer exists.
+      setSelected(null);
       return next;
     });
     setDeletedNote(`${result.quote_number} deleted.`);
@@ -685,104 +697,105 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     .filter((g) => g.grade && !K4_GRADES.includes(g.grade.toLowerCase().trim()))
     .reduce((sum, g) => sum + (parseInt(g.count ?? "0", 10) || 0), 0);
 
+  const activeSection = QUOTE_SECTIONS.find((x) => x.key === activeTab) ?? QUOTE_SECTIONS[0];
+  const tabRows = matchedQuotes.filter((q) => activeSection.statuses.includes(q.status));
+
   return (
-    <div className="grid gap-6 lg:grid-cols-5">
-      {/* ── Quote list sidebar ── */}
-      <div className="lg:col-span-2 rounded-2xl border border-border bg-card shadow-soft">
-        <div className="space-y-3 border-b border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground">Quotes ({quotes.length})</h3>
-          {/* One search across all sections — matches quote number, school and
-              destination, since those are the three things you'd have in hand
-              when someone phones up. Sections with no match collapse away. */}
+    <div className="space-y-4">
+      {/* ── Pipeline tabs ──
+          Was a sidebar list of every quote. As volume grows that becomes an
+          endless scroll, so each stage is now its own page: pick a tab, see
+          only those quotes. Counts follow the search, so you can tell which
+          stage a match is hiding in. */}
+      <div className="rounded-2xl border border-border bg-card p-3 shadow-soft">
+        <div className="flex flex-wrap gap-2">
+          {QUOTE_SECTIONS.map((section) => {
+            const count = matchedQuotes.filter((q) => section.statuses.includes(q.status)).length;
+            const active = section.key === activeSection.key;
+            return (
+              <button
+                key={section.key}
+                onClick={() => { setActiveTab(section.key); setSelected(null); }}
+                className={`rounded-xl px-3 py-2 text-left transition-colors ${
+                  active ? "bg-primary text-primary-foreground" : "bg-surface text-foreground hover:bg-accent/20"
+                }`}
+              >
+                <span className="block text-xs font-semibold">{section.tabLabel}</span>
+                <span className={`block text-[11px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                  {count} quote{count === 1 ? "" : "s"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search quote #, school, or destination…"
-            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
+            className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none ring-ring focus:ring-2"
           />
           {search.trim() && (
-            <div className="text-xs text-muted-foreground">
-              {matchedQuotes.length} of {quotes.length} match “{search.trim()}”
+            <span className="text-xs text-muted-foreground">
+              {matchedQuotes.length} of {quotes.length} match
               <button onClick={() => setSearch("")} className="ml-2 font-semibold underline">clear</button>
-            </div>
+            </span>
           )}
-        </div>
-
-        <div className="divide-y divide-border">
-          {QUOTE_SECTIONS.map((section) => {
-            const rows = matchedQuotes.filter((q) => section.statuses.includes(q.status));
-            // While searching, an empty section is noise — hide it. Otherwise
-            // keep it visible so the pipeline is legible even when empty.
-            if (search.trim() && rows.length === 0) return null;
-            // While searching, force sections open. Otherwise a match inside a
-            // collapsed section (Cancelled, by default) shows the section
-            // header with the row still hidden — the search appears broken.
-            const open = searchTerm ? true : openSections[section.key] ?? section.defaultOpen;
-            return (
-              <div key={section.key}>
-                <button
-                  onClick={() => setOpenSections((s) => ({ ...s, [section.key]: !open }))}
-                  className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-surface"
-                >
-                  <span className="flex items-baseline gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wide text-foreground">{section.label}</span>
-                    <span className="text-[11px] text-muted-foreground">{rows.length}</span>
-                  </span>
-                  <span className="text-xs text-muted-foreground">{open ? "▾" : "▸"}</span>
-                </button>
-
-                {open && (
-                  rows.length === 0 ? (
-                    <div className="px-4 pb-3 text-xs text-muted-foreground/70">{section.emptyHint}</div>
-                  ) : section.groupBySchool ? (
-                    // Invoiced quotes are filed per school, so chasing payment
-                    // for one organization means opening one folder.
-                    <div className="pb-1">
-                      {groupBySchool(rows).map(([schoolName, schoolRows]) => {
-                        const folderKey = `${section.key}:${schoolName}`;
-                        // Same reasoning as sections: a search match buried in
-                        // a closed folder is worse than no result at all.
-                        const folderOpen = searchTerm ? true : openFolders[folderKey] ?? false;
-                        return (
-                          <div key={folderKey}>
-                            <button
-                              onClick={() => setOpenFolders((f) => ({ ...f, [folderKey]: !folderOpen }))}
-                              className="flex w-full items-center justify-between px-6 py-2 text-left text-xs hover:bg-surface"
-                            >
-                              <span className="font-semibold text-foreground">
-                                {folderOpen ? "📂" : "📁"} {schoolName}
-                              </span>
-                              <span className="text-muted-foreground">{schoolRows.length}</span>
-                            </button>
-                            {folderOpen && schoolRows.map((q) => (
-                              <QuoteRow
-                                key={q.id}
-                                q={q}
-                                selected={selected === q.id}
-                                onSelect={() => setSelected(q.id)}
-                                indent
-                              />
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="pb-1">
-                      {rows.map((q) => (
-                        <QuoteRow key={q.id} q={q} selected={selected === q.id} onSelect={() => setSelected(q.id)} />
-                      ))}
-                    </div>
-                  )
-                )}
-              </div>
-            );
-          })}
         </div>
       </div>
 
-      {/* ── Detail panel ── */}
-      <div className="lg:col-span-3 space-y-4">
+      {/* ── Either the list for this stage, or the quote you picked ── */}
+      {!selected ? (
+        <div className="rounded-2xl border border-border bg-card shadow-soft">
+          <div className="border-b border-border px-4 py-3">
+            <h3 className="text-sm font-semibold text-foreground">{activeSection.label}</h3>
+          </div>
+          {tabRows.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              {search.trim() ? "No matches in this stage." : activeSection.emptyHint}
+            </div>
+          ) : activeSection.groupBySchool ? (
+            <div className="divide-y divide-border">
+              {groupBySchool(tabRows).map(([schoolName, schoolRows]) => {
+                const folderKey = `${activeSection.key}:${schoolName}`;
+                const folderOpen = searchTerm ? true : openFolders[folderKey] ?? false;
+                return (
+                  <div key={folderKey}>
+                    <button
+                      onClick={() => setOpenFolders((f) => ({ ...f, [folderKey]: !folderOpen }))}
+                      className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-surface"
+                    >
+                      <span className="font-semibold text-foreground">
+                        {folderOpen ? "\u{1F4C2}" : "\u{1F4C1}"} {schoolName}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{schoolRows.length}</span>
+                    </button>
+                    {folderOpen && schoolRows.map((q) => (
+                      <QuoteRow key={q.id} q={q} selected={false} onSelect={() => setSelected(q.id)} indent />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {tabRows.map((q) => (
+                <QuoteRow key={q.id} q={q} selected={false} onSelect={() => setSelected(q.id)} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+      <div className="space-y-4">
+        <button
+          onClick={() => setSelected(null)}
+          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface"
+        >
+          &larr; Back to {activeSection.tabLabel}
+        </button>
+
+        {/* ── Detail panel ── */}
 
         {/* Pending cancellation request */}
         {quote.cancellation_requested_at && quote.status !== "cancelled" && (
@@ -1346,6 +1359,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
         )}
 
       </div>
+      )}
     </div>
   );
 }
@@ -1459,46 +1473,48 @@ function PriceRowEditable({
  */
 const QUOTE_SECTIONS: {
   key: string;
+  /** Short label for the tab button. */
+  tabLabel: string;
+  /** Fuller heading shown above the list once a tab is open. */
   label: string;
   statuses: string[];
-  defaultOpen: boolean;
   groupBySchool?: boolean;
   emptyHint: string;
 }[] = [
   {
     key: "new",
+    tabLabel: "New",
     label: "New — needs review",
     statuses: ["requested", "in_review"],
-    defaultOpen: true,
     emptyHint: "Nothing waiting for review.",
   },
   {
     key: "approved",
+    tabLabel: "Approved",
     label: "Approved — awaiting trip date",
     statuses: ["approved", "confirmed", "scheduled"],
-    defaultOpen: true,
     emptyHint: "No priced quotes waiting on a trip date.",
   },
   {
     key: "completed",
+    tabLabel: "Completed",
     label: "Completed — ready to invoice",
     statuses: ["completed"],
-    defaultOpen: true,
     emptyHint: "Nothing here yet — marking a trip completed isn't built yet.",
   },
   {
     key: "invoiced",
+    tabLabel: "Invoiced",
     label: "Invoiced — awaiting payment",
     statuses: ["invoiced"],
-    defaultOpen: true,
     groupBySchool: true,
     emptyHint: "Nothing here yet — sending an invoice isn't built yet.",
   },
   {
     key: "cancelled",
+    tabLabel: "Cancelled",
     label: "Cancelled",
     statuses: ["cancelled"],
-    defaultOpen: false,
     emptyHint: "No cancelled quotes.",
   },
 ];
