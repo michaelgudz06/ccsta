@@ -18,7 +18,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "dashboard" | "quotes" | "schedule" | "assets" | "availability" | "documents";
+type Tab = "dashboard" | "schedule" | "assets" | "availability" | "documents";
 
 function AdminPage() {
   const { role, loading } = useAuth();
@@ -49,8 +49,12 @@ function AdminPage() {
         <Tabs tab={tab} setTab={setTab} />
 
         <div className="mt-6">
-          {tab === "dashboard" && <Dashboard onJump={jump} />}
-          {tab === "quotes" && <QuoteQueue initialQuoteId={pendingQuoteId} />}
+          {/* The dashboard IS the quote queue now. The old four stat cards
+              (new / in review / trips scheduled / assets out of service) and
+              the static "status flow" legend were replaced by the five
+              pipeline stages, which carry the same counts but are clickable
+              into the actual work. The separate Quotes tab is gone with them. */}
+          {tab === "dashboard" && <QuoteQueue initialQuoteId={pendingQuoteId} />}
           {tab === "schedule" && <Schedule />}
           {tab === "assets" && <Assets />}
           {tab === "availability" && <Availability />}
@@ -63,8 +67,7 @@ function AdminPage() {
 
 function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const tabs: { id: Tab; label: string }[] = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "quotes", label: "Quotes" },
+    { id: "dashboard", label: "Quotes" },
     { id: "schedule", label: "Schedule" },
     { id: "assets", label: "Buses & Drivers" },
     { id: "availability", label: "Availability" },
@@ -109,88 +112,6 @@ function StatCard({ icon: Icon, label, value, onClick }: { icon: React.ElementTy
         <div className="text-sm text-muted-foreground">{label}</div>
       </div>
     </button>
-  );
-}
-
-type RecentQuote = { id: string; quote_number: string; status: string; created_at: string; school: string };
-
-function Dashboard({ onJump }: { onJump: (t: Tab, quoteId?: string) => void }) {
-  const [counts, setCounts] = useState({ requested: 0, in_review: 0, scheduled: 0, inactiveAssets: 0 });
-  const [recent, setRecent] = useState<RecentQuote[]>([]);
-
-  useEffect(() => {
-    (async () => {
-      const [reqRes, revRes, schedRes, busRes, drvRes, recentRes] = await Promise.all([
-        supabase.from("quotes").select("id", { count: "exact", head: true }).eq("status", "requested"),
-        supabase.from("quotes").select("id", { count: "exact", head: true }).eq("status", "in_review"),
-        supabase.from("trips").select("id", { count: "exact", head: true }).eq("status", "scheduled"),
-        supabase.from("buses").select("id", { count: "exact", head: true }).eq("active", false),
-        supabase.from("drivers").select("id", { count: "exact", head: true }).eq("active", false),
-        supabase.from("quotes").select("id, quote_number, status, created_at, schools(name)").order("created_at", { ascending: false }).limit(6),
-      ]);
-      setCounts({
-        requested: reqRes.count ?? 0,
-        in_review: revRes.count ?? 0,
-        scheduled: schedRes.count ?? 0,
-        inactiveAssets: (busRes.count ?? 0) + (drvRes.count ?? 0),
-      });
-      setRecent(
-        ((recentRes.data ?? []) as Array<{ id: string; quote_number: string; status: string; created_at: string; schools: { name: string } | null }>)
-          .map((r) => ({ id: r.id, quote_number: r.quote_number, status: r.status, created_at: r.created_at, school: r.schools?.name ?? "Unknown organization" })),
-      );
-    })();
-  }, []);
-
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Inbox} label="New quote requests" value={String(counts.requested)} onClick={() => onJump("quotes")} />
-        <StatCard icon={ClipboardCheck} label="Quotes in review" value={String(counts.in_review)} onClick={() => onJump("quotes")} />
-        <StatCard icon={CalendarDays} label="Trips scheduled" value={String(counts.scheduled)} onClick={() => onJump("schedule")} />
-        <StatCard icon={AlertCircle} label="Buses/drivers out of service" value={String(counts.inactiveAssets)} onClick={() => onJump("assets")} />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h3 className="text-sm font-semibold text-foreground">Recent quote activity</h3>
-          <ul className="mt-3 space-y-2 text-sm">
-            {recent.length === 0 ? (
-              <li className="rounded-xl border border-dashed border-border bg-surface p-3 text-muted-foreground">
-                New quote requests will appear here.
-              </li>
-            ) : (
-              recent.map((r) => (
-                <li key={r.id}>
-                  <button
-                    onClick={() => onJump("quotes", r.id)}
-                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-surface p-3 text-left transition-colors hover:bg-primary/5"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-foreground">{r.school}</div>
-                      <div className="text-xs text-muted-foreground">{r.quote_number} · {formatTripDate(r.created_at.slice(0, 10))}</div>
-                    </div>
-                    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle[r.status] ?? "bg-slate-100 text-slate-700"}`}>
-                      {STATUS_LABEL[r.status] ?? r.status}
-                    </span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h3 className="text-sm font-semibold text-foreground">Status flow</h3>
-          <ol className="mt-3 flex flex-wrap gap-2 text-xs">
-            {["Requested", "In review", "Approved", "Accepted", "Scheduled", "Completed", "Invoiced"].map((s, i) => (
-              <li key={s} className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-2.5 py-1">
-                <span className="font-bold text-primary">{i + 1}</span>
-                <span className="text-foreground">{s}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </div>
-    </div>
   );
 }
 
