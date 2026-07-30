@@ -3,20 +3,31 @@
 Written 2026-07-20, from a deep pre-launch bug hunt of the customer-facing
 UI on the `trip-types` branch (quote form, pricing math, edit flow, portal,
 error handling). All 22 findings are listed below, grouped by the severity
-assigned during the hunt. Four fixes are going in **before** launch; the
-rest are tracked here as fast-follow so they don't get lost once the site
-is live. Nothing in this file has been fixed yet except where explicitly
-marked.
+assigned during the hunt. Severities are as judged then and have NOT been
+re-rated since.
+
+Each entry keeps its original writeup underneath the resolution note, so the
+reasoning at the time stays readable.
 
 **Status key:**
-- 🔧 **FIXING PRE-LAUNCH** — going in before deploy.
+- ✅ **FIXED** — done, with a note saying how and when.
 - ⏭ **FAST-FOLLOW (post-launch)** — tracked, not blocking launch.
 
-~~Note: the two CRITICAL findings (#1, #2) are currently FAST-FOLLOW...~~
-**Both CRITICAL findings were fixed 2026-07-27**, along with #5, #6 and #17.
-The risk-acceptance question this note asked was answered on 2026-07-27:
-Mila had not been told about them, so they were fixed immediately rather
-than left as accepted risk.
+**As of 2026-07-29: 12 of the 22 are fixed** — #1, #2, #3, #4, #5, #6, #7, #8,
+#11, #14, #16, #17. The four originally marked "FIXING PRE-LAUNCH" (#3, #4,
+#6, #7) did all ship; three of them just kept the pre-launch label for over a
+week, which made the list look worse than reality. Verify before trusting a
+label here.
+
+**Still open (10, all minor):** #9, #10, #12, #13, #15, #18, #19, #20, #21,
+#22 — none money-related. #15 is the most user-visible: the portal lets a
+customer fill in an entire edit form before the server rejects it under the
+7-day rule.
+
+Historical note: this file used to ask whether shipping the two CRITICAL
+findings as fast-follow was a deliberate acceptance of risk. Answered
+2026-07-27 — Mila had never been told about them, so they were fixed that day
+rather than left standing.
 
 ---
 
@@ -67,7 +78,13 @@ check a version stamp before writing.
 submits an edit. Her `UPDATE` can succeed against the now-superseded
 version — invisible on the live quote, no error surfaced to either side.
 
-### #3 — Edit-quote loader has no error handling; can strand a customer forever 🔧 FIXING PRE-LAUNCH
+### #3 — Edit-quote loader has no error handling; can strand a customer forever ✅ FIXED pre-launch
+Label was stale — verified in code 2026-07-29. A `failLoad()` helper handles
+every failure path: the quote fetch, the version fetch, the shuttle-runs and
+multi-stops fetches each check `error` and bail through it, and the whole
+block is wrapped in try/catch. No path leaves `editLoading` stuck true.
+
+Original writeup follows.
 `src/routes/quote.tsx:253-338` never checks `error` on any of its 5
 Supabase calls and has no try/catch. If any query fails,
 `setEditLoading(false)` never runs.
@@ -80,7 +97,14 @@ message.
 
 ## HIGH
 
-### #4 — No past- or future-date validation on quote submission 🔧 FIXING PRE-LAUNCH
+### #4 — No past- or future-date validation on quote submission ✅ FIXED pre-launch
+Label was stale — verified 2026-07-29 on both sides. Client: `validateAll`
+rejects a past date and anything beyond two years. Server: `submit_quote`
+raises on both bounds, confirmed live via `pg_get_functiondef` during the
+migration-051 drift check. Migration 048 restored the same guard on
+`edit_own_quote` after a later migration reverted it.
+
+Original writeup follows.
 `validateAll` (`src/routes/quote.tsx:478`) only checks that *a* date was
 picked. No `min` on the date `<input>`, no server-side check either.
 **Scenario:** A customer can submit a brand-new quote for yesterday, or
@@ -143,7 +167,13 @@ fails to geocode. They're told the estimate is accurate; it may not be,
 and the shortfall could carry through to the actual invoice if Melody
 doesn't notice the admin-side "distance unavailable" warning.
 
-### #7 — Raw Postgres/network error text shown to customers verbatim 🔧 FIXING PRE-LAUNCH
+### #7 — Raw Postgres/network error text shown to customers verbatim ✅ FIXED pre-launch
+Label was stale — verified 2026-07-29. Every customer-facing error goes
+through `friendlyError()` in `quote.tsx` and `portal.tsx`; the only bare calls
+are `setSubmitError(null)` / `setActionError(null)`, which clear rather than
+display. Admin surfaces it too, where a raw Postgres string is more use.
+
+Original writeup follows.
 `quote.tsx:602,618` (`setSubmitError(error.message)`) and `portal.tsx:160`
 (`setActionError(error.message)`) render `error.message` directly with no
 translation layer. Confirmed concretely: supabase-js doesn't throw on
@@ -228,7 +258,18 @@ trip-date check mirroring migration 042's 1-week lock.
 **Scenario:** A customer on a near-term trip fills out the whole edit
 form and only then hits a generic RPC rejection.
 
-### #16 — Hardcoded client-side rate/threshold constants ⏭ FAST-FOLLOW (post-launch)
+### #16 — Hardcoded client-side rate/threshold constants ✅ RESOLVED 2026-07-29
+Fixed by commit `5dce11d` + migration 050 (which opened `rate_config` and
+`surcharge_config` to public read) — the preview now reads rates, GST, fuel,
+overtime and long-distance thresholds live from config rather than mirroring
+them in JS. Verified: seven live `surcharges.*` reads plus a `rate_config`
+lookup for the hourly rate.
+
+`RATE_FALLBACK` remains, deliberately: it applies only if the config read
+itself fails, so the form still produces a number rather than breaking. That's
+a safety net, not the drift risk this bug was about.
+
+Original writeup follows.
 `quote.tsx:428-430,447,450-451,455-456` hardcode rates/thresholds instead
 of reading `rate_config`/`surcharge_config`. Currently correct (verified
 against migrations 014/034), but nothing would catch future drift if
