@@ -229,7 +229,20 @@ Needs decisions before building: invoice numbering (still derived from the
 quote number?), payment terms, what Melody actually sends a school, and
 whether "completed trip" or an explicit admin action triggers generation.
 
-## Phase 7 — Email queue safety net
+## Phase 7 — Email queue safety net ✅ DONE 2026-07-29
+
+Migration 059 (applied live). A pg_cron job calls notify-send every five
+minutes, so a queued email always goes out instead of waiting for an
+unrelated user action. Authenticated with the PUBLISHABLE key — already
+public in the site bundle — so no secret sits in `cron.job`. Verified by
+running the job's exact body by hand: HTTP 200, `{"sent":0,"queued":0}`.
+Added a `stuck_notifications` view for anything pending over 30 minutes.
+
+Also found while doing it: 13 'failed' rows in notification_log, all from
+11–23 June, all the same pre-domain-verification Resend error. Mail to real
+customers has sent fine since. History, not a live fault.
+
+Original writeup follows.
 
 Nothing drains the queue on a schedule. `notify-send` runs only when the
 frontend invokes it after a user action, and `src/lib/notify.ts` deliberately
