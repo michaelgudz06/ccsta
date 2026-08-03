@@ -376,7 +376,14 @@ function QuotePage() {
   useEffect(() => {
     if (editQuoteId || typeof window === "undefined" || !draftReady) return;
     const draft = { school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, multiStops, includeReturnLeg, returnStop, returnAddressTouched, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref };
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* quota */ }
+    // Failing to save the draft must never interrupt someone filling the form,
+    // but a silent failure meant "it lost everything I typed" was
+    // undiagnosable. Log and carry on. BUG_BACKLOG #22.
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch (err) {
+      console.warn("Couldn't save quote draft (storage full or blocked):", err);
+    }
   }, [editQuoteId, draftReady, school, pickup, destination, destinationAddress, date, tripType, departTime, returnTime, shuttleRuns, multiStops, includeReturnLeg, returnStop, returnAddressTouched, kToFour, grade5Plus, adults, cargo, c1n, c1e, c1p, c2n, c2e, c2p, dayN, dayP, notes, driverPref]);
 
   // Prefill from previous quote (blank-form convenience only — skipped
@@ -746,6 +753,12 @@ function QuotePage() {
       if (typeof window !== "undefined") window.location.href = "/login?next=/quote&new=1";
       return;
     }
+    // BUG_BACKLOG #21: everything below runs inside try/finally so a throw
+    // between here and the RPC can't leave the button stuck on "Submitting…"
+    // forever with no way back. supabase-js returns errors rather than
+    // throwing, so this is a latent trap rather than a live bug — but it's the
+    // kind that only shows up on the day something else breaks.
+    try {
     setSubmitting(true);
     setSubmitError(null);
 
@@ -859,6 +872,15 @@ function QuotePage() {
     dispatchNotifications();
     if (typeof window !== "undefined") localStorage.removeItem(DRAFT_KEY);
     setSubmittedQuoteNo(result.quote_number);
+    } catch (err) {
+      console.error("handleSubmit failed:", err);
+      setSubmitError(
+        friendlyError(err, `Something went wrong sending your request. Please try again, or call us at ${COMPANY.phoneDispatch}.`),
+      );
+    } finally {
+      // Always releases the button, whatever happened above.
+      setSubmitting(false);
+    }
   };
 
   // Edit mode: loading or blocked states take over the whole page, same

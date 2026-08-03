@@ -13,16 +13,16 @@ reasoning at the time stays readable.
 - ✅ **FIXED** — done, with a note saying how and when.
 - ⏭ **FAST-FOLLOW (post-launch)** — tracked, not blocking launch.
 
-**As of 2026-07-29: 12 of the 22 are fixed** — #1, #2, #3, #4, #5, #6, #7, #8,
-#11, #14, #16, #17. The four originally marked "FIXING PRE-LAUNCH" (#3, #4,
+**As of 2026-07-29: 17 of the 22 are fixed** — #1, #2, #3, #4, #5, #6, #7, #8,
+#11, #13, #14, #15, #16, #17, #20, #21, #22. The four originally marked "FIXING PRE-LAUNCH" (#3, #4,
 #6, #7) did all ship; three of them just kept the pre-launch label for over a
 week, which made the list look worse than reality. Verify before trusting a
 label here.
 
-**Still open (10, all minor):** #9, #10, #12, #13, #15, #18, #19, #20, #21,
-#22 — none money-related. #15 is the most user-visible: the portal lets a
-customer fill in an entire edit form before the server rejects it under the
-7-day rule.
+**Still open (5, all cosmetic or edge-case):** #9 (cross-tab draft
+clobbering), #10 (no cap on shuttle run count), #12 (draft restore doesn't
+validate shape), #18 (member-rate display flicker), #19 (cosmetic "0h" chip).
+None are money-related and none are user-blocking.
 
 Historical note: this file used to ask whether shipping the two CRITICAL
 findings as fast-follow was a deliberate acceptance of risk. Answered
@@ -235,7 +235,13 @@ with no sanity check or "did you mean the next day?" prompt.
 future field rename could cause an old localStorage draft to silently
 apply malformed rows instead of being detected and discarded.
 
-### #13 — Portal query failures silently render as "no quotes" ⏭ FAST-FOLLOW (post-launch)
+### #13 — Portal query failures silently render as "no quotes" ✅ FIXED 2026-07-29
+The quotes query now checks `error` and sets a `loadError`, which renders an
+amber "we couldn't load your trips" panel with a Try again button instead of
+the reassuring empty state. Telling a customer they have no bookings when the
+request merely failed is the kind of wrong that gets acted on.
+
+Original writeup follows.
 Every `.from(...)` call in `portal.tsx:load()` (lines 93-142) ignores
 `error`. A failed query looks identical to a customer who genuinely has
 zero quotes.
@@ -252,7 +258,14 @@ Original writeup follows.
 `RouteMap.tsx`/`MultiStopRouteMap.tsx` never use `AbortController`. A hung
 Nominatim/OSRM request looks identical to "still working," indefinitely.
 
-### #15 — Portal's `canEdit` doesn't check the 7-day rule ⏭ FAST-FOLLOW (post-launch)
+### #15 — Portal's `canEdit` doesn't check the 7-day rule ✅ FIXED 2026-07-29
+`canEdit` now mirrors migration 042's lock: no online edit within 7 days of
+the trip. The Edit button is hidden and replaced with an explanation and the
+dispatch number, rather than letting someone fill in the whole form and then
+be rejected by the RPC. Verified in the portal against a trip dated inside the
+window — button gone, notice shown.
+
+Original writeup follows.
 `portal.tsx:231-232` matches the server's status check but has no
 trip-date check mirroring migration 042's 1-week lock.
 **Scenario:** A customer on a near-term trip fills out the whole edit
@@ -302,16 +315,32 @@ school lookup resolves. Jarring, not incorrect — final math is unaffected.
 The summary chip shows "0h" even though billed hours correctly floor to
 the minimum underneath it in the actual price table.
 
-### #20 — "This quote couldn't be found" conflates a 404 with a transient failure ⏭ FAST-FOLLOW (post-launch)
+### #20 — "This quote couldn't be found" conflates a 404 with a transient failure ✅ RESOLVED 2026-07-29
+Already fixed by the #3 work, verified 2026-07-29: a query error routes to
+`failLoad()` ("We couldn't load this quote right now") while a genuinely
+missing row says "This quote couldn't be found". The two are distinct.
+
+Original writeup follows.
 Same root cause as #3/#13 — a failed initial load and a genuinely missing
 quote render the same message.
 
-### #21 — `handleSubmit` has no try/catch ⏭ FAST-FOLLOW (post-launch)
+### #21 — `handleSubmit` has no try/catch ✅ FIXED 2026-07-29
+Wrapped in try/catch/finally, with `setSubmitting(false)` in the finally so
+the button is always released. Still a latent trap rather than a live bug --
+supabase-js returns errors instead of throwing -- but it's the kind that only
+surfaces on the day something else breaks.
+
+Original writeup follows.
 Currently unreachable given supabase-js's no-throw behavior, but a latent
 trap for a future synchronous throw between `setSubmitting(true)` and the
 RPC call, which would leave the button stuck on "Submitting…" forever.
 
-### #22 — Empty catch in `AddressAutocomplete` + swallowed localStorage draft errors ⏭ FAST-FOLLOW (post-launch)
+### #22 — Empty catch in `AddressAutocomplete` + swallowed localStorage draft errors ✅ FIXED 2026-07-29
+Both still degrade gracefully -- that part was right -- but they now
+`console.warn` instead of vanishing. Silently swallowing them made "autocomplete
+stopped working" and "it lost what I typed" undiagnosable.
+
+Original writeup follows.
 Both silently degrade (plain input; draft just doesn't save/restore).
 Likely intentional, but worth confirming rather than assuming.
 
