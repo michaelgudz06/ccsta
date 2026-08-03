@@ -50,6 +50,37 @@ const maxFutureDateStr = () => {
 };
 
 /**
+ * Shape-check a draft restored from localStorage (BUG_BACKLOG #12).
+ *
+ * Only the fields whose shape actually matters are checked: the string fields
+ * are individually guarded at the point of use in applyDraft, but the two
+ * arrays are cast wholesale and would otherwise reach the form as malformed
+ * rows. A draft failing this is discarded, not repaired -- the customer loses
+ * an autosave they never knew existed, which is far better than a form
+ * silently populated with rubbish.
+ */
+function isWellFormedDraft(d: unknown): d is Record<string, unknown> {
+  if (!d || typeof d !== "object" || Array.isArray(d)) return false;
+  const rec = d as Record<string, unknown>;
+  const runsOk =
+    rec.shuttleRuns === undefined
+    || (Array.isArray(rec.shuttleRuns)
+        && rec.shuttleRuns.every((r) => r && typeof r === "object"
+          && typeof (r as any).pickup === "string" && typeof (r as any).dropoff === "string"));
+  const stopsOk =
+    rec.multiStops === undefined
+    || (Array.isArray(rec.multiStops)
+        && rec.multiStops.every((r) => r && typeof r === "object"
+          && typeof (r as any).address === "string"
+          && typeof (r as any).arrivalTime === "string"));
+  const returnStopOk =
+    rec.returnStop === undefined
+    || (typeof rec.returnStop === "object" && rec.returnStop !== null
+        && typeof (rec.returnStop as any).address === "string");
+  return runsOk && stopsOk && returnStopOk;
+}
+
+/**
  * Run a follow-up write that happens AFTER the quote is already safely
  * submitted, retrying once before giving up (BUG_BACKLOG #8).
  *
@@ -154,6 +185,9 @@ function QuotePage() {
   // from today — Melody's admin review is the safety net for a member
   // school that quoted while logged out.
   const [isMemberSchool, setIsMemberSchool] = useState(false);
+  // True while the debounced member lookup is in flight, so the estimate can
+  // say the rate is still settling instead of flipping without explanation.
+  const [memberCheckPending, setMemberCheckPending] = useState(false);
 
   // Live pricing data for the customer estimate preview, replacing what used
   // to be hardcoded numbers in this file (see migration 050 -- rate_config
@@ -219,6 +253,8 @@ function QuotePage() {
   // Gates the autosave effect below so it can't fire (and overwrite the saved
   // draft with the form's blank initial state) before we've checked for one.
   const [draftReady, setDraftReady] = useState(false);
+  // Another tab wrote the shared draft key while this form was open.
+  const [draftConflict, setDraftConflict] = useState(false);
   // Set once Start Fresh is chosen. The "prefill from previous quote" effect
   // below checks this before applying its result -- a ref (not state) because
   // it must be visible to that effect's in-flight async callback immediately,
@@ -298,6 +334,17 @@ function QuotePage() {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) { setDraftReady(true); return; }
       const d = JSON.parse(raw);
+      // BUG_BACKLOG #12: a stored draft is untrusted input -- it may have been
+      // written by an older build with different field shapes, or hand-edited.
+      // applyDraft blind-casts, so a malformed array would land as malformed
+      // rows in the form. Discard anything that doesn't match rather than
+      // half-applying it.
+      if (!isWellFormedDraft(d)) {
+        console.warn("Discarding a saved draft that no longer matches the form's shape.");
+        localStorage.removeItem(DRAFT_KEY);
+        setDraftReady(true);
+        return;
+      }
       if (draftHasContent(d)) {
         setPendingDraft(d);
       } else {
@@ -308,6 +355,21 @@ function QuotePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // BUG_BACKLOG #9: the draft key is shared across tabs, so two open tabs
+  // silently overwrite each other. Full multi-tab merge isn't worth it for an
+  // autosave, but silently losing what someone typed is. The `storage` event
+  // fires only in OTHER tabs, so this tab learns the moment its draft is
+  // superseded and can say so instead of quietly saving over the top.
+  useEffect(() => {
+    if (editQuoteId || typeof window === "undefined") return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== DRAFT_KEY || e.newValue === null) return;
+      setDraftConflict(true);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [editQuoteId]);
 
   const handleResumeDraft = () => {
     if (pendingDraft) applyDraft(pendingDraft);
@@ -540,8 +602,13 @@ function QuotePage() {
   // match on the trimmed name, same matching approach submit_quote already
   // uses server-side (lower(trim(name))).
   useEffect(() => {
-    if (!session || !school.trim()) { setIsMemberSchool(false); return; }
+    if (!session || !school.trim()) { setIsMemberSchool(false); setMemberCheckPending(false); return; }
     let cancelled = false;
+    // BUG_BACKLOG #18: the rate used to display as non-member and then visibly
+    // jump ~400ms later once this debounced lookup resolved. Marking the check
+    // pending lets the estimate show that it's still settling rather than
+    // asserting a number that's about to change under the customer.
+    setMemberCheckPending(true);
     const timer = setTimeout(() => {
       supabase
         .from("schools")
@@ -550,7 +617,9 @@ function QuotePage() {
         .limit(1)
         .maybeSingle()
         .then(({ data }) => {
-          if (!cancelled) setIsMemberSchool(data?.is_member ?? false);
+          if (cancelled) return;
+          setIsMemberSchool(data?.is_member ?? false);
+          setMemberCheckPending(false);
         });
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -1025,6 +1094,18 @@ function QuotePage() {
         </div>
 
         <div className="space-y-5">
+            {/* BUG_BACKLOG #9: the autosave draft is a single shared key, so a
+                second tab overwrites this one's. Rather than silently losing
+                whichever tab saves last, say so — this tab's answers are still
+                on screen and submitting from here still works. */}
+            {draftConflict && !editQuoteId && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <span className="font-semibold">Heads up —</span> this form is open in another tab, and
+                that tab has been saving over this one's autosave. What you can see here is fine and you
+                can carry on, but finish in one tab to avoid confusion.
+                <button onClick={() => setDraftConflict(false)} className="ml-2 font-semibold underline">Dismiss</button>
+              </div>
+            )}
             <SectionCard number={1} title="Trip type" hint="What kind of trip is this?">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {TRIP_TYPE_OPTIONS.map((opt) => (
@@ -1195,11 +1276,25 @@ function QuotePage() {
                 </div>
               )}
 
+              {/* BUG_BACKLOG #19: this used to render a bare "0h" when the two
+                  times were identical, which reads as a broken calculation
+                  even though the price table below correctly bills the
+                  minimum. Show the billed figure alongside whenever the
+                  minimum is doing the work. */}
               {tripMinutes !== null && (
                 <div className="flex items-center justify-between rounded-xl bg-primary/5 px-4 py-3">
                   <span className="text-xs font-semibold text-foreground/80">{tripType === "shuttle" || tripType === "multi_destination" ? "Bus engaged" : "Trip length"}</span>
-                  <span className="text-sm font-bold text-primary tabular-nums">
-                    {Math.floor(tripMinutes / 60)}h{tripMinutes % 60 > 0 ? ` ${tripMinutes % 60}m` : ""}
+                  <span className="text-right text-sm font-bold text-primary tabular-nums">
+                    {tripMinutes === 0
+                      ? `${minHours}h minimum`
+                      : <>
+                          {Math.floor(tripMinutes / 60)}h{tripMinutes % 60 > 0 ? ` ${tripMinutes % 60}m` : ""}
+                          {minimumApplied && (
+                            <span className="block text-[11px] font-medium text-muted-foreground">
+                              billed as {minHours}h minimum
+                            </span>
+                          )}
+                        </>}
                   </span>
                 </div>
               )}
@@ -1385,7 +1480,11 @@ function QuotePage() {
                       dark
                       label="Suggested bus"
                       value={`${busLabel}${busCount > 1 ? ` × ${busCount}` : ""}`}
-                      sub={`${isMemberSchool ? "Member" : "Non-member"} rate · ${formatMoney(hourlyRate)}/hr`}
+                      sub={
+                  memberCheckPending
+                    ? "Checking your organization's rate…"
+                    : `${isMemberSchool ? "Member" : "Non-member"} rate · ${formatMoney(hourlyRate)}/hr`
+                }
                     />
                     <Row
                       dark

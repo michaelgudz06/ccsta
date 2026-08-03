@@ -166,17 +166,16 @@ mechanical and cheap by comparison.
 
 ---
 
-## Phase 5 — Remaining fast-follow bugs, in batches (partly done)
+## Phase 5 — Remaining fast-follow bugs ✅ DONE 2026-07-29
 
-**Done 2026-07-27:** #6, #8, #11, #14 and #17. #7 and #16 were found to be
-already handled. The "money-correctness cluster" (#8, #11, #14) was taken
-first deliberately — all three ended the same way, with a quote priced wrong
-and nobody told.
+**All 22 findings from the 2026-07-20 hunt are now closed.** Order taken:
+the money-correctness cluster first (#8, #11, #14 — all three ended with a
+quote priced wrong and nobody told), then the failures that masqueraded as
+empty states (#13, #15, #21, #22), then the cosmetic and edge-case remainder
+(#9, #10, #12, #18, #19). #3, #4, #7, #16 and #20 turned out to be already
+fixed and were verified rather than re-done.
 
-**Still open:** #9, #10, #12, #13, #15, #18, #19, #20, #21, #22 — none of
-them money-related now. #15 is the most user-visible: the portal lets a
-customer fill an entire edit form before the server rejects it under the
-7-day rule.
+`BUG_BACKLOG.md` is now history rather than a worklist.
 
 Original batching follows.
 

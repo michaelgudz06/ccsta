@@ -9,20 +9,18 @@ re-rated since.
 Each entry keeps its original writeup underneath the resolution note, so the
 reasoning at the time stays readable.
 
-**Status key:**
-- ✅ **FIXED** — done, with a note saying how and when.
-- ⏭ **FAST-FOLLOW (post-launch)** — tracked, not blocking launch.
+**Status key:** ✅ **FIXED** — with a note saying how and when.
 
-**As of 2026-07-29: 17 of the 22 are fixed** — #1, #2, #3, #4, #5, #6, #7, #8,
-#11, #13, #14, #15, #16, #17, #20, #21, #22. The four originally marked "FIXING PRE-LAUNCH" (#3, #4,
-#6, #7) did all ship; three of them just kept the pre-launch label for over a
-week, which made the list look worse than reality. Verify before trusting a
-label here.
+**As of 2026-07-29: all 22 are fixed.**
 
-**Still open (5, all cosmetic or edge-case):** #9 (cross-tab draft
-clobbering), #10 (no cap on shuttle run count), #12 (draft restore doesn't
-validate shape), #18 (member-rate display flicker), #19 (cosmetic "0h" chip).
-None are money-related and none are user-blocking.
+Every finding from the 2026-07-20 hunt is now closed. Four (#3, #4, #6, #7)
+shipped pre-launch but kept their "FIXING PRE-LAUNCH" label for over a week,
+which made the list look worse than reality — verify before trusting a label
+here.
+
+This file is now history rather than a worklist. New bugs should be added at
+the bottom rather than reusing these numbers, since the resolution notes
+reference them.
 
 Historical note: this file used to ask whether shipping the two CRITICAL
 findings as fast-follow was a deliberate acceptance of risk. Answered
@@ -206,11 +204,24 @@ preference, with zero indication to anyone that data was dropped.
 
 ## MEDIUM
 
-### #9 — Cross-tab draft clobbering, last-write-wins ⏭ FAST-FOLLOW (post-launch)
+### #9 — Cross-tab draft clobbering, last-write-wins ✅ FIXED 2026-07-29
+A `storage` listener (which fires only in OTHER tabs) now sets a conflict flag
+the moment another tab writes the shared draft key, and the form shows a
+dismissible notice. Deliberately NOT a full multi-tab merge — that's a lot of
+machinery for an autosave — but silently losing typed work was the actual
+problem, and this replaces silence with a warning. What's on screen stays
+valid and still submits. Verified by dispatching a synthetic StorageEvent.
+
+Original writeup follows.
 No `storage`/`BroadcastChannel` sync on the draft-autosave key. Two open
 tabs silently overwrite each other's in-progress draft, no warning.
 
-### #10 — No upper bound on shuttle run count ⏭ FAST-FOLLOW (post-launch)
+### #10 — No upper bound on shuttle run count ✅ FIXED 2026-07-29
+Capped at `MAX_RUNS = 20`, with a hint on the stepper explaining the limit and
+pointing at the phone for anything larger. Verified: typing 999 clamps to 20
+and renders 20 run blocks, not 999.
+
+Original writeup follows.
 `QuoteFields.tsx:231-240`'s run-count stepper floors at 1 but never caps.
 Typing "999" instantly renders 999 pickup/dropoff pairs and would submit a
 999-element array.
@@ -230,7 +241,16 @@ A customer who swaps depart/return by mistake gets a silent 17-hour
 "overnight" interpretation feeding straight into the live price estimate,
 with no sanity check or "did you mean the next day?" prompt.
 
-### #12 — Draft restore has no schema/shape validation ⏭ FAST-FOLLOW (post-launch)
+### #12 — Draft restore has no schema/shape validation ✅ FIXED 2026-07-29
+`isWellFormedDraft()` shape-checks a restored draft before `applyDraft` gets
+near it, and a failing draft is discarded (and cleared) rather than
+half-applied. Only the two array fields and `returnStop` are checked — the
+string fields are already individually guarded at the point of use, and those
+arrays were the ones being cast wholesale. Verified by planting a malformed
+draft in localStorage and reloading: discarded, nothing leaked into the form,
+no resume prompt.
+
+Original writeup follows.
 `applyDraft` (`quote.tsx:134-157`) blind-casts stored JSON into state. A
 future field rename could cause an old localStorage draft to silently
 apply malformed rows instead of being detected and discarded.
@@ -307,11 +327,23 @@ the condition was unreachable.
 
 ## LOW
 
-### #18 — Member-rate lookup can visibly jump ~400ms after typing ⏭ FAST-FOLLOW (post-launch)
+### #18 — Member-rate lookup can visibly jump ~400ms after typing ✅ FIXED 2026-07-29
+The estimate now says "Checking your organization's rate…" while the debounced
+lookup is in flight, instead of asserting the non-member rate and then
+silently flipping. The jump was never wrong, but showing a number that's about
+to change reads as unreliable on a page whose whole job is quoting a price.
+
+Original writeup follows.
 Rate flips from non-member to member display shortly after the debounced
 school lookup resolves. Jarring, not incorrect — final math is unaffected.
 
-### #19 — Cosmetic "0h" trip-length chip on identical depart/return times ⏭ FAST-FOLLOW (post-launch)
+### #19 — Cosmetic "0h" trip-length chip on identical depart/return times ✅ FIXED 2026-07-29
+Identical times now render "4h minimum" rather than a bare "0h", and any trip
+shorter than the minimum shows "billed as Nh minimum" under the length. The
+price table was always right; the chip just contradicted it. Verified with
+9:00 AM → 9:00 AM: chip reads "4h minimum".
+
+Original writeup follows.
 The summary chip shows "0h" even though billed hours correctly floor to
 the minimum underneath it in the actual price table.
 
