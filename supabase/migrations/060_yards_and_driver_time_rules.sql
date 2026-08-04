@@ -75,17 +75,27 @@ INSERT INTO public.yards (name, address, lat, lng, is_default)
 VALUES ('Langley', '4053 208 Street, Township of Langley, BC V3A 2H3', 49.076035, -122.647987, false)
 ON CONFLICT (name) DO NOTHING;
 
--- ABBOTSFORD IS DELIBERATELY NOT SEEDED.
--- The address given was "Fraser Highway, Abbotsford, BC V4X 1G8" — no street
--- number. Geocoding returns three different stretches of Fraser Highway
--- spread over roughly 1.5 km, so there is no single point to use. Since every
--- driver-time calculation starts at the yard, an origin that's a kilometre
--- out would quietly bias every Abbotsford quote, and near the 5-minute
--- short-hop threshold it could flip a leg between billing and not billing.
+-- Abbotsford. NOTE THE PROVENANCE — this one is an APPROXIMATION, unlike the
+-- other two.
 --
--- Seeding it blank or with a guessed midpoint would be worse than leaving it
--- out: the calculation would look like it worked. Add it once there's a
--- street number or a dropped pin, with lat/lng filled in.
+-- The address given was "Fraser Highway, Abbotsford, BC V4X 1G8" with no
+-- street number, which geocodes to three stretches of Fraser Highway ~1.5 km
+-- apart. Mila supplied a map screenshot instead and said the exact address
+-- doesn't matter: the yard is the block on the north side of Fraser Hwy just
+-- west of Ross Rd, by Cummings Trailer Sales and Fraser Seeds.
+--
+-- The coordinates below are the Fraser Hwy / Ross Rd intersection, derived by
+-- geocoding both roads separately and taking where they meet. That should be
+-- within roughly 200 m of the actual gate — immaterial at a 15-minute
+-- rounding step, where 200 m is a few seconds. Sanity check: this point is
+-- 41.5 km / 39 min from the Surrey yard, which is a plausible
+-- Abbotsford-to-Fleetwood run.
+--
+-- Refine it if driver time for Abbotsford trips ever looks off, and prefer a
+-- dropped pin over a street address if one is ever needed.
+INSERT INTO public.yards (name, address, lat, lng, is_default)
+VALUES ('Abbotsford', 'Fraser Hwy near Ross Rd, Abbotsford, BC V4X 1G8', 49.057584, -122.403942, false)
+ON CONFLICT (name) DO NOTHING;
 
 -- ── Which yard a given quote leaves from ────────────────────────────────
 ALTER TABLE public.quote_versions
