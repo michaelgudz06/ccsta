@@ -249,6 +249,57 @@ swallows failures — so a failed dispatch sits `pending` until an unrelated
 action flushes it. A pg_cron job calling it every few minutes closes a whole
 class of "the customer never got the email" mystery. Small.
 
+## NEW BACKLOG — raised 2026-08-04, in Mila's priority order
+
+### 1. Driver time — HIGHEST PRIORITY ⚠ awaiting Mila's explanation
+Flagged by Mila as "the most urgent thing we must do". She will explain what
+needs to change; **do not guess or start building.** Ask her first.
+
+Context for whoever picks it up — how it works today:
+- Driver time is a **flat buffer**, `surcharges.driver_time_buffer_hours`
+  (currently 1 hr), added on top of billable trip time. It is NOT derived
+  from the route or from distance.
+- It's computed in BOTH places: `calculate_estimate` server-side and the
+  preview in `quote.tsx`. **Any change to the number must move on both sides
+  together**, or the customer's estimate and the real price drift apart —
+  the exact class of bug migration 050 and commit `5dce11d` cleaned up.
+- Melody can override the total billable hours per quote via
+  `approved_driver_hours`, editable inline on the admin price card.
+- Separately, the `destinations` table holds `pre_hours`/`post_hours` per
+  customer location, which `calculate_estimate` computes as
+  `reference_driver_hours` — an informational figure that does NOT drive
+  billing today. That may be exactly what she wants to change; ask.
+
+### 2. Destination list for address autofill
+Suggest known places as the customer types, own list first, Google Places
+underneath. **Not** shown before they start typing.
+- **Pickup side is ready to build**: the `destinations` table already holds
+  104 real customer locations (schools and churches) with full addresses.
+- **Destination side needs Mila's list** — Science World, Playland etc. No
+  such data exists yet. She has an Excel sheet of known addresses.
+- **Design note:** put trip destinations in a NEW table. `destinations`
+  despite its name means "customer locations" and feeds driver-time
+  pricing — mixing venues in risks a stray row affecting someone's price.
+
+### 3. Bus and driver assignment
+Mila wants to plan this properly; she says there are tricky parts. Planning
+conversation before code.
+
+### 4. Driver onboarding
+Also flagged as having tricky parts. Note `invite-driver` already exists as
+an edge function (admin-only, sets role='driver' and creates a drivers row),
+so there's a starting point — but nothing invites an ADMIN yet, which came
+up separately when setting Melody up.
+
+### 5. Invoicing system
+Same as Phase 6 above. Needs decisions on numbering, payment terms, what
+Melody actually sends, and what triggers generation.
+
+### 6. Driver UI — hourly availability
+Availability is currently daily; Mila wants hourly. Explicitly "later".
+
+---
+
 ## Blocked on a decision — do not build
 
 - **Member special pricing tiers** ("Member w/i 1hr" $63/$78.75, "Driver
