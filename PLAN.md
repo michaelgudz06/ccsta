@@ -258,13 +258,28 @@ minutes from the yard and one fifty minutes away are billed identically.
 
 **The formula Mila wants:**
 
-    travel(yard -> pickup)          real, traffic-aware
-  + travel(drop-off -> yard)        real, traffic-aware
-  + 15 min pre-trip                 when applicable, see below
+    leg_out  = travel(yard -> pickup)       traffic-aware; 0 if under 5 min
+  + leg_back = travel(drop-off -> yard)     traffic-aware; 0 if under 5 min
+  + 15 min pre-trip                         when applicable, see below
   = round the TOTAL up to the next quarter hour (15/30/45/60)
 
 Rounding applies to the TOTAL, not per leg — confirmed. So 22 + 19 + 15 =
 56 min becomes 1h00, not 1h15.
+
+**Short-hop rule:** each leg is tested separately and anything under 5
+minutes counts as ZERO. Some schools are minutes from the yard — Frost Road
+is 2–3 — and charging travel time for those isn't honest. So Frost Road in
+the morning bills 0 + 0 + 15 = **15 minutes**, just the pre-trip. A 4-minute
+leg paired with a 40-minute one gives 0 + 45.
+
+Worked examples to test against:
+| yard->pickup | dropoff->yard | pre-trip | billed |
+|---|---|---|---|
+| 3 min | 3 min | yes | 15 min |
+| 3 min | 3 min | no  | 0 |
+| 22 min | 19 min | yes | 1h00 |
+| 22 min | 19 min | no  | 45 min |
+| 4 min | 40 min | yes | 1h00 |
 
 **Decisions taken:**
 - **Server-side**, in an edge function. Driver time is now a price input, so
@@ -272,9 +287,17 @@ Rounding applies to the TOTAL, not per leg — confirmed. So 22 + 19 + 15 =
   was exactly that failure mode silently dropping a surcharge.
 - **Traffic-aware** for the actual departure time, so a 7:30am Surrey pickup
   reflects rush hour.
-- **Pre-trip applies only to the bus's FIRST trip of the day.** If it already
-  ran a school route that morning, the inspection is done and the 15 minutes
-  is not charged.
+- **Pre-trip is charged ONCE PER BUS PER DAY**, on that bus's first outing
+  from the yard — regardless of which driver takes it, and regardless of
+  whether the earlier outing was a route or a trip. If another driver already
+  did the pre-trip on that bus that morning, it isn't charged again.
+  - **The system cannot fully determine this on its own.** School routes are
+    almost certainly not tracked in this app at all — it's a field-trip
+    booking system. If a bus ran a morning route that exists nowhere in the
+    database, no automation can know the inspection was done. Melody's manual
+    toggle is therefore permanent, not a stopgap: automation can infer the
+    cases it CAN see (an earlier trip on the same bus, same day) and she
+    overrides for the ones it can't.
 - **At quote time, assume the pre-trip IS needed** and let Melody remove it
   when she schedules. The customer's price then only ever moves down, which
   is the only direction compatible with "No surprise billing" on the
