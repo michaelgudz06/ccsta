@@ -41,9 +41,6 @@ function clampMinute(v: string): number | null {
 // HH:MM text inputs + AM/PM toggle. Internally buffers raw keystrokes so the
 // user can type freely; only resolves and commits a full 24h "HH:MM" string
 // (the same contract the old <select>-based picker used) on blur / period click.
-/** Upper bound on shuttle runs in one quote (BUG_BACKLOG #10). */
-const MAX_RUNS = 20;
-
 export function TimeField({
   label, value, onChange, error, required, id,
 }: {
@@ -132,11 +129,9 @@ export function TimeField({
 }
 
 export function Stepper({
-  label, value, onChange, bare, id, hint,
+  label, value, onChange, bare, id,
 }: {
   label: string; value: string; onChange: (v: string) => void; bare?: boolean; id?: string;
-  /** Small note under the control, e.g. explaining an upper limit. */
-  hint?: string;
 }) {
   const n = parseInt(value, 10) || 0;
   const set = (next: number) => {
@@ -145,10 +140,7 @@ export function Stepper({
   };
   return (
     <div id={id} className={`flex items-center justify-between gap-4 ${bare ? "py-2.5" : "rounded-2xl border border-border p-3.5"}`}>
-      <div>
-        <div className="text-sm font-semibold text-foreground">{label}</div>
-        {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-      </div>
+      <div className="text-sm font-semibold text-foreground">{label}</div>
       <div className="flex h-[42px] shrink-0 items-center overflow-hidden rounded-xl border border-input">
         <button
           type="button" onClick={() => set(n - 1)} disabled={n <= 0}
@@ -236,14 +228,9 @@ export function ShuttleRunsEditor({
     <div id={id} className="space-y-4">
       <Stepper
         label="Number of runs"
-        hint={runs.length >= MAX_RUNS ? `Maximum ${MAX_RUNS} runs — call us for anything larger.` : undefined}
         value={String(runs.length)}
         onChange={(v) => {
-          // BUG_BACKLOG #10: floored at 1 but never capped, so typing "999"
-          // rendered 999 pickup/dropoff pairs and would have submitted a
-          // 999-element array. A shuttle day realistically has a handful of
-          // runs; MAX_RUNS is generous and keeps the form usable.
-          const n = Math.min(MAX_RUNS, Math.max(1, parseInt(v || "1", 10) || 1));
+          const n = Math.max(1, parseInt(v || "1", 10) || 1);
           if (n === runs.length) return;
           onChange(
             n > runs.length

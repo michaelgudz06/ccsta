@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { dispatchNotifications } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, CheckCircle2, XCircle, Phone, Pencil } from "lucide-react";
-import { formatTripDate, formatTime, formatMoney, formatTripType, todayISO, addDaysISO } from "@/lib/format";
+import { formatTripDate, formatTime, formatMoney, formatTripType } from "@/lib/format";
 import { COMPANY } from "@/lib/company";
 import { friendlyError } from "@/lib/errors";
 
@@ -88,12 +88,9 @@ function PortalPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [cancelModal, setCancelModal] = useState<{ id: string; mode: "cancel" | "request" } | null>(null);
   const [cancelReason, setCancelReason] = useState("");
-  // Distinguishes "your list is empty" from "we couldn't fetch your list".
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setQuotesLoading(true);
-    setLoadError(null);
     // Explicitly scoped to the signed-in user. For customers this is what RLS
     // enforces anyway, so it changes nothing — but an admin viewing this page
     // would otherwise see EVERY customer's quotes here, which defeats the
@@ -103,16 +100,7 @@ function PortalPage() {
       .select("id, quote_number, status, created_at, current_version_id, cancellation_requested_at, schools(name)")
       .order("created_at", { ascending: false });
     if (user?.id) q = q.eq("customer_id", user.id);
-    const { data: rows, error: rowsErr } = await q;
-    // BUG_BACKLOG #13: this used to bail silently, so a failed query looked
-    // exactly like a customer who has never booked anything. Distinguish the
-    // two — "you have no quotes" is reassuring and wrong when the request
-    // actually failed.
-    if (rowsErr) {
-      setLoadError("We couldn't load your trips just now. Check your connection and try again.");
-      setQuotesLoading(false);
-      return;
-    }
+    const { data: rows } = await q;
     if (!rows) { setQuotesLoading(false); return; }
 
     const versionIds = rows.map((r: any) => r.current_version_id).filter(Boolean) as string[];
@@ -239,13 +227,6 @@ function PortalPage() {
           <div className="mt-4 space-y-3">
             {quotesLoading ? (
               <div className="rounded-2xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">Loading…</div>
-            ) : loadError ? (
-              // Never show the reassuring empty state when the fetch failed —
-              // "you have no quotes" would be a lie the customer might act on.
-              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-8 text-center text-sm text-amber-900">
-                {loadError}
-                <button onClick={() => load()} className="ml-2 font-semibold underline">Try again</button>
-              </div>
             ) : quotes.length === 0 ? (
               <div className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
                 You haven't requested any quotes yet.{" "}
@@ -265,19 +246,8 @@ function PortalPage() {
                 // Editable pre-scheduling only (a bus/driver assigned needs
                 // the office involved for now), and not alongside a pending
                 // cancellation request.
-                // BUG_BACKLOG #15: the server (migration 042) also refuses an
-                // online edit inside 7 days of the trip unless the date is
-                // being pushed later. Without mirroring that here, a customer
-                // filled in the entire edit form and only then hit a generic
-                // rejection. The button is hidden instead, with the reason
-                // shown in its place.
-                const tripDate = q.version?.trip_date ?? null;
-                const withinLockWindow =
-                  !!tripDate && tripDate < addDaysISO(todayISO(), 7);
                 const canEdit =
-                  ["requested", "in_review", "approved", "confirmed"].includes(q.status)
-                  && !cancelPending
-                  && !withinLockWindow;
+                  ["requested", "in_review", "approved", "confirmed"].includes(q.status) && !cancelPending;
                 return (
                   <div key={q.id} className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
                     <button
@@ -379,17 +349,6 @@ function PortalPage() {
                           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                             We've received your cancellation request — the office will confirm it shortly.
                             Need it urgently? Call us at {COMPANY.phoneDispatch}.
-                          </p>
-                        )}
-
-                        {/* Say why editing is unavailable rather than just
-                            omitting the button — otherwise it looks broken. */}
-                        {withinLockWindow
-                          && ["requested", "in_review", "approved", "confirmed"].includes(q.status)
-                          && !cancelPending && (
-                          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                            This trip is within a week, so it can no longer be changed online.
-                            Call us at {COMPANY.phoneDispatch} and we'll sort it out.
                           </p>
                         )}
 

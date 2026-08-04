@@ -103,12 +103,8 @@ export function AddressAutocomplete({ label, value, onChange, placeholder, error
 
         onChange(place.formatted_address ?? "", result);
       });
-    } catch (err) {
-      // Degrading to a plain text input is the right behaviour (Places may be
-      // unavailable if billing lapses or the key restriction rejects the
-      // referrer) -- but swallowing it silently left nobody able to diagnose
-      // "autocomplete stopped working". BUG_BACKLOG #22.
-      console.warn("Address autocomplete unavailable, falling back to plain input:", err);
+    } catch {
+      // Places API not available (e.g. billing not enabled) — input stays as plain text
     }
   }, [mapsReady, onChange]);
 
