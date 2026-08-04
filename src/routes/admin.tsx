@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
 import { useAuth } from "@/lib/auth";
@@ -269,6 +269,14 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   // Which pipeline stage is being viewed. Each stage is its own page now, so
   // a growing queue doesn't become an endless scroll.
   const [activeTab, setActiveTab] = useState<string>("new");
+  // Exact per-stage totals from the server, independent of what's loaded.
+  const [stageCounts, setStageCounts] = useState<Record<string, number>>({});
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [searchTruncated, setSearchTruncated] = useState(false);
+  // Bumped after any action that can change a quote's status, to refresh
+  // counts and the current page without a full remount.
+  const [countsNonce, setCountsNonce] = useState(0);
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
 
   // Action state
@@ -291,67 +299,143 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const [estimate, setEstimate] = useState<EstimateBreakdown | null>(null);
   const [estimateBusy, setEstimateBusy] = useState(false);
 
-  useEffect(() => {
-    // Two-step fetch: quotes first, then versions — avoids PostgREST FK ambiguity
-    supabase
-      .from("quotes")
-      .select("id, quote_number, status, created_at, current_version_id, cancellation_requested_at, cancellation_reason, schools(name)")
-      .order("created_at", { ascending: false })
-      .limit(50)
-      .then(async ({ data: rows }) => {
-        if (!rows) { setQLoading(false); return; }
-        const versionIds = rows
-          .map((r: any) => r.current_version_id)
-          .filter(Boolean) as string[];
-        let versionMap: Record<string, AdminVersionDetail> = {};
-        if (versionIds.length > 0) {
-          const { data: versions } = await supabase
-            .from("quote_versions")
-            .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, trip_type, cargo_needed, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
-            .in("id", versionIds);
-          const { data: runs } = await supabase
-            .from("quote_shuttle_runs")
-            .select("quote_version_id, run_number, pickup_time, dropoff_time")
-            .in("quote_version_id", versionIds)
-            .order("run_number", { ascending: true });
-          const runsByVersion: Record<string, { run_number: number; pickup_time: string; dropoff_time: string }[]> = {};
-          for (const r of runs ?? []) {
-            (runsByVersion[r.quote_version_id] ??= []).push(r);
-          }
-          const { data: stops } = await supabase
-            .from("quote_multi_stops")
-            .select("quote_version_id, stop_number, destination_name, destination_address, arrival_time, departure_time")
-            .in("quote_version_id", versionIds)
-            .order("stop_number", { ascending: true });
-          const stopsByVersion: Record<string, { stop_number: number; destination_name: string | null; destination_address: string; arrival_time: string; departure_time: string | null }[]> = {};
-          for (const s of stops ?? []) {
-            (stopsByVersion[s.quote_version_id] ??= []).push(s);
-          }
-          versionMap = Object.fromEntries(
-            (versions ?? []).map((v: any) => [v.id, { ...v, shuttle_runs: runsByVersion[v.id] ?? [], multi_stops: stopsByVersion[v.id] ?? [] }])
-          );
-        }
-        const merged: AdminQuoteRow[] = rows.map((r: any) => ({
-          ...r,
-          quote_versions: r.current_version_id ? (versionMap[r.current_version_id] ?? null) : null,
-        }));
-        setQuotes(merged);
-        // Only deep-link into a quote when one was explicitly requested (e.g.
-        // from a notification link). Otherwise land on the stage list — with
-        // the tabbed layout, auto-opening the newest quote skipped past the
-        // page Melody actually came to look at.
-        if (initialQuoteId && merged.some((q) => q.id === initialQuoteId)) {
-          setSelected(initialQuoteId);
-          const target = merged.find((q) => q.id === initialQuoteId);
-          const section = QUOTE_SECTIONS.find((sec) => target && sec.statuses.includes(target.status));
-          if (section) setActiveTab(section.key);
-        }
-        setQLoading(false);
-      });
-    // Only consult initialQuoteId once, at mount — QuoteQueue fully remounts
-    // on every tab switch, so this can't go stale during its lifetime.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // ── Loading, per stage ───────────────────────────────────────────────
+  //
+  // Was a single fetch of the 50 most recent quotes, filtered client-side into
+  // stages. Two problems as volume grows: quote 51 onward silently disappeared
+  // from the UI entirely, and the stage counts were computed from those 50, so
+  // they would under-report without saying so. A wrong count is worse than a
+  // short list.
+  //
+  // Now: counts come from the server (exact, whatever the total), and only the
+  // open stage's rows are fetched, a page at a time.
+  const PAGE_SIZE = 25;
+  const SEARCH_CAP = 200;
+
+  /** Attach version, shuttle-run and stop detail to a page of quote rows. */
+  const hydrate = useCallback(async (rows: any[]): Promise<AdminQuoteRow[]> => {
+    const versionIds = rows.map((r) => r.current_version_id).filter(Boolean) as string[];
+    let versionMap: Record<string, AdminVersionDetail> = {};
+    if (versionIds.length > 0) {
+      const { data: versions } = await supabase
+        .from("quote_versions")
+        .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, trip_type, cargo_needed, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
+        .in("id", versionIds);
+      const { data: runs } = await supabase
+        .from("quote_shuttle_runs")
+        .select("quote_version_id, run_number, pickup_time, dropoff_time")
+        .in("quote_version_id", versionIds)
+        .order("run_number", { ascending: true });
+      const runsByVersion: Record<string, { run_number: number; pickup_time: string; dropoff_time: string }[]> = {};
+      for (const r of runs ?? []) (runsByVersion[r.quote_version_id] ??= []).push(r);
+      const { data: stops } = await supabase
+        .from("quote_multi_stops")
+        .select("quote_version_id, stop_number, destination_name, destination_address, arrival_time, departure_time")
+        .in("quote_version_id", versionIds)
+        .order("stop_number", { ascending: true });
+      const stopsByVersion: Record<string, { stop_number: number; destination_name: string | null; destination_address: string; arrival_time: string; departure_time: string | null }[]> = {};
+      for (const st of stops ?? []) (stopsByVersion[st.quote_version_id] ??= []).push(st);
+      versionMap = Object.fromEntries(
+        (versions ?? []).map((v: any) => [v.id, { ...v, shuttle_runs: runsByVersion[v.id] ?? [], multi_stops: stopsByVersion[v.id] ?? [] }]),
+      );
+    }
+    return rows.map((r) => ({
+      ...r,
+      quote_versions: r.current_version_id ? (versionMap[r.current_version_id] ?? null) : null,
+    })) as AdminQuoteRow[];
   }, []);
+
+  const QUOTE_COLUMNS =
+    "id, quote_number, status, created_at, current_version_id, cancellation_requested_at, cancellation_reason, schools(name)";
+
+  /** Exact per-stage counts, straight from the server. */
+  const loadCounts = useCallback(async () => {
+    const entries = await Promise.all(
+      QUOTE_SECTIONS.map(async (section) => {
+        const { count } = await supabase
+          .from("quotes")
+          .select("id", { count: "exact", head: true })
+          .in("status", section.statuses);
+        return [section.key, count ?? 0] as const;
+      }),
+    );
+    setStageCounts(Object.fromEntries(entries));
+  }, []);
+
+  /** One page of a stage, newest first. `append` keeps what's already shown. */
+  const loadStage = useCallback(async (statuses: QuoteStatus[], offset: number, append: boolean) => {
+    setQLoading(!append);
+    setLoadingMore(append);
+    const { data: rows } = await supabase
+      .from("quotes")
+      .select(QUOTE_COLUMNS)
+      .in("status", statuses)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+    const page = await hydrate(rows ?? []);
+    setQuotes((prev) => (append ? [...prev, ...page] : page));
+    setHasMore((rows ?? []).length === PAGE_SIZE);
+    setQLoading(false);
+    setLoadingMore(false);
+  }, [hydrate]);
+
+  /**
+   * Server-side search, so it reaches every quote rather than only the page on
+   * screen. School name lives on a joined table and destination on the version
+   * row, so those are resolved to ids first and folded into one `.or()`.
+   */
+  const runSearch = useCallback(async (term: string) => {
+    setQLoading(true);
+    const like = `%${term}%`;
+    const [{ data: schoolRows }, { data: verRows }] = await Promise.all([
+      supabase.from("schools").select("id").ilike("name", like),
+      supabase.from("quote_versions").select("quote_id").or(`destination_name.ilike.${like},destination_address.ilike.${like}`),
+    ]);
+    const ors = [`quote_number.ilike.${like}`];
+    const schoolIds = (schoolRows ?? []).map((r: any) => r.id);
+    if (schoolIds.length) ors.push(`school_id.in.(${schoolIds.join(",")})`);
+    const quoteIds = [...new Set((verRows ?? []).map((r: any) => r.quote_id).filter(Boolean))];
+    if (quoteIds.length) ors.push(`id.in.(${quoteIds.join(",")})`);
+
+    const { data: rows } = await supabase
+      .from("quotes")
+      .select(QUOTE_COLUMNS)
+      .or(ors.join(","))
+      .order("created_at", { ascending: false })
+      .limit(SEARCH_CAP);
+    const results = await hydrate(rows ?? []);
+    setQuotes(results);
+    setSearchTruncated((rows ?? []).length === SEARCH_CAP);
+    setHasMore(false);
+    setQLoading(false);
+  }, [hydrate]);
+
+  // Counts once on mount, then whenever a status might have changed.
+  useEffect(() => { loadCounts(); }, [loadCounts, countsNonce]);
+
+  // Debounced: search when there's a term, otherwise page the active stage.
+  useEffect(() => {
+    const term = search.trim();
+    const section = QUOTE_SECTIONS.find((x) => x.key === activeTab) ?? QUOTE_SECTIONS[0];
+    const t = setTimeout(() => {
+      setSearchTruncated(false);
+      if (term) runSearch(term);
+      else loadStage(section.statuses, 0, false);
+    }, term ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [search, activeTab, runSearch, loadStage, countsNonce]);
+
+  // Deep-link from a notification: land on that quote, in its own stage.
+  useEffect(() => {
+    if (!initialQuoteId) return;
+    (async () => {
+      const { data } = await supabase.from("quotes").select("id, status").eq("id", initialQuoteId).maybeSingle();
+      if (!data) return;
+      const section = QUOTE_SECTIONS.find((sec) => (sec.statuses as string[]).includes((data as any).status));
+      if (section) setActiveTab(section.key);
+      setSelected(initialQuoteId);
+    })();
+  }, [initialQuoteId]);
 
   // Clear panels when switching quotes, and auto-calculate the price so Melody
   // sees it the moment she opens a quote (no separate "Calculate" click).
@@ -385,6 +469,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     if (error) { setActionError(friendlyError(error.message)); return; }
     void data;
     setQuotes((prev) => prev.map((q) => q.id === quoteId ? { ...q, status: "approved" } : q));
+    // The quote just left this stage — refresh the counts and the open page.
+    setCountsNonce((n) => n + 1);
     dispatchNotifications();
   }
 
@@ -533,6 +619,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
       setSelected(null);
       return next;
     });
+    setCountsNonce((n) => n + 1);
     setDeletedNote(`${result.quote_number} deleted.`);
   }
 
@@ -581,19 +668,11 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
 
   const quote = quotes.find((q) => q.id === selected) ?? quotes[0];
   const ver = quote.quote_versions;
-  // Search across the three things you'd have in hand when a school phones:
-  // the quote number, who they are, or where they're going.
+  // `quotes` already holds exactly the right rows -- either one page of the
+  // open stage, or the server-side search results. Filtering again here would
+  // just re-apply a narrower version of what the server already did.
   const searchTerm = search.trim().toLowerCase();
-  const matchedQuotes = !searchTerm
-    ? quotes
-    : quotes.filter((q) =>
-        [
-          q.quote_number,
-          q.schools?.name,
-          q.quote_versions?.destination_name,
-          q.quote_versions?.destination_address,
-        ].some((field) => (field ?? "").toLowerCase().includes(searchTerm)),
-      );
+  const matchedQuotes = quotes;
 
   const quoteNoValue = quoteNoEdits[quote.id] ?? quote.quote_number;
   const quoteNoStatus = fieldStatus[`qno-${quote.id}`] ?? "";
@@ -619,7 +698,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     .reduce((sum, g) => sum + (parseInt(g.count ?? "0", 10) || 0), 0);
 
   const activeSection = QUOTE_SECTIONS.find((x) => x.key === activeTab) ?? QUOTE_SECTIONS[0];
-  const tabRows = matchedQuotes.filter((q) => activeSection.statuses.includes(q.status));
+  const tabRows = matchedQuotes.filter((q) => (activeSection.statuses as string[]).includes(q.status));
 
   return (
     <div className="space-y-4">
@@ -640,7 +719,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           />
           {search.trim() && (
             <div className="mt-1 text-right text-xs text-muted-foreground">
-              {matchedQuotes.length} of {quotes.length} match
+              {qLoading ? "searching…" : `${quotes.length} match${quotes.length === 1 ? "" : "es"}`}
+              {searchTruncated && ` (first ${quotes.length}, refine to narrow)`}
               <button onClick={() => setSearch("")} className="ml-2 font-semibold underline">clear</button>
             </div>
           )}
@@ -651,7 +731,12 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           number Melody scans for; the label explains it. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {QUOTE_SECTIONS.map((section) => {
-          const count = matchedQuotes.filter((q) => section.statuses.includes(q.status)).length;
+          // Not searching: the exact server-side total for the stage, so the
+          // number is right however many quotes exist. Searching: how many of
+          // the matches fall in this stage.
+          const count = searchTerm
+            ? quotes.filter((q) => (section.statuses as string[]).includes(q.status)).length
+            : stageCounts[section.key] ?? 0;
           const active = section.key === activeSection.key;
           return (
             <button
@@ -713,6 +798,20 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
               {tabRows.map((q) => (
                 <QuoteRow key={q.id} q={q} selected={false} onSelect={() => setSelected(q.id)} />
               ))}
+            </div>
+          )}
+
+          {/* Only when there's genuinely another page. The old code silently
+              stopped at 50 with no indication anything was missing. */}
+          {!searchTerm && hasMore && (
+            <div className="border-t border-border p-3 text-center">
+              <button
+                disabled={loadingMore}
+                onClick={() => loadStage(activeSection.statuses, quotes.length, true)}
+                className="rounded-lg border border-border bg-surface px-4 py-2 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
+              >
+                {loadingMore ? "Loading…" : `Load older (${Math.max(0, (stageCounts[activeSection.key] ?? 0) - quotes.length)} more)`}
+              </button>
             </div>
           )}
         </div>
@@ -1401,6 +1500,11 @@ function PriceRowEditable({
  * two sections will stay empty until the "mark trip completed" and "send
  * invoice" steps are built. The empty hints say so rather than looking broken.
  */
+/** Mirrors the quote_status enum, so `.in("status", …)` typechecks. */
+type QuoteStatus =
+  | "requested" | "in_review" | "approved" | "confirmed"
+  | "scheduled" | "completed" | "invoiced" | "cancelled";
+
 const QUOTE_SECTIONS: {
   key: string;
   /** Short label for the stage button. */
@@ -1409,7 +1513,7 @@ const QUOTE_SECTIONS: {
   cardHint: string;
   /** Fuller heading shown above the list once a tab is open. */
   label: string;
-  statuses: string[];
+  statuses: QuoteStatus[];
   groupBySchool?: boolean;
   emptyHint: string;
 }[] = [
