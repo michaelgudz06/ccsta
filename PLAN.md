@@ -251,9 +251,69 @@ class of "the customer never got the email" mystery. Small.
 
 ## NEW BACKLOG — raised 2026-08-04, in Mila's priority order
 
-### 1. Driver time — HIGHEST PRIORITY ⚠ awaiting Mila's explanation
-Flagged by Mila as "the most urgent thing we must do". She will explain what
-needs to change; **do not guess or start building.** Ask her first.
+### 1. Driver time — HIGHEST PRIORITY. Spec agreed 2026-08-04.
+
+**The problem:** driver time is a flat 1 hour for everyone, so a school ten
+minutes from the yard and one fifty minutes away are billed identically.
+
+**The formula Mila wants:**
+
+    travel(yard -> pickup)          real, traffic-aware
+  + travel(drop-off -> yard)        real, traffic-aware
+  + 15 min pre-trip                 when applicable, see below
+  = round the TOTAL up to the next quarter hour (15/30/45/60)
+
+Rounding applies to the TOTAL, not per leg — confirmed. So 22 + 19 + 15 =
+56 min becomes 1h00, not 1h15.
+
+**Decisions taken:**
+- **Server-side**, in an edge function. Driver time is now a price input, so
+  it must not depend on the customer's browser succeeding — BUG_BACKLOG #8
+  was exactly that failure mode silently dropping a surcharge.
+- **Traffic-aware** for the actual departure time, so a 7:30am Surrey pickup
+  reflects rush hour.
+- **Pre-trip applies only to the bus's FIRST trip of the day.** If it already
+  ran a school route that morning, the inspection is done and the 15 minutes
+  is not charged.
+- **At quote time, assume the pre-trip IS needed** and let Melody remove it
+  when she schedules. The customer's price then only ever moves down, which
+  is the only direction compatible with "No surprise billing" on the
+  homepage.
+- **Once assignment exists, infer it automatically** from whether that bus
+  already has an earlier trip that day. Depends on the assignment work
+  (item 3) being built first; until then it's Melody's toggle.
+
+**Blocked on two things from Mila:**
+1. **The yard address.** Nothing in the database has it and every
+   calculation starts there.
+2. **Google API setup.** The existing key is Maps JavaScript + Places, locked
+   to the ccsta.net referrer. This needs the **Routes (or Distance Matrix)
+   API enabled**, and because the lookup runs server-side it needs a
+   SEPARATE, non-referrer-restricted key stored as a Supabase secret — a
+   domain-locked key only works from a browser.
+
+**Design notes for whoever builds it:**
+- **Traffic-aware and caching pull against each other.** Yard->school time is
+  stable, but only if you ignore traffic; once it varies by departure hour a
+  single cached number per location is wrong. Volume is low (a few quotes a
+  day), and Routes API is roughly $5/1000 requests, so calling live per
+  estimate costs pennies. Suggest: call live, and cache the last successful
+  result per (location, hour bucket) purely as a FALLBACK for when Google
+  fails — never as the primary source.
+- `destinations.pre_hours` / `post_hours` already hold hand-entered per-
+  location times that are calculated into `reference_driver_hours` and then
+  ignored for billing. This work supersedes them. Decide whether to keep
+  them as the fallback layer or migrate them out; don't leave two sources of
+  truth for the same number.
+- **Both sides must move together.** Driver time is computed in
+  `calculate_estimate` AND mirrored in the `quote.tsx` preview. If the server
+  starts returning a real number and the preview still adds a flat hour, the
+  customer sees one price and gets charged another — the exact drift that
+  migration 050 and commit `5dce11d` were cleaning up.
+- For shuttle and multi-destination, "drop-off" means the LAST stop of the
+  day before returning to the yard.
+- Melody keeps her existing `approved_driver_hours` override for the cases
+  the calculation can't know about.
 
 Context for whoever picks it up — how it works today:
 - Driver time is a **flat buffer**, `surcharges.driver_time_buffer_hours`
