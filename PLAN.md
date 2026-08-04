@@ -306,10 +306,31 @@ Worked examples to test against:
   already has an earlier trip that day. Depends on the assignment work
   (item 3) being built first; until then it's Melody's toggle.
 
-**Blocked on two things from Mila:**
-1. **The yard address.** Nothing in the database has it and every
-   calculation starts there.
-2. **Google API setup.** The existing key is Maps JavaScript + Places, locked
+**Yards — there are three.** Confirmed 2026-08-04:
+- **Surrey (default): 16099 Fraser Hwy, Surrey BC.** Verified by geocoding —
+  resolves correctly (OSM labels the lot "DND Auto Sales"), and yard ->
+  Frost Road Elementary measures 1.0 km / 2.7 min, matching Mila's "two to
+  three minutes" exactly. Good validation of both the address and the 5-min
+  short-hop threshold.
+- Langley and Abbotsford — **addresses still needed**, but NOT blocking:
+  Surrey is the default and most trips leave from it.
+- **Buses do NOT have a fixed home yard**; they move between them. So the
+  yard cannot be looked up from the assigned bus.
+- **Rule: default every quote to Surrey, and let Melody pick a different
+  yard per trip.** Chosen over "nearest yard to pickup" because nearest is a
+  guess that's wrong precisely when it matters — if the closest yard has no
+  bus free and one comes from Abbotsford, the customer is billed for travel
+  that never happened. Needs a `yards` table and a yard reference on the
+  quote version, editable on the admin price card.
+
+**IMPORTANT — `pre_hours`/`post_hours` are not yard travel times.** Frost
+Road stores `pre_hours` 0.375 (22.5 min) against a real 2.7 min from the
+yard. Whatever those hand-entered numbers mean, it isn't this. Had they ever
+driven billing, Frost Road would have been overcharged ~20 min per trip.
+Do NOT reuse them as a fallback layer for the new calculation.
+
+**Blocked on one thing from Mila:**
+1. **Google API setup.** The existing key is Maps JavaScript + Places, locked
    to the ccsta.net referrer. This needs the **Routes (or Distance Matrix)
    API enabled**, and because the lookup runs server-side it needs a
    SEPARATE, non-referrer-restricted key stored as a Supabase secret — a
