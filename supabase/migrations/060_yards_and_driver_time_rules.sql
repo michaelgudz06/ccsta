@@ -69,9 +69,23 @@ INSERT INTO public.yards (name, address, lat, lng, is_default)
 VALUES ('Surrey', '16099 Fraser Hwy, Surrey, BC', 49.156510, -122.775621, true)
 ON CONFLICT (name) DO NOTHING;
 
--- Langley and Abbotsford exist but Mila hasn't supplied addresses yet. They
--- are NOT seeded rather than seeded blank, so a half-populated yard can never
--- silently produce a travel time of zero.
+-- Langley, supplied 2026-08-04 and verified by geocoding: resolves precisely
+-- to a commercial building at 4053 208 St, Brookswood.
+INSERT INTO public.yards (name, address, lat, lng, is_default)
+VALUES ('Langley', '4053 208 Street, Township of Langley, BC V3A 2H3', 49.076035, -122.647987, false)
+ON CONFLICT (name) DO NOTHING;
+
+-- ABBOTSFORD IS DELIBERATELY NOT SEEDED.
+-- The address given was "Fraser Highway, Abbotsford, BC V4X 1G8" — no street
+-- number. Geocoding returns three different stretches of Fraser Highway
+-- spread over roughly 1.5 km, so there is no single point to use. Since every
+-- driver-time calculation starts at the yard, an origin that's a kilometre
+-- out would quietly bias every Abbotsford quote, and near the 5-minute
+-- short-hop threshold it could flip a leg between billing and not billing.
+--
+-- Seeding it blank or with a guessed midpoint would be worse than leaving it
+-- out: the calculation would look like it worked. Add it once there's a
+-- street number or a dropped pin, with lat/lng filled in.
 
 -- ── Which yard a given quote leaves from ────────────────────────────────
 ALTER TABLE public.quote_versions
