@@ -1,7 +1,7 @@
--- Migration 060: yards, and the pure rules half of the driver-time rebuild.
+-- Migration 060: the driver-time arithmetic, and the per-quote yard choice.
 --
 -- ⚠ NOT APPLIED YET. Deliberately. This migration changes nothing on its own
--- (it only adds a table, a column and two functions nothing calls), but it is
+-- (it only adds a column and two functions nothing calls), but it is
 -- the foundation of a change to what customers are charged, and at the time
 -- of writing ccsta.net is down due to a Lovable hosting outage, so none of it
 -- can be verified end to end. Apply it when the site is back and the Google
@@ -21,88 +21,43 @@
 -- This migration provides everything EXCEPT the travel lookup itself, which
 -- needs the Google Routes API and a server-side key (see migration 061).
 --
--- ── Why a separate yards table ──────────────────────────────────────────
--- Three yards: Surrey (default), Langley, Abbotsford. Buses move between
--- them, so the yard CANNOT be derived from the assigned bus. Every quote
--- defaults to Surrey and Melody picks a different one per trip when needed.
+-- ── Correction, 2026-08-04 ──────────────────────────────────────────────
+-- The first draft of this migration CREATED a yards table and seeded three
+-- yards. That was wrong. public.yards has existed since migration 001, was
+-- corrected in 027, and had Ladner and Abbotsford added in 030. There are
+-- FOUR yards, not three, and every one of them was already in the database
+-- with an address.
 --
--- Rejected alternative: "nearest yard to the pickup". It's a guess that goes
--- wrong exactly when it matters — if the nearest yard has no bus free and one
--- comes from Abbotsford instead, the customer is billed for travel that never
--- happened, or CCSTA absorbs travel it did.
-
-CREATE TABLE IF NOT EXISTS public.yards (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name       text NOT NULL UNIQUE,
-  address    text NOT NULL,
-  -- Cached geocode, so the travel lookup doesn't re-geocode the yard every
-  -- time. Populated by migration 061 or by hand.
-  lat        numeric(9,6),
-  lng        numeric(9,6),
-  is_default boolean NOT NULL DEFAULT false,
-  active     boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Exactly one default, enforced by the database rather than by convention.
-CREATE UNIQUE INDEX IF NOT EXISTS yards_single_default
-  ON public.yards ((is_default)) WHERE is_default;
-
-ALTER TABLE public.yards ENABLE ROW LEVEL SECURITY;
-
--- Public read: the customer's estimate needs the yard to compute driver time,
--- and a depot address is not sensitive (it's on the side of the buses). Same
--- reasoning as rate_config/surcharge_config in migration 050. Writes stay
--- admin-only.
-DROP POLICY IF EXISTS "yards_public_read" ON public.yards;
-CREATE POLICY "yards_public_read" ON public.yards FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "yards_admin_write" ON public.yards;
-CREATE POLICY "yards_admin_write" ON public.yards FOR ALL
-  USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
-
--- Surrey verified 2026-08-04 by geocoding: yard -> Frost Road Elementary is
--- 1.0 km / 2.7 min, matching Mila's stated "two to three minutes". The lat/lng
--- below come from that same lookup.
-INSERT INTO public.yards (name, address, lat, lng, is_default)
-VALUES ('Surrey', '16099 Fraser Hwy, Surrey, BC', 49.156510, -122.775621, true)
-ON CONFLICT (name) DO NOTHING;
-
--- Langley, supplied 2026-08-04 and verified by geocoding: resolves precisely
--- to a commercial building at 4053 208 St, Brookswood.
-INSERT INTO public.yards (name, address, lat, lng, is_default)
-VALUES ('Langley', '4053 208 Street, Township of Langley, BC V3A 2H3', 49.076035, -122.647987, false)
-ON CONFLICT (name) DO NOTHING;
-
--- Abbotsford. NOTE THE PROVENANCE — this one is an APPROXIMATION, unlike the
--- other two.
+-- The draft would have aborted on apply rather than corrupting anything --
+-- it seeded 'Surrey' as is_default while 'Surrey Yard' already holds that
+-- flag, which violates the yards_single_default index from 001. But that was
+-- luck. Had the seed omitted is_default, it would have quietly inserted four
+-- duplicate yards under near-identical names, and driver time would then have
+-- been measured from whichever duplicate a given query happened to pick.
 --
--- The address given was "Fraser Highway, Abbotsford, BC V4X 1G8" with no
--- street number, which geocodes to three stretches of Fraser Highway ~1.5 km
--- apart. Mila supplied a map screenshot instead and said the exact address
--- doesn't matter: the yard is the block on the north side of Fraser Hwy just
--- west of Ross Rd, by Cummings Trailer Sales and Fraser Seeds.
+-- Root cause: the schema was assumed from the task description instead of
+-- being read. CLAUDE.md says to use the Supabase MCP for schema rather than
+-- guessing. One list_tables call would have caught it.
 --
--- The coordinates below are the Fraser Hwy / Ross Rd intersection, derived by
--- geocoding both roads separately and taking where they meet. That should be
--- within roughly 200 m of the actual gate — immaterial at a 15-minute
--- rounding step, where 200 m is a few seconds. Sanity check: this point is
--- 41.5 km / 39 min from the Surrey yard, which is a plausible
--- Abbotsford-to-Fleetwood run.
+-- This migration now touches yards not at all, and adds only what genuinely
+-- doesn't exist: the per-quote yard choice, and the driver-time arithmetic.
 --
--- Refine it if driver time for Abbotsford trips ever looks off, and prefer a
--- dropped pin over a street address if one is ever needed.
-INSERT INTO public.yards (name, address, lat, lng, is_default)
-VALUES ('Abbotsford', 'Fraser Hwy near Ross Rd, Abbotsford, BC V4X 1G8', 49.057584, -122.403942, false)
-ON CONFLICT (name) DO NOTHING;
+-- ── Why the yard is a per-quote choice ──────────────────────────────────
+-- buses.home_yard_id and drivers.home_yard_id already exist, so a bus does
+-- have a base. But a home yard is where a bus lives, not necessarily where it
+-- starts a given trip. Deriving trip origin from the assignment would bill
+-- travel that didn't happen whenever a bus is repositioned.
+--
+-- Rejected alternative: "nearest yard to the pickup". Same objection, worse --
+-- it's a guess that fails exactly when it matters, if the nearest yard has no
+-- bus free and one comes from Abbotsford instead.
 
 -- ── Which yard a given quote leaves from ────────────────────────────────
 ALTER TABLE public.quote_versions
   ADD COLUMN IF NOT EXISTS yard_id uuid REFERENCES public.yards(id);
 
 COMMENT ON COLUMN public.quote_versions.yard_id IS
-  'Yard this trip departs from. NULL means the default (Surrey). Melody can change it per trip; buses have no fixed home yard so it cannot be inferred from the assignment.';
+  'Yard this trip departs from. NULL means the default yard (is_default = true, currently Surrey Yard). Set per trip by an admin: buses have a home yard, but a repositioned bus may start elsewhere, so trip origin cannot be inferred from the assignment.';
 
 -- ── The rules, as pure functions ────────────────────────────────────────
 -- Kept separate from the Google lookup on purpose: these are deterministic
