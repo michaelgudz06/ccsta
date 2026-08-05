@@ -65,6 +65,29 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("GOOGLE_ROUTES_API_KEY");
     const results: Array<{ minutes: number | null; distanceKm: number | null; source: string }> = [];
 
+    // Daily ceiling on live lookups (migration 062). Google's own per-day quota
+    // cap would be the better place for this, but it's disabled on free trial
+    // accounts, so this stands in until the billing account is activated.
+    //
+    // Read once per request, not per leg: the count can't change underneath us
+    // in a way that matters, and it saves a query on the common two-leg call.
+    // Cache reads are unaffected by the cap -- they cost nothing.
+    let budgetLeft = Number.POSITIVE_INFINITY;
+    try {
+      const [capRes, usedRes] = await Promise.all([
+        admin.from("app_config").select("value").eq("key", "travel_time_daily_cap").maybeSingle(),
+        admin.rpc("travel_time_calls_today"),
+      ]);
+      const cap = Number(capRes.data?.value);
+      const used = Number(usedRes.data);
+      if (Number.isFinite(cap)) budgetLeft = Math.max(0, cap - (Number.isFinite(used) ? used : 0));
+    } catch (e) {
+      // Fail OPEN, not closed. If the budget check itself breaks we still serve
+      // quotes; the alternative is a config hiccup silently degrading every
+      // estimate to the flat buffer, which is harder to notice than a bill.
+      console.error("budget check failed, proceeding uncapped", String(e));
+    }
+
     for (const leg of legs) {
       if (!leg?.origin || !leg?.destination || !leg?.departAt) {
         results.push({ minutes: null, distanceKm: null, source: "incomplete" });
@@ -113,11 +136,15 @@ Deno.serve(async (req) => {
         // fallback if the refresh fails.
       }
 
-      if (!apiKey) {
+      if (!apiKey || budgetLeft <= 0) {
+        const reason = !apiKey ? "no-key" : "daily-cap";
+        if (budgetLeft <= 0) {
+          console.warn(`travel-time daily cap reached; serving ${hit ? "stale cache" : "null"}`);
+        }
         results.push({
           minutes: hit ? Number(hit.minutes) : null,
           distanceKm: hit?.distance_km == null ? null : Number(hit.distance_km),
-          source: hit ? "stale-cache-no-key" : "no-key",
+          source: hit ? `stale-cache-${reason}` : reason,
         });
         continue;
       }
@@ -199,6 +226,7 @@ Deno.serve(async (req) => {
       }
 
       if (minutes !== null) {
+        budgetLeft -= 1;
         await admin.from("travel_time_cache").upsert(
           {
             origin_key: originKey,
