@@ -61,8 +61,11 @@ More than expected. Worth knowing before building anything new.
   the only 56-cleared driver on a 47 run if a 47-only driver is free).
 - **Honour no-pair constraints** on multi-bus assignments.
 
-**Open:** what `driver_no_pair_constraints` actually means operationally — is
-it "never on the same trip" or "never in the same vehicle"?
+**Answered 2026-08-04:** `driver_no_pair_constraints` is two specific drivers
+with a personal conflict who are never sent on a field trip together. So the
+rule is per-trip, not per-vehicle, and it only bites on multi-bus trips — which
+are regular. It's a small table with real consequences, and it's currently
+ignored.
 
 ---
 
@@ -91,6 +94,36 @@ invoices, and wrong invoices to schools are expensive in trust. The system's job
 is to do the piecing-together Mila described, show its work, and be honest about
 how confident it is.
 
+### Two more complications, added after Mila described the day properly
+
+**Driver attribution is unreliable; vehicle location is not.**
+Buses switch drivers mid-day, and if a driver doesn't log on properly Samsara
+will report them somewhere they weren't. So driver identity from Samsara can't
+be trusted for billing. The *vehicle* is trustworthy — a bus is where it is
+regardless of who claims to be driving it.
+
+Which is fine, because we don't need Samsara to tell us who was driving. The
+assignment already knows. Samsara only has to answer "where was bus 53, and
+when" — the question it's actually good at.
+
+**A field trip is a segment of the bus's day, not the whole day.**
+Buses run the morning school route, then a field trip, then the afternoon route.
+So there is no clean "the bus went out and came back" signal to read; there's a
+continuous stream of movement and the field trip is a slice of it. Mila: "it's
+kind of tricky to decode what is what."
+
+The way through is that we already know the slice: the assigned bus plus the
+scheduled window bounds which movements belong to this trip. Reconstruction is
+therefore "interpret bus X's movements between roughly these times", not "figure
+out what bus X did today".
+
+**A payoff worth noting.** That same route-then-field-trip pattern is exactly the
+case the pre-trip waiver exists for (migration 064) — if the bus already ran the
+morning route, the pre-trip was already done and shouldn't be billed. Once
+Samsara is connected, that's *detectable*: a bus that was already moving that
+morning almost certainly had its pre-trip done. So the waiver Melody toggles by
+hand today can later be suggested automatically, with her still confirming.
+
 ### The log-off problem is more solvable than it looks
 
 "They forget to log off, so you don't know when they got back to the yard" —
@@ -98,6 +131,12 @@ but you don't need the driver for that. **The yard has a geofence.** The bus
 crossing into the yard boundary *is* the return, whether or not anyone logged
 off. `yards.samsara_geofence_id` exists for exactly this and is currently null
 for all four yards.
+
+Mila confirms Samsara already reports arrival at the yard — it says they're back,
+and merely keeps showing the driver on duty afterwards. So the return timestamp
+is already in the data; what's missing is anything reading it. The stale on-duty
+status is a driver-side artefact and can be ignored, because the billable event
+is the vehicle arriving, not the driver clocking off.
 
 Same trick separates "left early and sat" from a real start: geofence exit from
 the yard, geofence arrival at the destination, and the scheduled pickup time are
@@ -108,10 +147,12 @@ So the capture design is:
 
 | Signal | Source | Used for |
 |---|---|---|
-| Yard geofence exit | Samsara | Driver time out, real start |
+| Yard geofence exit | Samsara, **vehicle** | Driver time out, real start |
 | Arrival at pickup | Samsara GPS vs pickup address | Distinguishes "left early" from "started early" |
-| Departure from destination | Samsara | Trip end |
-| Yard geofence entry | Samsara | Driver time back — **works even if the driver never logs off** |
+| Departure from destination | Samsara, **vehicle** | Trip end |
+| Yard geofence entry | Samsara, **vehicle** | Driver time back — **works even if the driver never logs off** |
+| Assigned bus + scheduled window | Our own data | Slices the field trip out of a day that also contains routes |
+| Who was driving | **Our assignment, NOT Samsara** | Samsara's driver attribution breaks on switches and bad log-ons |
 | Driver note | Samsara, optional | Explaining exceptions. Nice to have, never required. |
 
 ### What Melody sees
@@ -165,13 +206,39 @@ the money is gone.
 Worth building the absorbed-cost tracking even before the fancier parts, because
 it's cheap and it tells you where to aim.
 
-### Format
+### Format — Simply Accounting
 
-`invoices.sage_export_data` suggests Sage was the intended destination.
+Confirmed 2026-08-04: invoicing is done in **Simply Accounting**, which is now
+Sage 50 Canadian Edition. That matches the existing `invoices.sage_export_data`
+column.
 
-**Open:** what does the accountant actually need — a Sage import file, a PDF per
-school, a monthly summary? And does the school need a document showing the
-variance, or just the amount owed?
+Mila had researched importing and come up short. Likely reason: **Sage 50
+Canadian imports transactions as `.IMP` files, not CSV.** Almost everything
+findable about "importing invoices into Sage 50" describes the *UK* product,
+which is a different application with a different import system (CSV via Audit
+Trail Transactions). Following UK instructions on the Canadian edition doesn't
+work, and nothing says so.
+
+What the Canadian edition supports:
+
+- `.IMP` is a plain-text ASCII format, imported through Sage 50's import wizard.
+- Sales invoices, sales orders, purchase invoices, quotes and time slips can all
+  be imported this way.
+- The customer must already exist in Sage, or the import stops and asks.
+- Known limitations: customer discount percentages don't come through, and if GL
+  account details are omitted Sage prompts for each transaction manually — so
+  the export should include GL accounts or the "automation" still involves
+  clicking through every invoice.
+
+That makes generating `.IMP` a realistic target: it's a text format we control,
+and school records already exist in the database to match against Sage customers.
+
+**Open:**
+- Mila's message cut off mid-sentence here, so the specific obstacle she hit is
+  still unknown — worth asking before assuming it's the UK/Canada confusion.
+- Does the school need a document showing the variance, or only the amount owed?
+- Do the school names in the database match the customer names in Sage? A name
+  mismatch is the most likely thing to break an otherwise working import.
 
 ---
 
