@@ -233,9 +233,26 @@ What the Canadian edition supports:
 That makes generating `.IMP` a realistic target: it's a text format we control,
 and school records already exist in the database to match against Sage customers.
 
-**Open:**
-- Mila's message cut off mid-sentence here, so the specific obstacle she hit is
-  still unknown — worth asking before assuming it's the UK/Canada confusion.
+**What actually went wrong before (2026-08-04):** Mila doesn't remember the
+specifics, but recalls it being a formatting problem and believed Sage needed
+"a specific CSV format". That is itself the likely explanation — the Canadian
+edition wants `.IMP`, and every findable guide pushes you toward CSV because
+they're describing the UK product. Not worth reconstructing further.
+
+**Cheapest way to settle it, and it needs nothing else built:**
+
+1. Export one existing invoice out of Simply Accounting. Whatever comes out IS
+   the format, exactly — no guessing from documentation that may describe the
+   wrong product.
+2. Hand-make a single fake invoice in that format and try importing it.
+3. Only then build anything that generates it.
+
+Worth doing EARLY rather than in sequence order. Every other item in this plan
+is under our control; the Sage import is the one piece that could turn out to be
+a dead end, and a one-file experiment settles it before anything is built
+toward it.
+
+**Still open:**
 - Does the school need a document showing the variance, or only the amount owed?
 - Do the school names in the database match the customer names in Sage? A name
   mismatch is the most likely thing to break an otherwise working import.
