@@ -224,6 +224,10 @@ type EstimateBreakdown = {
   system_driver_hours: number;
   approved_driver_hours: number | null;
   driver_hours_used: number;
+  // Migration 065: false when this breakdown was previewed rather than saved.
+  // Lets the UI distinguish "this is what the quote costs" from "this is what
+  // it would cost if you recalculated".
+  persisted: boolean;
   // Migrations 063/064: how the driver time was reached. "measured" means
   // Google travel times resolved; "flat_buffer" means they didn't and we fell
   // back to the old flat hour. The pre-trip waiver only means anything in the
@@ -455,8 +459,19 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     setEstimate(null);
     setConfirmCancelTrip(false);
     const q = quotes.find((x) => x.id === selected);
-    if (q && ["requested", "in_review"].includes(q.status) && q.quote_versions?.total == null) {
-      handleEstimate(q.id);
+    if (q) {
+      // Melody always wants the breakdown, so load it for every quote, not just
+      // unpriced ones. The mode matters though:
+      //
+      //   never priced  -> persist. Writing the first total IS the point.
+      //   everything else -> preview. Opening a quote must not re-price it;
+      //     rates and rules change over time, and an approved quote's number is
+      //     something a customer already agreed to.
+      //
+      // Recalculate stays as the explicit "yes, commit the new number" action.
+      const neverPriced =
+        ["requested", "in_review"].includes(q.status) && q.quote_versions?.total == null;
+      handleEstimate(q.id, neverPriced);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
@@ -564,13 +579,28 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     setAssignment(data as AssignmentResult);
   }
 
-  async function handleEstimate(quoteId: string) {
+  // persist=false is a PREVIEW: it computes and returns the breakdown without
+  // writing subtotal/total back to the version (migration 065).
+  //
+  // That distinction is the whole reason the breakdown can now load
+  // automatically. calculate_estimate writes, so auto-running the persisting
+  // version on open would silently re-price any quote an admin merely looked
+  // at — and since the driver-time rules changed, that could move a number a
+  // customer already agreed to. Viewing previews; only Recalculate commits.
+  async function handleEstimate(quoteId: string, persist = true) {
     setEstimateBusy(true); setActionError(null); setEstimate(null);
-    const { data, error } = await supabase.rpc("calculate_estimate" as never, { p_quote_id: quoteId } as never);
+    const { data, error } = await supabase.rpc("calculate_estimate" as never, {
+      p_quote_id: quoteId,
+      p_persist: persist,
+    } as never);
     setEstimateBusy(false);
     if (error) { setActionError(friendlyError(error.message)); return; }
     const result = data as EstimateBreakdown;
     setEstimate(result);
+    // Only mirror the numbers into the list when they were actually saved.
+    // Copying preview figures into the row would make the list disagree with
+    // the database until someone hit Recalculate.
+    if (!persist) return;
     setQuotes((prev) => prev.map((q) =>
       q.id === quoteId && q.quote_versions
         ? {
@@ -1115,7 +1145,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
               onClick={() => handleEstimate(quote.id)}
               className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/20 disabled:opacity-50"
             >
-              {estimateBusy ? "Calculating…" : "Recalculate"}
+              {estimateBusy ? "Calculating…" : estimate?.persisted === false ? "Recalculate & save" : "Recalculate"}
             </button>
           </div>
           {estimate ? (
