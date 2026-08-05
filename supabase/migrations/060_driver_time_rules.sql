@@ -1,11 +1,8 @@
 -- Migration 060: the driver-time arithmetic, and the per-quote yard choice.
 --
--- ⚠ NOT APPLIED YET. Deliberately. This migration changes nothing on its own
--- (it only adds a column and two functions nothing calls), but it is
--- the foundation of a change to what customers are charged, and at the time
--- of writing ccsta.net is down due to a Lovable hosting outage, so none of it
--- can be verified end to end. Apply it when the site is back and the Google
--- lookup (migration 061) is ready to go in behind it.
+-- APPLIED 2026-08-04, self-test passed. Changes no prices on its own: it adds
+-- a column and two functions that nothing calls yet. calculate_estimate still
+-- uses the flat driver_time_buffer_hours until migration 062 wires this in.
 --
 -- ── What driver time is becoming ────────────────────────────────────────
 -- Today it's a flat `driver_time_buffer_hours` (1 hr) for every trip, so a
@@ -66,8 +63,10 @@ COMMENT ON COLUMN public.quote_versions.yard_id IS
 
 /**
  * One leg's billable minutes. Anything under the short-hop threshold counts
- * as zero — some schools are minutes from the yard (Frost Road is 2.7) and
- * charging travel time for those isn't honest.
+ * as zero — some schools are minutes from the yard and charging travel time
+ * for those isn't honest. Verified against Google 2026-08-04: Surrey Yard ->
+ * Frost Road Elementary (8606 162 St) is 1.0 km / 3.2 min, matching Mila's
+ * stated "two to three minutes".
  */
 CREATE OR REPLACE FUNCTION public._driver_leg_minutes(p_minutes numeric)
 RETURNS numeric
@@ -189,3 +188,16 @@ BEGIN
   RAISE NOTICE 'driver_time_hours: all 7 worked examples passed';
 END
 $test$;
+
+-- ── Verified end to end, 2026-08-04 ─────────────────────────────────────
+-- Real Google Routes numbers through the travel-time edge function, against
+-- what the flat one-hour buffer bills for the same trips today:
+--
+--   Frost Road, morning, first run of the day   15 min   (today: 60)
+--   Frost Road, bus already ran a route          0 min   (today: 60)
+--   Surrey -> Abbotsford, morning               120 min   (today: 60)
+--
+-- That spread is the whole point: one flat hour overcharges the school three
+-- minutes away and undercharges the one forty-eight minutes away. Note the
+-- last row goes UP -- this change is not uniformly cheaper for customers, and
+-- long-haul quotes will rise when 062 lands.
