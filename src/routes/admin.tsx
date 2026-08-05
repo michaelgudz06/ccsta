@@ -224,6 +224,15 @@ type EstimateBreakdown = {
   system_driver_hours: number;
   approved_driver_hours: number | null;
   driver_hours_used: number;
+  // Migrations 063/064: how the driver time was reached. "measured" means
+  // Google travel times resolved; "flat_buffer" means they didn't and we fell
+  // back to the old flat hour. The pre-trip waiver only means anything in the
+  // measured case — the flat buffer has no separate pre-trip to remove.
+  driver_travel_hours: number;
+  driver_time_source: "measured" | "flat_buffer";
+  leg_out_minutes: number | null;
+  leg_back_minutes: number | null;
+  pretrip_waived: boolean;
   billable_hours: number;
   min_hours: number;
   base_cost: number;
@@ -595,6 +604,27 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     const { error } = await supabase.rpc("set_quote_approved_driver_hours" as never, {
       p_quote_id: quoteId,
       p_hours: hours,
+      p_expected_version_id: expectedVersionId(quoteId),
+    } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId);
+  }
+
+  // Waive (or restore) the 15-minute pre-trip.
+  //
+  // The estimate always assumes pre-trip applies, because at quote time nobody
+  // knows whether this bus already ran a route that morning. Once the schedule
+  // is set that's usually known, so this is where Melody applies it.
+  //
+  // Deliberately NOT a price override: pre-trip is an input to driver hours, so
+  // waiving it has to change the hours and let the rate flow through. Zeroing a
+  // dollar figure instead would leave the displayed hours contradicting the
+  // displayed cost.
+  async function handleSetPretripWaived(quoteId: string, waived: boolean) {
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_pretrip_waived" as never, {
+      p_quote_id: quoteId,
+      p_waived: waived,
       p_expected_version_id: expectedVersionId(quoteId),
     } as never);
     if (error) { setActionError(friendlyError(error.message)); return; }
@@ -1123,6 +1153,49 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                 />
                 h driver time
                 {estimate.approved_driver_hours != null ? " (manual)" : " (system)"}
+                {/* Pre-trip waiver.
+                    Hidden when driver time came from the flat buffer, because
+                    the buffer has no separate pre-trip component and the button
+                    would do nothing. Also hidden once Melody has typed her own
+                    hours — her number already says what she meant, and offering
+                    to adjust part of it would be misleading. */}
+                {estimate.driver_time_source === "measured" && estimate.approved_driver_hours == null && (
+                  <>
+                    {" · "}
+                    <span
+                      title={
+                        `Measured: yard→pickup ${estimate.leg_out_minutes ?? "?"} min, ` +
+                        `drop-off→yard ${estimate.leg_back_minutes ?? "?"} min` +
+                        (estimate.pretrip_waived ? "" : ", plus 15 min pre-trip") +
+                        `, rounded up to the quarter hour`
+                      }
+                      className="underline decoration-dotted underline-offset-2"
+                    >
+                      {estimate.pretrip_waived ? "pre-trip waived" : "incl. 15 min pre-trip"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isCancelled}
+                      onClick={() => handleSetPretripWaived(quote.id, !estimate.pretrip_waived)}
+                      title={
+                        estimate.pretrip_waived
+                          ? "Charge the pre-trip again"
+                          : "Waive the pre-trip — this bus already ran a route, or another driver did the pre-trip"
+                      }
+                      className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+                    >
+                      {estimate.pretrip_waived ? "Restore" : "Waive"}
+                    </button>
+                  </>
+                )}
+                {estimate.driver_time_source === "flat_buffer" && (
+                  <span
+                    title="No travel-time measurement is stored for this quote, so the old flat buffer was used. Recalculating won't help — the quote form fills these in when the trip is submitted."
+                    className="underline decoration-dotted underline-offset-2"
+                  >
+                    {" · estimated (no travel measurement)"}
+                  </span>
+                )}
                 {estimate.billable_trip_hours > estimate.trip_hours && (
                   <> · {estimate.min_hours}h minimum applied to trip time</>
                 )}
