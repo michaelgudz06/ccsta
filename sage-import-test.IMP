@@ -1,0 +1,84 @@
+<Version>
+"32101", "1"
+</Version>
+
+<! ============================================================
+<! CCSTA TEST IMPORT -- built 2026-08-05 from Sage's published
+<! .IMP specification, not from an export.
+<!
+<! *** IMPORT THIS INTO A BACKUP COPY OF YOUR COMPANY FILE. ***
+<! Not the live books. If it works it creates a real invoice,
+<! and undoing that is more annoying than making a backup.
+<!
+<! Lines starting with <! are comments. Sage ignores them, so
+<! this whole block is safe to leave in.
+<! ============================================================
+
+<! -- THINGS YOU MAY NEED TO CHANGE ---------------------------
+<!
+<! 1. VERSION, first line above. "32101" is Sage 50 2025.
+<!    If yours is older this is the most likely thing to fail.
+<!    Help > About in Sage tells you the version.
+<!
+<! 2. CUSTOMER NAME, the line below. It must match a customer
+<!    that ALREADY EXISTS in Sage, character for character.
+<!    If it doesn't, Sage stops and asks you to pick one --
+<!    which is not a failure, just a prompt.
+<!
+<! 3. ITEM CODES "CHARTER" and "FUEL" further down. If your
+<!    Sage file has no such items, Sage will ask you to pick
+<!    an account for each line. Replace them with whatever
+<!    codes you actually use, or leave them and answer the
+<!    prompts to see what it wants.
+<! -----------------------------------------------------------
+
+<SalInvoice>
+<! Customer line: name, street, city, province, postal code
+"REPLACE WITH A REAL SAGE CUSTOMER", "123 Example St", "Surrey", "British Columbia", "V4N 3G2"
+<! Options line: no. of detail lines, invoice no., date, payment
+<! method code, payment method, invoice total, amount paid
+<! NOTE: the payment-method fields are the part I'm least sure
+<! of -- Sage documents them in an image I couldn't read, so
+<! "1"/"Pay Later" is inferred. If the import complains, this
+<! line is the first place to look.
+"2", "TEST-001", "08-05-2026", "1", "Pay Later", "538.13", "0.00"
+<! Detail lines: item code, quantity, unit price, amount,
+<! then per-tax-authority: name, exempt flag, taxable flag,
+<! rate, tax amount
+"CHARTER", "5.0000", "92.5000", "462.50", "GST", "0", "1", "5.00", "23.13"
+"FUEL", "1.0000", "50.0000", "50.00", "GST", "0", "1", "5.00", "2.50"
+</SalInvoice>
+
+<! -- WHAT THIS INVOICE SAYS ----------------------------------
+<! A typical CCSTA charter, using your real rate config:
+<!
+<!   5 hours x $92.50/hr (47-bench, non-member)   $462.50
+<!   Fuel surcharge                                $50.00
+<!   ---------------------------------------------------
+<!   Subtotal                                     $512.50
+<!   GST 5%                                        $25.63
+<!   ---------------------------------------------------
+<!   Total                                        $538.13
+<!
+<! Only ONE tax authority (GST). The Sage sample shows GST and
+<! PST on every line; your surcharge_config has gst_rate_pct
+<! and no PST, so PST is omitted here. If Sage rejects the line
+<! for having too few fields, that's the reason and it's an
+<! easy fix.
+<! -----------------------------------------------------------
+
+<! -- WHAT WE LEARN ------------------------------------------
+<! It imports cleanly       -> the whole approach works, and
+<!                             generating these per invoice is
+<!                             straightforward.
+<! It complains about a
+<! specific field           -> even better. That names the exact
+<!                             problem, which is what the last
+<!                             attempt never produced.
+<! It refuses the file
+<! outright                 -> likely the version number, or the
+<!                             edition doesn't support import.
+<!
+<! Any of the three is progress. The only bad outcome is not
+<! trying it.
+<! -----------------------------------------------------------

@@ -239,13 +239,27 @@ specifics, but recalls it being a formatting problem and believed Sage needed
 edition wants `.IMP`, and every findable guide pushes you toward CSV because
 they're describing the UK product. Not worth reconstructing further.
 
-**Cheapest way to settle it, and it needs nothing else built:**
+**Update 2026-08-05:** Simply Accounting wouldn't let Mila export an invoice.
+Didn't matter — Sage publishes the `.IMP` specification, including a worked
+`<SalInvoice>` example, so the format is known without needing an export.
 
-1. Export one existing invoice out of Simply Accounting. Whatever comes out IS
-   the format, exactly — no guessing from documentation that may describe the
-   wrong product.
-2. Hand-make a single fake invoice in that format and try importing it.
-3. Only then build anything that generates it.
+A test file now exists at `sage-import-test.IMP`, built from that spec using
+CCSTA's real rate config. It must be imported into a BACKUP company file, not
+the live books: a successful import creates a real invoice.
+
+Three fields in it are inferred rather than confirmed, because Sage documents
+the field tables as images:
+  - version number (32101 = Sage 50 2025; older versions differ)
+  - the payment-method fields on the options line
+  - whether a single tax authority (GST, no PST) is accepted
+
+Any error is useful — a complaint about a specific field is more information
+than the previous attempt ever produced.
+
+**Likely explanation for the original failure:** Sage 50 Canadian DOES import
+CSV, but only for *records* — customers, vendors, inventory. Transactions
+require `.IMP`. So CSV appears to work, which makes it look like the right path
+right up until invoices won't go.
 
 Worth doing EARLY rather than in sequence order. Every other item in this plan
 is under our control; the Sage import is the one piece that could turn out to be
