@@ -198,16 +198,84 @@ function QuotePage() {
   // source of truth anymore, so don't hand-edit them when a rate changes.
   const [rateRows, setRateRows] = useState<{ bench_count: number; customer_type: string; hourly_rate: number }[]>([]);
   const [surcharges, setSurcharges] = useState<Record<string, number>>({});
+  // The yard trips depart from. Customers don't choose one — it's always the
+  // default (Surrey). An admin can change it per quote afterwards.
+  const [yardAddress, setYardAddress] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
-      const [{ data: rates }, { data: surchargeRows }] = await Promise.all([
+      const [{ data: rates }, { data: surchargeRows }, { data: yard }] = await Promise.all([
         supabase.from("rate_config").select("bench_count, customer_type, hourly_rate"),
         supabase.from("surcharge_config").select("key, value"),
+        supabase.from("yards").select("address").eq("is_default", true).maybeSingle(),
       ]);
       if (rates) setRateRows(rates);
       if (surchargeRows) setSurcharges(Object.fromEntries(surchargeRows.map((r) => [r.key, r.value])));
+      if (yard?.address) setYardAddress(yard.address);
     })();
   }, []);
+
+  // ── Driver travel time (migrations 060–065) ──────────────────────────────
+  // Real yard→pickup and dropoff→yard minutes, replacing the flat one-hour
+  // buffer. Fetched here rather than only at submit, because the customer must
+  // see the price they'll actually be charged — "your invoice always matches"
+  // is a promise on the homepage.
+  const [legOutMin, setLegOutMin] = useState<number | null>(null);
+  const [legBackMin, setLegBackMin] = useState<number | null>(null);
+  const [legsLoading, setLegsLoading] = useState(false);
+
+  // Where the bus finishes before heading back to the yard.
+  //
+  // On a two-way trip it returns the group to the pickup point, so the last
+  // leg is pickup→yard, not destination→yard. Getting this backwards would
+  // misprice every round trip — which is most of them.
+  const returnOrigin = tripType === "one_way" ? destinationAddress : pickup;
+
+  useEffect(() => {
+    if (!yardAddress || !pickup.trim() || !returnOrigin.trim() || !date) {
+      setLegOutMin(null); setLegBackMin(null); setLegsLoading(false);
+      return;
+    }
+
+    // DEBOUNCED, and this is not optional. The Nominatim geocode used to fire
+    // on every keystroke, which is why distance silently never saved. The same
+    // bug against Google Routes is a bill rather than a silent failure.
+    //
+    // Note what's cancelled on each keystroke: the TIMER, before any request
+    // exists. The old bug cancelled requests that were already in flight, so
+    // none of them ever finished.
+    let cancelled = false;
+    setLegsLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const departAt = new Date(`${date}T${departTime || "08:00"}`).toISOString();
+        const returnAt = new Date(`${date}T${returnTime || departTime || "15:00"}`).toISOString();
+        const { data, error } = await supabase.functions.invoke("travel-time", {
+          body: {
+            legs: [
+              { origin: yardAddress, destination: pickup, departAt },
+              { origin: returnOrigin, destination: yardAddress, departAt: returnAt },
+            ],
+          },
+        });
+        if (cancelled) return;
+        if (error) throw error;
+        const legs = (data as { legs?: { minutes: number | null }[] })?.legs ?? [];
+        setLegOutMin(legs[0]?.minutes ?? null);
+        setLegBackMin(legs[1]?.minutes ?? null);
+      } catch (err) {
+        if (cancelled) return;
+        // Null means "unknown", and both the preview below and
+        // calculate_estimate fall back to the flat buffer. A failed lookup
+        // must never read as "no travel time", which would discount the quote.
+        console.error("travel-time lookup failed:", err);
+        setLegOutMin(null); setLegBackMin(null);
+      } finally {
+        if (!cancelled) setLegsLoading(false);
+      }
+    }, 1200);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [yardAddress, pickup, returnOrigin, date, departTime, returnTime]);
   const RATE_FALLBACK: Record<number, Record<string, number>> = {
     18: { member: 58.25, non_member: 82.50 },
     47: { member: 68.25, non_member: 92.50 },
@@ -698,11 +766,38 @@ function QuotePage() {
   // driver-time buffer always adds on top of the (possibly floored) trip
   // time, never absorbed into the minimum.
   const billableTripHours = Math.max(tripHours, minHours);
-  // System estimate: flat driver-time buffer (matches calculate_estimate's
-  // driver_time_buffer_hours — Melody can set a more accurate time later,
-  // but the public preview always shows this flat-buffer figure).
+  // Driver time. Mirrors public.driver_time_hours (migration 060) and the
+  // measured/flat branch in calculate_estimate (063).
+  //
+  // Duplicating pricing logic in the client is a known hazard here, and this
+  // copy has to exist because the customer sees a price before any server
+  // round-trip. Two things keep it honest: every threshold comes from
+  // surcharge_config rather than being hardcoded, and the fallback branch is
+  // the same flat buffer the server uses, so the two agree even when the
+  // lookup fails.
+  const SHORT_HOP_MINUTES = surcharges.driver_time_short_hop_minutes ?? 5;
+  const ROUNDING_MINUTES  = surcharges.driver_time_rounding_minutes ?? 15;
+  const PRETRIP_MINUTES   = surcharges.driver_pretip_min ?? 15;
+  // A leg under the short-hop threshold bills as zero — some schools are
+  // three minutes from the yard.
+  const billableLeg = (m: number | null) => (m == null || m < SHORT_HOP_MINUTES ? 0 : m);
+  // Measured only when at least one leg resolved, matching calculate_estimate's
+  // `leg_out IS NOT NULL OR leg_back IS NOT NULL`. Both null means the lookup
+  // was unavailable, NOT that travel was zero.
+  const measuredDriverHours =
+    legOutMin == null && legBackMin == null
+      ? null
+      : (() => {
+          // Pre-trip is always included in the estimate: whether this bus has
+          // already run a route that morning isn't known until it's assigned.
+          // An admin can waive it afterwards (migration 064).
+          const totalMinutes = billableLeg(legOutMin) + billableLeg(legBackMin) + PRETRIP_MINUTES;
+          // Round the TOTAL up to the quarter hour, never per leg.
+          return totalMinutes <= 0 ? 0 : (Math.ceil(totalMinutes / ROUNDING_MINUTES) * ROUNDING_MINUTES) / 60;
+        })();
   const DRIVER_TIME_BUFFER_HOURS = surcharges.driver_time_buffer_hours ?? 1;
-  const driverHours = billableTripHours + DRIVER_TIME_BUFFER_HOURS;
+  const driverTimeHours = measuredDriverHours ?? DRIVER_TIME_BUFFER_HOURS;
+  const driverHours = billableTripHours + driverTimeHours;
   const billHours  = driverHours;
   // True when the trip is shorter than the minimum (or no times are entered
   // yet), so billableTripHours above is the floor rather than the real trip
@@ -901,6 +996,10 @@ function QuotePage() {
         const { error: distErr } = await supabase.rpc("set_quote_distance_km" as never, { p_quote_id: editQuoteId, p_distance_km: distanceKm } as never);
         if (distErr) console.error("set_quote_distance_km (edit) failed:", distErr);
       }
+      // Re-derive driver travel time too — an edit can change the pickup,
+      // destination or times, and stale legs would price the old trip.
+      const { error: legErr } = await supabase.functions.invoke("travel-time", { body: { quoteId: editQuoteId } });
+      if (legErr) console.error("travel-time (edit) failed:", legErr);
       dispatchNotifications();
       navigate({ to: "/portal" });
       return;
@@ -935,6 +1034,23 @@ function QuotePage() {
       await saveWithRetry(
         () => supabase.rpc("set_quote_distance_km" as never, { p_quote_id: result.quote_id, p_distance_km: distanceKm } as never),
         "set_quote_distance_km",
+        result.quote_id,
+      );
+    }
+    // Driver travel time. Note we send only the QUOTE ID, never the minutes we
+    // measured above: the function re-derives them from the saved quote and
+    // writes them itself. Those minutes change the price, so a client-supplied
+    // figure could knock hours off a bill — the preview above is for display,
+    // this call is the authority.
+    //
+    // Same retry treatment as distance (BUG_BACKLOG #8): a silent failure here
+    // means the quote quietly falls back to the flat one-hour buffer, which is
+    // the old behaviour rather than a broken one, but it should still be
+    // noticed rather than shrugged off.
+    if (result.quote_id) {
+      await saveWithRetry(
+        () => supabase.functions.invoke("travel-time", { body: { quoteId: result.quote_id } }),
+        "travel-time",
         result.quote_id,
       );
     }
@@ -1491,8 +1607,14 @@ function QuotePage() {
                       label="Billable hours"
                       value={`${billHours.toFixed(1)} hrs`}
                       sub={
-                        `${billableTripHours.toFixed(1)} hrs trip + ${DRIVER_TIME_BUFFER_HOURS} hr driver time`
-                        + (minimumApplied ? ` · ${minHours} hr minimum applied` : "")
+                        // Says "getting to you" rather than naming a yard: it's
+                        // the honest description of what the charge is for, and
+                        // it doesn't invite a debate about our depot locations.
+                        legsLoading
+                          ? `${billableTripHours.toFixed(1)} hrs trip + calculating driver time…`
+                          : `${billableTripHours.toFixed(1)} hrs trip + ${driverTimeHours} hr driver time`
+                            + (measuredDriverHours != null ? " (getting to you and back)" : "")
+                            + (minimumApplied ? ` · ${minHours} hr minimum applied` : "")
                       }
                     />
                     <Row

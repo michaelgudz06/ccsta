@@ -48,19 +48,80 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => null);
-    if (!body || !Array.isArray(body.legs)) {
-      return json({ error: "expected { legs: [{ origin, destination, departAt }] }" }, 400);
+    if (!body || (!Array.isArray(body.legs) && !body.quoteId)) {
+      return json({ error: "expected { legs: [...] } or { quoteId }" }, 400);
     }
-
-    // Hard ceiling on legs per call. A quote needs two. Anything asking for
-    // hundreds is a bug or an abuse attempt, and this API is metered.
-    const legs: Leg[] = body.legs.slice(0, 4);
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
+
+    // ── Two modes, and the difference is a security boundary ───────────────
+    //
+    // PREVIEW  { legs: [...] }  — caller supplies addresses, we answer, nothing
+    //                             is written. Used by the quote form so the
+    //                             customer sees a price while typing.
+    //
+    // PERSIST  { quoteId }      — we read the addresses from the quote OURSELVES
+    //                             and write the result to quote_versions.
+    //
+    // The split matters because leg minutes change what the customer is
+    // charged. If the client could post its own minutes and have them saved,
+    // anyone could send zeros and knock a couple of hours off their bill —
+    // roughly $160 on a 47-bench trip. So the numbers that get stored are only
+    // ever derived from data already in the database.
+    let legs: Leg[];
+    let persistQuoteId: string | null = null;
+
+    if (body.quoteId) {
+      const { data: q } = await admin
+        .from("quotes")
+        .select("id, status, current_version_id")
+        .eq("id", body.quoteId)
+        .maybeSingle();
+      if (!q) return json({ error: "quote not found" }, 404);
+
+      // Only price a quote that's still being quoted. Without this, anyone
+      // could re-run the lookup against an APPROVED quote and move a number the
+      // customer already agreed to.
+      if (!["requested", "in_review"].includes(q.status)) {
+        return json({ error: `quote status is ${q.status}; not repricing`, legs: [] }, 409);
+      }
+
+      const { data: v } = await admin
+        .from("quote_versions")
+        .select("id, pickup_address, destination_address, trip_date, departure_time, return_time, trip_type")
+        .eq("id", q.current_version_id)
+        .maybeSingle();
+      if (!v?.pickup_address || !v.trip_date) {
+        return json({ error: "quote has no pickup address or date", legs: [] }, 422);
+      }
+
+      const { data: yard } = await admin
+        .from("yards").select("address").eq("is_default", true).maybeSingle();
+      if (!yard?.address) return json({ error: "no default yard", legs: [] }, 500);
+
+      // On a two-way trip the bus returns the group to the pickup point, so the
+      // last leg is pickup→yard. Only a one-way trip ends at the destination.
+      const returnOrigin = v.trip_type === "one_way"
+        ? (v.destination_address || v.pickup_address)
+        : v.pickup_address;
+
+      const depart = `${v.trip_date}T${v.departure_time ?? "08:00"}`;
+      const back   = `${v.trip_date}T${v.return_time ?? v.departure_time ?? "15:00"}`;
+
+      legs = [
+        { origin: yard.address, destination: v.pickup_address, departAt: depart },
+        { origin: returnOrigin, destination: yard.address, departAt: back },
+      ];
+      persistQuoteId = v.id;
+    } else {
+      // Hard ceiling on legs per call. A quote needs two. Anything asking for
+      // hundreds is a bug or an abuse attempt, and this API is metered.
+      legs = body.legs.slice(0, 4);
+    }
 
     const apiKey = Deno.env.get("GOOGLE_ROUTES_API_KEY");
     const results: Array<{ minutes: number | null; distanceKm: number | null; source: string }> = [];
@@ -251,6 +312,24 @@ Deno.serve(async (req) => {
       } else {
         results.push({ minutes: null, distanceKm: null, source });
       }
+    }
+
+    // Persist mode: write what we derived. Note we write even when a leg came
+    // back null — that's honest ("we don't know"), and calculate_estimate
+    // treats null as "fall back to the flat buffer" rather than as zero travel.
+    if (persistQuoteId) {
+      const { error: upErr } = await admin
+        .from("quote_versions")
+        .update({
+          leg_out_minutes: results[0]?.minutes ?? null,
+          leg_back_minutes: results[1]?.minutes ?? null,
+        })
+        .eq("id", persistQuoteId);
+      if (upErr) {
+        console.error("failed to persist legs", upErr.message);
+        return json({ legs: results, persisted: false, error: upErr.message }, 500);
+      }
+      return json({ legs: results, persisted: true });
     }
 
     return json({ legs: results });
