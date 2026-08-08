@@ -862,6 +862,14 @@ function QuotePage() {
     if (tripType === "shuttle") {
       if (shuttleRuns.length === 0 || shuttleRuns.some((r) => !r.pickup || !r.dropoff)) {
         e.shuttleRuns = "Please enter pickup and drop-off times for every run.";
+      } else if (shuttleRuns.some((r) => r.dropoff <= r.pickup)) {
+        // The AM/PM guard below used to cover two-way and one-way trips only.
+        // Shuttle runs go through the same 24-hour wraparound: the billing
+        // envelope is MIN(pickup) to MAX(dropoff), so a single run typed
+        // 15:00 → 08:00 turns a 3-hour job into a 17-hour one. At the
+        // 47-bench non-member rate that's ~$1,968 instead of ~$420, and
+        // nothing anywhere flagged it.
+        e.shuttleRuns = "One of these runs ends earlier in the day than it starts — please check whether the times should be AM or PM.";
       }
     } else if (tripType === "multi_destination") {
       if (!departTime) e.departTime = "Please enter the pickup departure time.";
@@ -872,6 +880,18 @@ function QuotePage() {
       const returnIncomplete = includeReturnLeg && (!returnStop.address || !returnStop.arrivalTime);
       if (multiStops.length === 0 || stopsIncomplete || returnIncomplete) {
         e.multiStops = "Please enter an address and time for every stop.";
+      } else {
+        // Same wraparound risk. The envelope here is departTime through the
+        // LAST arrival, and the day has to run forwards throughout: each stop
+        // must be reached after the bus leaves, each departure after its own
+        // arrival, and every stop after the one before it.
+        const legs: string[] = [departTime];
+        for (const s of multiStops) { legs.push(s.arrivalTime, s.departureTime); }
+        if (includeReturnLeg && returnStop.arrivalTime) legs.push(returnStop.arrivalTime);
+        const outOfOrder = legs.some((t, i) => i > 0 && t <= legs[i - 1]);
+        if (outOfOrder) {
+          e.multiStops = "These times don't run in order through the day — please check whether any should be AM or PM.";
+        }
       }
     } else {
       if (!departTime) e.departTime = "Please enter the departure time.";
