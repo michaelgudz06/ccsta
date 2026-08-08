@@ -90,6 +90,12 @@ function DriverPage() {
   const [paintMode, setPaintMode] = useState<"unavailable" | "available">("unavailable");
   const [savingBlock, setSavingBlock] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
+  // Admins reach this page too (there's a banner saying so), but they have no
+  // `drivers` row, so `driver` stays null and every save silently gave up.
+  // Rather than just disabling the grid, let an admin choose whose availability
+  // they're editing -- Melody wants to fill these in for drivers who won't.
+  const [allDrivers, setAllDrivers] = useState<{ id: string; first_name: string; last_name: string }[]>([]);
+  const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
   const [saveNote, setSaveNote] = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -131,6 +137,36 @@ function DriverPage() {
     load(session.user.id);
   }, [loading, role, session, load]);
 
+  // Admin: load the roster so they can pick whose availability to edit.
+  useEffect(() => {
+    if (loading || role !== "admin") return;
+    (async () => {
+      const { data } = await supabase
+        .from("drivers").select("id, first_name, last_name")
+        .eq("active", true).order("last_name");
+      setAllDrivers(data ?? []);
+      setDataLoading(false);
+    })();
+  }, [loading, role]);
+
+  // Whose availability the grid is editing. A driver edits their own; an admin
+  // edits whoever they picked. Null means the grid must not pretend to work.
+  const targetDriverId = driver?.id ?? editingDriverId;
+
+  // Reload blocks whenever the target changes (admin switching drivers).
+  useEffect(() => {
+    if (!targetDriverId || driver) return; // driver's own blocks come from load()
+    (async () => {
+      const { data } = await supabase
+        .from("driver_availability")
+        .select("id, date, status, start_time, end_time, note")
+        .eq("driver_id", targetDriverId)
+        .gte("date", toISODate(new Date()))
+        .order("date");
+      setBlocks((data as AvailBlock[]) ?? []);
+    })();
+  }, [targetDriverId, driver]);
+
   async function toggleCheck(trip: Trip, item: string) {
     const current = (trip.pretrip_checklist as Record<string, boolean>) ?? {};
     const next = { ...current, [item]: !current[item] };
@@ -152,8 +188,16 @@ function DriverPage() {
   // at a time was too slow. Dragging a column is the natural gesture for "these
   // hours are gone".
   async function commitDrag() {
-    if (!driver || dragDay === null || anchor === null || cursor === null) {
+    if (dragDay === null || anchor === null || cursor === null) {
       setDragDay(null); setAnchor(null); setCursor(null);
+      return;
+    }
+    // Never fail silently. This branch used to just reset, so the highlight
+    // vanished and nothing saved with no explanation -- which is exactly how
+    // the admin-viewing-as-driver case presented.
+    if (!targetDriverId) {
+      setDragDay(null); setAnchor(null); setCursor(null);
+      flash("Choose which driver you're editing first.", false);
       return;
     }
     const lo = Math.min(anchor, cursor);
@@ -170,7 +214,7 @@ function DriverPage() {
     const { data, error } = await supabase
       .from("driver_availability")
       .insert({
-        driver_id: driver.id,
+        driver_id: targetDriverId,
         date: day,
         status: paintMode,
         start_time,
@@ -408,6 +452,27 @@ function DriverPage() {
             </div>
           </div>
 
+          {/* Admin picker. The page already tells admins they're viewing the
+              driver dashboard; without this the grid looked interactive but
+              could never save, because an admin has no drivers row. */}
+          {role === "admin" && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <label className="mb-1 block text-xs font-medium text-amber-900">
+                You're an admin — choose whose availability to edit
+              </label>
+              <select
+                value={editingDriverId ?? ""}
+                onChange={(e) => setEditingDriverId(e.target.value || null)}
+                className="w-full rounded-lg border border-input bg-background px-2 py-2 text-sm text-foreground outline-none ring-ring focus:ring-2"
+              >
+                <option value="">Not chosen — the grid won't save</option>
+                {allDrivers.map((d) => (
+                  <option key={d.id} value={d.id}>{d.last_name}, {d.first_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <p className="mt-1 text-sm text-muted-foreground">
             Drag down a day to mark hours. Use it for your routes as well as time
             off — anything you don't mark counts as available.
@@ -438,7 +503,7 @@ function DriverPage() {
               with a mouse. touch-none stops the browser scrolling the page
               instead of extending the selection. */}
           <div
-            className="mt-3 overflow-x-auto"
+            className={`mt-3 overflow-x-auto ${targetDriverId ? "" : "pointer-events-none opacity-50"}`}
             onPointerUp={commitDrag}
             onPointerLeave={() => { if (dragDay) commitDrag(); }}
           >
