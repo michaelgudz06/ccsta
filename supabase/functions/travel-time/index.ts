@@ -39,6 +39,31 @@ function normalise(s: string): string {
 
 const CACHE_MAX_AGE_DAYS = 90;
 
+/**
+ * Interpret "YYYY-MM-DDTHH:MM" as BC wall-clock time and return the real instant.
+ *
+ * This exists because of a live pricing bug. The browser built its timestamp
+ * with `new Date("...T09:00").toISOString()`, which resolves against the
+ * BROWSER's timezone; this function then received a bare string and, running in
+ * UTC, read the same 09:00 as 09:00Z — 02:00 in Vancouver. So the price the
+ * customer saw was measured at rush hour and the price they were CHARGED was
+ * measured on empty 2am roads. It also split the cache in two, paying Google
+ * twice for every quote.
+ *
+ * The fix is that there is now exactly one conversion, here. Callers send naive
+ * wall-clock strings and never do timezone maths themselves.
+ *
+ * Handles DST by asking the runtime what the offset actually was on that date,
+ * rather than assuming -7 or -8.
+ */
+function bcInstant(naive: string): Date {
+  const asIfUtc = new Date(`${naive}Z`);
+  if (Number.isNaN(asIfUtc.getTime())) return asIfUtc;
+  // What wall time does that instant read as in Vancouver? The gap is the offset.
+  const shown = new Date(asIfUtc.toLocaleString("en-US", { timeZone: "America/Vancouver" }));
+  return new Date(asIfUtc.getTime() + (asIfUtc.getTime() - shown.getTime()));
+}
+
 type Leg = { origin: string; destination: string; departAt: string };
 
 Deno.serve(async (req) => {
@@ -109,8 +134,9 @@ Deno.serve(async (req) => {
         ? (v.destination_address || v.pickup_address)
         : v.pickup_address;
 
-      const depart = `${v.trip_date}T${v.departure_time ?? "08:00"}`;
-      const back   = `${v.trip_date}T${v.return_time ?? v.departure_time ?? "15:00"}`;
+      // Naive wall-clock strings; bcInstant does the one conversion below.
+      const depart = `${v.trip_date}T${(v.departure_time ?? "08:00").slice(0, 5)}`;
+      const back   = `${v.trip_date}T${(v.return_time ?? v.departure_time ?? "15:00").slice(0, 5)}`;
 
       legs = [
         { origin: yard.address, destination: v.pickup_address, departAt: depart },
@@ -165,7 +191,8 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const depart = new Date(leg.departAt);
+      // Single conversion point. Callers pass BC wall-clock time.
+      const depart = bcInstant(leg.departAt);
       if (Number.isNaN(depart.getTime())) {
         results.push({ minutes: null, distanceKm: null, source: "bad-date" });
         continue;

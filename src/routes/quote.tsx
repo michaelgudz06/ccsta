@@ -228,10 +228,16 @@ function QuotePage() {
   // On a two-way trip it returns the group to the pickup point, so the last
   // leg is pickup→yard, not destination→yard. Getting this backwards would
   // misprice every round trip — which is most of them.
-  const returnOrigin = tripType === "one_way" ? destinationAddress : pickup;
+  // The pick-up field is optional — "leave blank to use organization name" —
+  // and submit sends `pickup || school`. Every other consumer applies that
+  // fallback; this one didn't, so a customer who left it blank saw the flat
+  // 1 hr buffer while the server measured real legs and charged the difference.
+  // On a school 50 minutes out that was ~$97 more than they were shown.
+  const effectivePickup = pickup || school;
+  const returnOrigin = tripType === "one_way" ? destinationAddress : effectivePickup;
 
   useEffect(() => {
-    if (!yardAddress || !pickup.trim() || !returnOrigin.trim() || !date) {
+    if (!yardAddress || !effectivePickup.trim() || !returnOrigin.trim() || !date) {
       setLegOutMin(null); setLegBackMin(null); setLegsLoading(false);
       return;
     }
@@ -247,12 +253,17 @@ function QuotePage() {
     setLegsLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const departAt = new Date(`${date}T${departTime || "08:00"}`).toISOString();
-        const returnAt = new Date(`${date}T${returnTime || departTime || "15:00"}`).toISOString();
+        // NAIVE wall-clock strings, deliberately. Converting here with
+        // `new Date(...).toISOString()` resolved against the BROWSER's timezone,
+        // while the server read the same string as UTC — so the preview was
+        // measured at rush hour and the bill at 2am. The conversion now happens
+        // in exactly one place, inside the edge function.
+        const departAt = `${date}T${departTime || "08:00"}`;
+        const returnAt = `${date}T${returnTime || departTime || "15:00"}`;
         const { data, error } = await supabase.functions.invoke("travel-time", {
           body: {
             legs: [
-              { origin: yardAddress, destination: pickup, departAt },
+              { origin: yardAddress, destination: effectivePickup, departAt },
               { origin: returnOrigin, destination: yardAddress, departAt: returnAt },
             ],
           },
@@ -275,7 +286,7 @@ function QuotePage() {
     }, 1200);
 
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [yardAddress, pickup, returnOrigin, date, departTime, returnTime]);
+  }, [yardAddress, effectivePickup, returnOrigin, date, departTime, returnTime]);
   const RATE_FALLBACK: Record<number, Record<string, number>> = {
     18: { member: 58.25, non_member: 82.50 },
     47: { member: 68.25, non_member: 92.50 },
@@ -784,8 +795,12 @@ function QuotePage() {
   // Measured only when at least one leg resolved, matching calculate_estimate's
   // `leg_out IS NOT NULL OR leg_back IS NOT NULL`. Both null means the lookup
   // was unavailable, NOT that travel was zero.
+  // BOTH legs required, not either. The old `either` rule meant one failed
+  // lookup billed as zero travel for that leg -- a 40-minute return leg that
+  // errored silently knocked 0.75h off the bill, and could land BELOW the flat
+  // buffer it was supposed to fall back to.
   const measuredDriverHours =
-    legOutMin == null && legBackMin == null
+    legOutMin == null || legBackMin == null
       ? null
       : (() => {
           // Pre-trip is always included in the estimate: whether this bus has
