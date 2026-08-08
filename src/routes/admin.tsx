@@ -215,6 +215,12 @@ type AssignmentResult = {
 type EstimateBreakdown = {
   bench_count: number;
   bus_count: number;
+  // Migration 067/068: the seat calculation's answer, alongside whatever
+  // Melody chose instead.
+  system_bench_count: number;
+  system_bus_count: number;
+  override_bench_count: number | null;
+  override_bus_count: number | null;
   customer_type: string;
   hourly_rate: number;
   // Migration 066: the rate is a variable Melody can set, not just a lookup.
@@ -326,6 +332,16 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const [drivers, setDrivers] = useState<{ id: string; first_name: string; last_name: string; air_brake_cert: boolean }[]>([]);
   // Planned assignments for the selected quote, one row per bus.
   const [assignments, setAssignments] = useState<{ slot_number: number; bus_id: string | null; driver_id: string | null }[]>([]);
+  // Ranked recommendations (migration 067). Only those who are actually free
+  // for THIS trip's window appear — the ranking explains itself via `why`, so
+  // Melody can see the reasoning rather than trusting an opaque order.
+  const [recDrivers, setRecDrivers] = useState<
+    { driver_id: string; name: string; air_brake_cert: boolean; same_yard: boolean; hours_today: number; why: string }[]
+  >([]);
+  const [recBuses, setRecBuses] = useState<
+    { bus_id: string; fleet_number: string; bench_count: number; air_brake_req: boolean; same_yard: boolean; right_size: boolean; why: string }[]
+  >([]);
+  const [recWindow, setRecWindow] = useState<{ start: string; end: string } | null>(null);
 
   // ── Loading, per stage ───────────────────────────────────────────────
   //
@@ -487,6 +503,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     setActionError(null);
     setEstimate(null);
     setAssignments([]);
+    setRecDrivers([]); setRecBuses([]); setRecWindow(null);
     setConfirmCancelTrip(false);
     const q = quotes.find((x) => x.id === selected);
     if (q) {
@@ -510,6 +527,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           .eq("quote_version_id", q.current_version_id)
           .order("slot_number")
           .then(({ data }) => setAssignments(data ?? []));
+        loadRecommendations(q.id);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -738,6 +756,32 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     await handleEstimate(quoteId);
   }
 
+  // Ranked driver and bus suggestions for this trip's window.
+  async function loadRecommendations(quoteId: string) {
+    const [{ data: d }, { data: b }] = await Promise.all([
+      supabase.rpc("recommend_drivers" as never, { p_quote_id: quoteId } as never),
+      supabase.rpc("recommend_buses" as never, { p_quote_id: quoteId } as never),
+    ]);
+    const dd = d as { drivers?: typeof recDrivers; window_start?: string; window_end?: string } | null;
+    const bb = b as { buses?: typeof recBuses } | null;
+    setRecDrivers(dd?.drivers ?? []);
+    setRecBuses(bb?.buses ?? []);
+    setRecWindow(dd?.window_start ? { start: dd.window_start, end: dd.window_end ?? "" } : null);
+  }
+
+  // Bus size and count as variables. Switching 56s to 47s recalculates how many
+  // are needed, because keeping the old count would seat the group short.
+  async function handleSetFleetMix(quoteId: string, bench: number | null, count: number | null) {
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_fleet_mix" as never, {
+      p_quote_id: quoteId, p_bench_count: bench, p_bus_count: count,
+      p_expected_version_id: expectedVersionId(quoteId),
+    } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId);
+    await loadRecommendations(quoteId);
+  }
+
   // Permanently remove a quote. The server refuses if it has a non-draft
   // invoice or a completed trip, and snapshots everything to
   // deleted_quote_log first — so this can clear test data but can't erase a
@@ -821,6 +865,9 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const canSchedule = quote.status === "approved" || quote.status === "confirmed";
   const isScheduled = quote.status === "scheduled";
   const isCancelled = quote.status === "cancelled";
+  // One slot per bus this trip needs. Both the driver and bus panels iterate
+  // it, so they stay in step when the fleet mix changes.
+  const slots = Array.from({ length: Math.max(1, estimate?.bus_count ?? 1) }, (_, i) => i + 1);
 
   // Passenger breakdown — aggregated the same way calculate_estimate classifies
   // young (K-4) vs older riders, so it works for both the new calculator's two
@@ -1054,6 +1101,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           </div>
         </div>
 
+        {/* One slot per bus this trip needs. Both the driver and bus panels
+            iterate it, so they stay in step when the fleet mix changes. */}
         {/* Two columns: the trip on the left, who's running it on the right.
             Melody fills in the assignment while reading the trip details, so
             they belong side by side rather than stacked. Collapses to one
@@ -1223,86 +1272,66 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
 
         <div className="grid content-start gap-5">
 
-        {/* Assignment — planned, not committed. These are quote_assignments
-            rows (migration 066), which become real trips at confirm_trip.
-            Availability checking is deliberately absent: driver and bus
-            schedules are day-level today, which would block a driver who's
-            free in the afternoon. Wiring this to a scheduler that understands
-            times is the next piece of work. */}
+        {/* DRIVER section. Ranked by migration 067: same yard first, then
+            least worked that day. Only drivers actually free for THIS trip's
+            window appear — hourly availability is what makes that meaningful,
+            since a morning appointment used to blank out the whole day. */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h4 className="mb-3 text-sm font-semibold text-foreground">Bus &amp; driver</h4>
+          <div className="mb-3 flex items-baseline justify-between gap-2">
+            <h4 className="text-sm font-semibold text-foreground">Driver</h4>
+            {recWindow && (
+              <span className="text-[11px] text-muted-foreground">
+                needs {recWindow.start?.slice(0, 5)}–{recWindow.end?.slice(0, 5)} (incl. driver time)
+              </span>
+            )}
+          </div>
 
           <label className="mb-1 block text-xs font-medium text-muted-foreground">Departing from</label>
           <select
             value={ver?.yard_id ?? ""}
             disabled={isCancelled}
             onChange={(e) => handleSetYard(quote.id, e.target.value || null)}
-            className="mb-4 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+            className="mb-1 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
           >
-            <option value="">
-              {yards.find((y) => y.is_default)?.name ?? "Default yard"} (default)
-            </option>
-            {yards.map((y) => (
-              <option key={y.id} value={y.id}>{y.name}</option>
-            ))}
+            <option value="">{yards.find((y) => y.is_default)?.name ?? "Default yard"} (default)</option>
+            {yards.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
           </select>
-          <p className="-mt-3 mb-4 text-[11px] text-muted-foreground">
-            Driver time is measured from here, so changing it changes the price.
+          <p className="mb-4 text-[11px] text-muted-foreground">
+            Driver time is measured from here, so this changes the price.
           </p>
 
-          {/* One row per bus the estimate says this trip needs. */}
-          {Array.from({ length: Math.max(1, estimate?.bus_count ?? 1) }, (_, i) => i + 1).map((slot) => {
+          {slots.map((slot) => {
             const row = assignments.find((a) => a.slot_number === slot);
             const bus = buses.find((b) => b.id === row?.bus_id);
-            // Surfaced rather than enforced: a bus needing air brakes with a
-            // driver who isn't certified is a real problem, but Melody may be
-            // mid-way through picking and shouldn't be blocked from saving.
             const driver = drivers.find((d) => d.id === row?.driver_id);
             const airBrakeGap = !!bus?.air_brake_req && !!driver && !driver.air_brake_cert;
+            // The chosen driver may not be in the recommended list — they might
+            // be busy, or picked before something changed. Showing them anyway
+            // beats a select that silently displays the wrong person.
+            const chosenMissing = !!row?.driver_id && !recDrivers.some((r) => r.driver_id === row.driver_id);
             return (
-              <div key={slot} className="mb-3 rounded-xl border border-border bg-surface/50 p-3">
-                {(estimate?.bus_count ?? 1) > 1 && (
-                  <div className="mb-2 text-xs font-semibold text-foreground">Bus {slot} of {estimate?.bus_count}</div>
+              <div key={slot} className="mb-2">
+                {slots.length > 1 && (
+                  <div className="mb-1 text-xs font-semibold text-foreground">Bus {slot} of {slots.length}</div>
                 )}
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Bus</label>
-                    <select
-                      value={row?.bus_id ?? ""}
-                      disabled={isCancelled}
-                      onChange={(e) => handleSetAssignment(quote.id, slot, e.target.value || null, row?.driver_id ?? null)}
-                      className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
-                    >
-                      <option value="">Not chosen</option>
-                      {buses.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.fleet_number} — {b.bench_count} bench{b.air_brake_req ? " (air brake)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Driver</label>
-                    <select
-                      value={row?.driver_id ?? ""}
-                      disabled={isCancelled}
-                      onChange={(e) => handleSetAssignment(quote.id, slot, row?.bus_id ?? null, e.target.value || null)}
-                      className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
-                    >
-                      <option value="">Not chosen</option>
-                      {drivers.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.last_name}, {d.first_name}{d.air_brake_cert ? " ✓AB" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {bus && estimate && bus.bench_count < estimate.bench_count && (
-                  <p className="mt-2 text-[11px] font-medium text-amber-700">
-                    This bus seats {bus.bench_count}; the group needs {estimate.bench_count}.
-                  </p>
-                )}
+                <select
+                  value={row?.driver_id ?? ""}
+                  disabled={isCancelled}
+                  onChange={(e) => handleSetAssignment(quote.id, slot, row?.bus_id ?? null, e.target.value || null)}
+                  className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+                >
+                  <option value="">Not chosen</option>
+                  {recDrivers.map((r, i) => (
+                    <option key={r.driver_id} value={r.driver_id}>
+                      {i === 0 ? "★ " : ""}{r.name} — {r.why}
+                    </option>
+                  ))}
+                  {chosenMissing && driver && (
+                    <option value={driver.id}>
+                      {driver.last_name}, {driver.first_name} — not available for this window
+                    </option>
+                  )}
+                </select>
                 {airBrakeGap && (
                   <p className="mt-1 text-[11px] font-medium text-amber-700">
                     {driver?.first_name} {driver?.last_name} isn't air-brake certified and this bus requires it.
@@ -1312,9 +1341,117 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
             );
           })}
 
-          <p className="text-[11px] text-muted-foreground">
-            Planned only — nothing is booked until the trip is confirmed. Availability
-            isn't checked yet.
+          {recDrivers.length === 0 && (
+            <p className="text-[11px] font-medium text-amber-700">
+              No driver is free for this window. Widen the times, change the yard,
+              or check availability records.
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            ★ is the top suggestion. Planned only — nothing is booked until the
+            trip is confirmed.
+          </p>
+        </div>
+
+        {/* BUS section. The size and count are suggestions, not a lock: Mila
+            wants to be able to run three 47s instead of two 56s. Changing the
+            size re-derives the count and the rate, since rate_config is keyed
+            on bench size. */}
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+          <h4 className="mb-3 text-sm font-semibold text-foreground">Buses</h4>
+
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Bus size</label>
+              <select
+                value={estimate?.override_bench_count ?? ""}
+                disabled={isCancelled}
+                onChange={(e) => handleSetFleetMix(quote.id, e.target.value ? Number(e.target.value) : null, estimate?.override_bus_count ?? null)}
+                className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+              >
+                <option value="">Suggested ({estimate?.system_bench_count ?? "—"} bench)</option>
+                <option value="18">18 bench</option>
+                <option value="47">47 bench</option>
+                <option value="56">56 bench</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">How many</label>
+              <input
+                key={`bc-${quote.id}-${estimate?.bus_count}`}
+                type="number" min={1} max={20}
+                disabled={isCancelled}
+                defaultValue={estimate?.bus_count ?? 1}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  const v = raw === "" ? null : Number(raw);
+                  if (v !== null && (Number.isNaN(v) || v < 1)) return;
+                  handleSetFleetMix(quote.id, estimate?.override_bench_count ?? null, v);
+                }}
+                onKeyDown={inlineEditKeys(() => {
+                  const el = document.activeElement as HTMLInputElement | null;
+                  if (el) el.value = String(estimate?.bus_count ?? 1);
+                })}
+                className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+              />
+            </div>
+          </div>
+          {estimate && (estimate.override_bench_count != null || estimate.override_bus_count != null) && (
+            <p className="mb-3 text-[11px] text-muted-foreground">
+              Seat calculation wanted {estimate.system_bus_count} × {estimate.system_bench_count} bench.{" "}
+              <button
+                type="button"
+                disabled={isCancelled}
+                onClick={() => handleSetFleetMix(quote.id, null, null)}
+                className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+              >
+                Reset
+              </button>
+            </p>
+          )}
+
+          {slots.map((slot) => {
+            const row = assignments.find((a) => a.slot_number === slot);
+            const bus = buses.find((b) => b.id === row?.bus_id);
+            const chosenMissing = !!row?.bus_id && !recBuses.some((r) => r.bus_id === row.bus_id);
+            return (
+              <div key={slot} className="mb-2">
+                {slots.length > 1 && (
+                  <div className="mb-1 text-xs font-semibold text-foreground">Bus {slot} of {slots.length}</div>
+                )}
+                <select
+                  value={row?.bus_id ?? ""}
+                  disabled={isCancelled}
+                  onChange={(e) => handleSetAssignment(quote.id, slot, e.target.value || null, row?.driver_id ?? null)}
+                  className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+                >
+                  <option value="">Not chosen</option>
+                  {recBuses.map((r, i) => (
+                    <option key={r.bus_id} value={r.bus_id}>
+                      {i === 0 ? "★ " : ""}{r.fleet_number} — {r.why}
+                    </option>
+                  ))}
+                  {chosenMissing && bus && (
+                    <option value={bus.id}>{bus.fleet_number} — already booked for this window</option>
+                  )}
+                </select>
+                {bus && estimate && bus.bench_count < estimate.bench_count && (
+                  <p className="mt-1 text-[11px] font-medium text-amber-700">
+                    Seats {bus.bench_count}; this trip is sized for {estimate.bench_count}.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+
+          {recBuses.length === 0 && (
+            <p className="text-[11px] font-medium text-amber-700">
+              No bus is free for this window.
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Buses of every size are listed — the right size sorts first, but the
+            choice isn't locked.
           </p>
         </div>
 
