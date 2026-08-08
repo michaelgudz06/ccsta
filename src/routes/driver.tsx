@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -56,18 +56,22 @@ type AvailBlock = {
   note: string | null;
 };
 
-// Half-hour steps, 05:00–22:00. Dropdowns rather than a free time input: a
-// typed time is easy to fat-finger on a phone, and a wrong one quietly makes a
-// driver unbookable.
-const HALF_HOURS = Array.from({ length: 35 }, (_, i) => {
-  const mins = 5 * 60 + i * 30;
-  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${mins % 60 === 0 ? "00" : "30"}`;
-});
-function prettyTime(t: string): string {
-  const [h, m] = t.split(":").map(Number);
-  const ampm = h < 12 ? "AM" : "PM";
+// The grid runs 05:00–21:00. Route drivers start early and afternoon routes
+// finish mid-evening; anything outside that is rare enough to phone in.
+const GRID_START = 5;
+const GRID_END = 21;
+const HOURS = Array.from({ length: GRID_END - GRID_START }, (_, i) => GRID_START + i);
+
+function hourLabel(h: number): string {
+  const ampm = h < 12 ? "am" : "pm";
   const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+  return `${h12}${ampm}`;
+}
+
+/** "14:00:00" -> 14. Blocks are stored as times; the grid works in hours. */
+function toHour(t: string | null, fallback: number): number {
+  if (!t) return fallback;
+  return Number(t.slice(0, 2));
 }
 
 function DriverPage() {
@@ -75,13 +79,17 @@ function DriverPage() {
   const [driver, setDriver] = useState<DriverRow | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [blocks, setBlocks] = useState<AvailBlock[]>([]);
-  // The day the driver is currently adding time off to. Null = form closed.
-  const [openDay, setOpenDay] = useState<string | null>(null);
-  const [fromTime, setFromTime] = useState("09:00");
-  const [toTime, setToTime] = useState("12:00");
-  const [awayNote, setAwayNote] = useState("");
-  const [allDay, setAllDay] = useState(false);
+  // Drag state. `anchor` is the hour the drag started on; `cursor` is the hour
+  // the pointer is over now. Together they describe the highlighted range, in
+  // either direction — dragging upward has to work as well as downward.
+  const [dragDay, setDragDay] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<number | null>(null);
+  const [cursor, setCursor] = useState<number | null>(null);
+  // What a drag creates. Route drivers block the hours they're on a route, so
+  // "away" is the common case and the default.
+  const [paintMode, setPaintMode] = useState<"unavailable" | "available">("unavailable");
   const [savingBlock, setSavingBlock] = useState(false);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [dataLoading, setDataLoading] = useState(true);
   const [saveNote, setSaveNote] = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -137,53 +145,63 @@ function DriverPage() {
     }
   }
 
-  // Add a block of time off. Times are TAPPED from dropdowns rather than
-  // dragged across a grid: the drivers are older and not tech-forward, and a
-  // mis-drag that silently books someone out of a whole day is a worse failure
-  // than a few extra taps.
-  async function addBlock() {
-    if (!driver || !openDay) return;
-    const start = allDay ? null : fromTime;
-    const end = allDay ? null : toTime;
-    if (!allDay && toTime <= fromTime) {
-      flash("The end time needs to be after the start time.", false);
+  // Commit whatever the driver just dragged over.
+  //
+  // Rebuilt from a tap-two-dropdowns form at Mila's request: route drivers need
+  // to block the hours they're driving a route, and doing that one dropdown pair
+  // at a time was too slow. Dragging a column is the natural gesture for "these
+  // hours are gone".
+  async function commitDrag() {
+    if (!driver || dragDay === null || anchor === null || cursor === null) {
+      setDragDay(null); setAnchor(null); setCursor(null);
       return;
     }
+    const lo = Math.min(anchor, cursor);
+    const hi = Math.max(anchor, cursor);
+    const day = dragDay;
+    setDragDay(null); setAnchor(null); setCursor(null);
+
+    const start_time = `${String(GRID_START + lo).padStart(2, "0")}:00`;
+    // +1 because the range is INCLUSIVE of the hour dragged to: releasing on
+    // the 15:00 row means 15:00–16:00 is blocked, not a zero-length window.
+    const end_time = `${String(GRID_START + hi + 1).padStart(2, "0")}:00`;
+
     setSavingBlock(true);
     const { data, error } = await supabase
       .from("driver_availability")
       .insert({
         driver_id: driver.id,
-        date: openDay,
-        status: "unavailable",
-        start_time: start,
-        end_time: end,
-        note: awayNote.trim() || null,
+        date: day,
+        status: paintMode,
+        start_time,
+        end_time,
+        note: null,
       })
       .select("id, date, status, start_time, end_time, note")
       .single();
     setSavingBlock(false);
+
     if (error) {
-      // The unique index is on the WINDOW, so this is almost always a duplicate.
       flash(
-        error.message.includes("duplicate")
-          ? "You've already marked that time off."
-          : "Couldn't save — check your signal and try again.",
+        error.message.toLowerCase().includes("duplicate")
+          ? "That block is already saved."
+          : `Couldn't save — ${error.message}`,
         false,
       );
       return;
     }
-    setBlocks((prev) => [...prev, data as AvailBlock].sort(
-      (a, b) => a.date.localeCompare(b.date) || (a.start_time ?? "").localeCompare(b.start_time ?? ""),
-    ));
-    setAwayNote("");
-    setOpenDay(null);
-    flash("Time off saved ✓", true);
+    setBlocks((prev) => [...prev, data as AvailBlock]);
+    flash("Saved ✓", true);
   }
 
-  // Cancelling an appointment is the most ordinary thing a driver will do, so
-  // they can remove their own blocks (migration 070 added the delete policy).
-  // Making them phone the office to un-block a morning would defeat the point.
+  // Label an existing block. Free text, because Mila didn't want a fixed list.
+  async function labelBlock(id: string, note: string) {
+    const prev = blocks;
+    setBlocks((b) => b.map((x) => (x.id === id ? { ...x, note } : x)));
+    const { error } = await supabase.from("driver_availability").update({ note }).eq("id", id);
+    if (error) { setBlocks(prev); flash("Couldn't save that label.", false); }
+  }
+
   async function removeBlock(id: string) {
     const prev = blocks;
     setBlocks((b) => b.filter((x) => x.id !== id));
@@ -195,6 +213,19 @@ function DriverPage() {
       flash("Removed ✓", true);
     }
   }
+
+  // The 7 days currently shown. weekOffset moves the window forward a week at
+  // a time; there's no backward past today, since marking availability in the
+  // past does nothing.
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + weekOffset * 7 + i);
+    return { date: d, iso: toISODate(d) };
+  });
+  const weekIsos = new Set(weekDays.map((d) => d.iso));
+  const weekBlocks = blocks
+    .filter((b) => weekIsos.has(b.date))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.start_time ?? "").localeCompare(b.start_time ?? ""));
 
   const today = todayISO();
   const todayLabel = new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" });
@@ -353,139 +384,159 @@ function DriverPage() {
           )}
         </section>
 
-        {/* AVAILABILITY — a 14-day calendar of BLOCKS, not a day toggle.
-            Melody's assignment screen reads these through recommend_drivers,
-            which only hides a driver when a block actually OVERLAPS the trip
-            window. So marking a morning off no longer costs you the afternoon. */}
+        {/* AVAILABILITY — hourly grid, drag to mark.
+            Melody's screen reads these through recommend_drivers, which hides a
+            driver only when a block actually OVERLAPS the trip window. So
+            blocking a morning route no longer costs the afternoon. */}
         <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h2 className="text-base font-bold text-foreground">My Availability</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Tap a day to mark time off. You can mark part of a day — if you're
-            away all morning you can still be offered an afternoon trip.
-          </p>
-
-          <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-xs">
-            {Array.from({ length: 14 }).map((_, i) => {
-              const d = new Date();
-              d.setDate(d.getDate() + i);
-              const iso = toISODate(d);
-              const dayBlocks = blocks.filter((b) => b.date === iso && b.status === "unavailable");
-              const fullDay = dayBlocks.some((b) => !b.start_time && !b.end_time);
-              // Colour by how much of the day is gone, since reasons are free
-              // text and can't be reliably grouped: amber = partly away,
-              // rose = away all day, plain = free.
-              const cls = fullDay
-                ? "border-rose-300 bg-rose-50 text-rose-800"
-                : dayBlocks.length > 0
-                  ? "border-amber-300 bg-amber-50 text-amber-900"
-                  : "border-border bg-surface text-muted-foreground";
-              return (
-                <button
-                  key={iso}
-                  onClick={() => { setOpenDay(openDay === iso ? null : iso); setAwayNote(""); setAllDay(false); }}
-                  className={`rounded-lg border px-1 py-2.5 hover:border-primary ${cls} ${openDay === iso ? "ring-2 ring-ring" : ""}`}
-                >
-                  <div className="font-semibold">{d.toLocaleDateString("en-CA", { weekday: "short" })}</div>
-                  <div className="text-xs">{d.getDate()}</div>
-                  <div className="mt-0.5 text-[11px] font-medium">
-                    {fullDay ? "Away" : dayBlocks.length > 0 ? `${dayBlocks.length} off` : "Free"}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-bold text-foreground">My Availability</h2>
+            <div className="flex items-center gap-1 text-xs">
+              <button
+                onClick={() => setWeekOffset((w) => Math.max(0, w - 1))}
+                disabled={weekOffset === 0}
+                className="rounded border border-border px-2 py-1 font-medium text-muted-foreground hover:bg-surface disabled:opacity-40"
+              >
+                ← Earlier
+              </button>
+              <button
+                onClick={() => setWeekOffset((w) => w + 1)}
+                className="rounded border border-border px-2 py-1 font-medium text-muted-foreground hover:bg-surface"
+              >
+                Later →
+              </button>
+            </div>
           </div>
 
-          {openDay && (
-            <div className="mt-4 rounded-xl border border-border bg-surface/60 p-4">
-              <h3 className="text-sm font-semibold text-foreground">
-                Time off on{" "}
-                {new Date(`${openDay}T12:00`).toLocaleDateString("en-CA", {
-                  weekday: "long", month: "long", day: "numeric",
-                })}
-              </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Drag down a day to mark hours. Use it for your routes as well as time
+            off — anything you don't mark counts as available.
+          </p>
 
-              {/* Existing blocks for this day, each removable. */}
-              {blocks.filter((b) => b.date === openDay).length > 0 && (
-                <ul className="mt-2 grid gap-1.5">
-                  {blocks.filter((b) => b.date === openDay).map((b) => (
-                    <li key={b.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
-                      <span>
-                        <span className="font-medium text-foreground">
-                          {!b.start_time && !b.end_time
-                            ? "All day"
-                            : `${b.start_time?.slice(0, 5)}–${b.end_time?.slice(0, 5)}`}
-                        </span>
-                        {b.note && <span className="text-muted-foreground"> · {b.note}</span>}
-                      </span>
-                      <button
-                        onClick={() => removeBlock(b.id)}
-                        className="rounded border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground hover:bg-surface"
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+          {/* What a drag paints. Away is the default because blocking route
+              hours is the common case. */}
+          <div className="mt-3 flex gap-2">
+            {(["unavailable", "available"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setPaintMode(m)}
+                className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                  paintMode === m
+                    ? m === "unavailable"
+                      ? "border-rose-400 bg-rose-100 text-rose-900"
+                      : "border-emerald-400 bg-emerald-100 text-emerald-900"
+                    : "border-border bg-surface text-muted-foreground"
+                }`}
+              >
+                {m === "unavailable" ? "Away / on a route" : "Available"}
+              </button>
+            ))}
+          </div>
 
-              <label className="mt-3 flex items-center gap-2 text-sm text-foreground">
-                <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} className="h-4 w-4" />
-                Away the whole day
-              </label>
-
-              {!allDay && (
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">From</label>
-                    <select
-                      value={fromTime}
-                      onChange={(e) => setFromTime(e.target.value)}
-                      className="w-full rounded-lg border border-input bg-background px-2 py-2 text-base text-foreground outline-none ring-ring focus:ring-2"
-                    >
-                      {HALF_HOURS.map((t) => <option key={t} value={t}>{prettyTime(t)}</option>)}
-                    </select>
+          {/* The grid. onPointerEnter rather than onPointerMove so a drag tracks
+              cells rather than pixels, which behaves the same with a finger as
+              with a mouse. touch-none stops the browser scrolling the page
+              instead of extending the selection. */}
+          <div
+            className="mt-3 overflow-x-auto"
+            onPointerUp={commitDrag}
+            onPointerLeave={() => { if (dragDay) commitDrag(); }}
+          >
+            <div className="min-w-[560px]">
+              <div className="grid grid-cols-[3rem_repeat(7,1fr)] gap-px">
+                <div />
+                {weekDays.map((d) => (
+                  <div key={d.iso} className="pb-1 text-center text-[11px] font-semibold text-foreground">
+                    <div>{d.date.toLocaleDateString("en-CA", { weekday: "short" })}</div>
+                    <div className="text-muted-foreground">{d.date.getDate()}</div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Until</label>
-                    <select
-                      value={toTime}
-                      onChange={(e) => setToTime(e.target.value)}
-                      className="w-full rounded-lg border border-input bg-background px-2 py-2 text-base text-foreground outline-none ring-ring focus:ring-2"
-                    >
-                      {HALF_HOURS.map((t) => <option key={t} value={t}>{prettyTime(t)}</option>)}
-                    </select>
-                  </div>
-                </div>
-              )}
+                ))}
 
-              <label className="mb-1 mt-3 block text-xs font-medium text-muted-foreground">Reason (optional)</label>
-              <input
-                value={awayNote}
-                onChange={(e) => setAwayNote(e.target.value)}
-                placeholder="Appointment, personal, etc."
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-base text-foreground outline-none ring-ring focus:ring-2"
-              />
-
-              <div className="mt-3 flex gap-2">
-                <button
-                  onClick={addBlock}
-                  disabled={savingBlock}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
-                >
-                  {savingBlock ? "Saving…" : "Mark time off"}
-                </button>
-                <button
-                  onClick={() => setOpenDay(null)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface"
-                >
-                  Done
-                </button>
+                {HOURS.map((h, rowIdx) => (
+                  <Fragment key={h}>
+                    <div className="pr-1 text-right text-[10px] leading-6 text-muted-foreground">
+                      {hourLabel(h)}
+                    </div>
+                    {weekDays.map((d) => {
+                      const covering = blocks.find(
+                        (b) =>
+                          b.date === d.iso &&
+                          h >= toHour(b.start_time, GRID_START) &&
+                          h < toHour(b.end_time, GRID_END),
+                      );
+                      const inDrag =
+                        dragDay === d.iso &&
+                        anchor !== null && cursor !== null &&
+                        rowIdx >= Math.min(anchor, cursor) &&
+                        rowIdx <= Math.max(anchor, cursor);
+                      const cls = inDrag
+                        ? paintMode === "unavailable" ? "bg-rose-300" : "bg-emerald-300"
+                        : covering
+                          ? covering.status === "unavailable" ? "bg-rose-200" : "bg-emerald-200"
+                          : "bg-surface hover:bg-accent/20";
+                      return (
+                        <div
+                          key={d.iso + h}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            setDragDay(d.iso); setAnchor(rowIdx); setCursor(rowIdx);
+                          }}
+                          onPointerEnter={() => { if (dragDay === d.iso) setCursor(rowIdx); }}
+                          className={`h-6 cursor-pointer touch-none border border-border/40 ${cls}`}
+                          title={covering?.note ?? undefined}
+                        />
+                      );
+                    })}
+                  </Fragment>
+                ))}
               </div>
+            </div>
+          </div>
+
+          {savingBlock && <p className="mt-2 text-xs text-muted-foreground">Saving…</p>}
+
+          {/* Everything marked this week, with a free-text label per block.
+              Labels live here rather than in a prompt during the drag, so the
+              drag stays one uninterrupted gesture. */}
+          {weekBlocks.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-foreground">Marked this week</h3>
+              <ul className="mt-2 grid gap-1.5">
+                {weekBlocks.map((b) => (
+                  <li key={b.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface/60 px-3 py-2 text-sm">
+                    <span
+                      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${
+                        b.status === "unavailable" ? "bg-rose-400" : "bg-emerald-400"
+                      }`}
+                    />
+                    <span className="font-medium text-foreground">
+                      {new Date(`${b.date}T12:00`).toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric" })}
+                      {" · "}
+                      {hourLabel(toHour(b.start_time, GRID_START))}–{hourLabel(toHour(b.end_time, GRID_END))}
+                    </span>
+                    <input
+                      defaultValue={b.note ?? ""}
+                      placeholder="Label (optional)"
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v !== (b.note ?? "")) labelBlock(b.id, v);
+                      }}
+                      className="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                    />
+                    <button
+                      onClick={() => removeBlock(b.id)}
+                      className="rounded border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
           <p className="mt-3 text-xs text-muted-foreground">
-            The office sees these straight away. Anything you don't mark off counts as available.
+            The office sees these straight away.
           </p>
         </section>
 
