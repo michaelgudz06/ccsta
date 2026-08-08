@@ -176,6 +176,7 @@ type AdminVersionDetail = {
   approved_driver_hours: number | null;
   system_driver_hours: number | null;
   fuel_waived: boolean;
+  yard_id: string | null;
   contact_primary: { name?: string; email?: string; phone?: string } | null;
   contact_secondary: { name?: string; email?: string; phone?: string } | null;
   contact_day_of: { name?: string; phone?: string } | null;
@@ -216,6 +217,11 @@ type EstimateBreakdown = {
   bus_count: number;
   customer_type: string;
   hourly_rate: number;
+  // Migration 066: the rate is a variable Melody can set, not just a lookup.
+  // system_hourly_rate is what rate_config would have given, so the UI can show
+  // what was changed from.
+  system_hourly_rate: number;
+  override_hourly_rate: number | null;
   trip_hours: number;
   billable_trip_hours: number;
   driver_pre_hours: number;
@@ -312,6 +318,15 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   const [estimate, setEstimate] = useState<EstimateBreakdown | null>(null);
   const [estimateBusy, setEstimateBusy] = useState(false);
 
+  // Fleet reference data for the assignment panel (migration 066). Loaded once
+  // — 28 buses and 37 drivers is small enough that filtering client-side beats
+  // a query per keystroke.
+  const [yards, setYards] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
+  const [buses, setBuses] = useState<{ id: string; fleet_number: string; bench_count: number; air_brake_req: boolean }[]>([]);
+  const [drivers, setDrivers] = useState<{ id: string; first_name: string; last_name: string; air_brake_cert: boolean }[]>([]);
+  // Planned assignments for the selected quote, one row per bus.
+  const [assignments, setAssignments] = useState<{ slot_number: number; bus_id: string | null; driver_id: string | null }[]>([]);
+
   // ── Loading, per stage ───────────────────────────────────────────────
   //
   // Was a single fetch of the 50 most recent quotes, filtered client-side into
@@ -332,7 +347,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     if (versionIds.length > 0) {
       const { data: versions } = await supabase
         .from("quote_versions")
-        .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, trip_type, cargo_needed, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
+        .select("id, trip_date, student_count, adults_count, destination_name, destination_address, pickup_address, total, departure_time, return_time, trip_type, cargo_needed, special_requests, driver_preference, distance_km, approved_driver_hours, system_driver_hours, fuel_waived, yard_id, contact_primary, contact_secondary, contact_day_of, grade_breakdown")
         .in("id", versionIds);
       const { data: runs } = await supabase
         .from("quote_shuttle_runs")
@@ -426,6 +441,20 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   // Counts once on mount, then whenever a status might have changed.
   useEffect(() => { loadCounts(); }, [loadCounts, countsNonce]);
 
+  // Fleet reference data, loaded once.
+  useEffect(() => {
+    (async () => {
+      const [{ data: y }, { data: b }, { data: d }] = await Promise.all([
+        supabase.from("yards").select("id, name, is_default").order("is_default", { ascending: false }).order("name"),
+        supabase.from("buses").select("id, fleet_number, bench_count, air_brake_req").eq("active", true).order("fleet_number"),
+        supabase.from("drivers").select("id, first_name, last_name, air_brake_cert").eq("active", true).order("last_name"),
+      ]);
+      if (y) setYards(y);
+      if (b) setBuses(b);
+      if (d) setDrivers(d);
+    })();
+  }, []);
+
   // Debounced: search when there's a term, otherwise page the active stage.
   useEffect(() => {
     const term = search.trim();
@@ -457,6 +486,7 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     setConfirmedTrip(null);
     setActionError(null);
     setEstimate(null);
+    setAssignments([]);
     setConfirmCancelTrip(false);
     const q = quotes.find((x) => x.id === selected);
     if (q) {
@@ -472,6 +502,15 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
       const neverPriced =
         ["requested", "in_review"].includes(q.status) && q.quote_versions?.total == null;
       handleEstimate(q.id, neverPriced);
+      // Planned assignments for this quote's current version.
+      if (q.current_version_id) {
+        supabase
+          .from("quote_assignments")
+          .select("slot_number, bus_id, driver_id")
+          .eq("quote_version_id", q.current_version_id)
+          .order("slot_number")
+          .then(({ data }) => setAssignments(data ?? []));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
@@ -656,6 +695,44 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
       p_quote_id: quoteId,
       p_waived: waived,
       p_expected_version_id: expectedVersionId(quoteId),
+    } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId);
+  }
+
+  // Which yard the bus leaves from. Drives the travel-time measurement, so
+  // changing it changes the price — hence a recalculate afterwards.
+  async function handleSetYard(quoteId: string, yardId: string | null) {
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_yard" as never, {
+      p_quote_id: quoteId, p_yard_id: yardId, p_expected_version_id: expectedVersionId(quoteId),
+    } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    await handleEstimate(quoteId, false);
+  }
+
+  // Plan a bus and/or driver into one slot. Either side may be null: Melody
+  // often picks the bus before she knows who's driving it.
+  async function handleSetAssignment(quoteId: string, slot: number, busId: string | null, driverId: string | null) {
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_assignment" as never, {
+      p_quote_id: quoteId, p_slot: slot, p_bus_id: busId, p_driver_id: driverId,
+      p_expected_version_id: expectedVersionId(quoteId),
+    } as never);
+    if (error) { setActionError(friendlyError(error.message)); return; }
+    setAssignments((prev) => {
+      const next = prev.filter((a) => a.slot_number !== slot);
+      next.push({ slot_number: slot, bus_id: busId, driver_id: driverId });
+      return next.sort((a, b) => a.slot_number - b.slot_number);
+    });
+  }
+
+  // The hourly rate as a variable rather than a dollar total. Base cost, and
+  // anything derived from it, recalculates — which is the whole point.
+  async function handleSetRateOverride(quoteId: string, rate: number | null) {
+    setActionError(null);
+    const { error } = await supabase.rpc("set_quote_hourly_rate_override" as never, {
+      p_quote_id: quoteId, p_rate: rate, p_expected_version_id: expectedVersionId(quoteId),
     } as never);
     if (error) { setActionError(friendlyError(error.message)); return; }
     await handleEstimate(quoteId);
@@ -977,6 +1054,13 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           </div>
         </div>
 
+        {/* Two columns: the trip on the left, who's running it on the right.
+            Melody fills in the assignment while reading the trip details, so
+            they belong side by side rather than stacked. Collapses to one
+            column below lg — this sheet gets used on a laptop. */}
+        <div className="grid items-start gap-5 lg:grid-cols-2">
+        <div className="grid content-start gap-5">
+
         {/* Section 1: Trip details */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           {/* The organization is the heading of the sheet, not another box —
@@ -1135,6 +1219,105 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           )}
         </div>
 
+        </div>{/* end left column */}
+
+        <div className="grid content-start gap-5">
+
+        {/* Assignment — planned, not committed. These are quote_assignments
+            rows (migration 066), which become real trips at confirm_trip.
+            Availability checking is deliberately absent: driver and bus
+            schedules are day-level today, which would block a driver who's
+            free in the afternoon. Wiring this to a scheduler that understands
+            times is the next piece of work. */}
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+          <h4 className="mb-3 text-sm font-semibold text-foreground">Bus &amp; driver</h4>
+
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Departing from</label>
+          <select
+            value={ver?.yard_id ?? ""}
+            disabled={isCancelled}
+            onChange={(e) => handleSetYard(quote.id, e.target.value || null)}
+            className="mb-4 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+          >
+            <option value="">
+              {yards.find((y) => y.is_default)?.name ?? "Default yard"} (default)
+            </option>
+            {yards.map((y) => (
+              <option key={y.id} value={y.id}>{y.name}</option>
+            ))}
+          </select>
+          <p className="-mt-3 mb-4 text-[11px] text-muted-foreground">
+            Driver time is measured from here, so changing it changes the price.
+          </p>
+
+          {/* One row per bus the estimate says this trip needs. */}
+          {Array.from({ length: Math.max(1, estimate?.bus_count ?? 1) }, (_, i) => i + 1).map((slot) => {
+            const row = assignments.find((a) => a.slot_number === slot);
+            const bus = buses.find((b) => b.id === row?.bus_id);
+            // Surfaced rather than enforced: a bus needing air brakes with a
+            // driver who isn't certified is a real problem, but Melody may be
+            // mid-way through picking and shouldn't be blocked from saving.
+            const driver = drivers.find((d) => d.id === row?.driver_id);
+            const airBrakeGap = !!bus?.air_brake_req && !!driver && !driver.air_brake_cert;
+            return (
+              <div key={slot} className="mb-3 rounded-xl border border-border bg-surface/50 p-3">
+                {(estimate?.bus_count ?? 1) > 1 && (
+                  <div className="mb-2 text-xs font-semibold text-foreground">Bus {slot} of {estimate?.bus_count}</div>
+                )}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Bus</label>
+                    <select
+                      value={row?.bus_id ?? ""}
+                      disabled={isCancelled}
+                      onChange={(e) => handleSetAssignment(quote.id, slot, e.target.value || null, row?.driver_id ?? null)}
+                      className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+                    >
+                      <option value="">Not chosen</option>
+                      {buses.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.fleet_number} — {b.bench_count} bench{b.air_brake_req ? " (air brake)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Driver</label>
+                    <select
+                      value={row?.driver_id ?? ""}
+                      disabled={isCancelled}
+                      onChange={(e) => handleSetAssignment(quote.id, slot, row?.bus_id ?? null, e.target.value || null)}
+                      className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+                    >
+                      <option value="">Not chosen</option>
+                      {drivers.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.last_name}, {d.first_name}{d.air_brake_cert ? " ✓AB" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {bus && estimate && bus.bench_count < estimate.bench_count && (
+                  <p className="mt-2 text-[11px] font-medium text-amber-700">
+                    This bus seats {bus.bench_count}; the group needs {estimate.bench_count}.
+                  </p>
+                )}
+                {airBrakeGap && (
+                  <p className="mt-1 text-[11px] font-medium text-amber-700">
+                    {driver?.first_name} {driver?.last_name} isn't air-brake certified and this bus requires it.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+
+          <p className="text-[11px] text-muted-foreground">
+            Planned only — nothing is booked until the trip is confirmed. Availability
+            isn't checked yet.
+          </p>
+        </div>
+
         {/* Section 2: Price — every component editable in place. Melody's
             typed values survive recalculation; only untouched fields refresh. */}
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
@@ -1229,6 +1412,48 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
                 {estimate.billable_trip_hours > estimate.trip_hours && (
                   <> · {estimate.min_hours}h minimum applied to trip time</>
                 )}
+                {/* The rate as a VARIABLE. Editing it recalculates base cost
+                    and overtime, so the numbers below always agree with the
+                    hours and rate shown here — which is the point of editing
+                    variables rather than typing over the total. */}
+                <span className="mt-1 flex w-full flex-wrap items-center gap-x-1.5">
+                  at
+                  <input
+                    key={`rate-${quote.id}-${estimate.hourly_rate}`}
+                    type="number" min={0} step={0.25}
+                    disabled={isCancelled}
+                    defaultValue={Number(estimate.hourly_rate).toFixed(2)}
+                    title="Hourly rate — blank resets to the standard rate for this bus size and customer type"
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      if (raw === "") { handleSetRateOverride(quote.id, null); return; }
+                      const v = Number(raw);
+                      if (Number.isNaN(v) || v < 0) return;
+                      // Setting it back to the standard rate clears the override
+                      // rather than pinning it — otherwise a later rate change
+                      // wouldn't reach this quote.
+                      handleSetRateOverride(quote.id, v === Number(estimate.system_hourly_rate) ? null : v);
+                    }}
+                    onKeyDown={inlineEditKeys(() => {
+                      const el = document.activeElement as HTMLInputElement | null;
+                      if (el) el.value = Number(estimate.hourly_rate).toFixed(2);
+                    })}
+                    className="w-20 rounded border border-input bg-background px-1.5 py-0.5 text-xs text-foreground outline-none ring-ring focus:ring-2 disabled:opacity-50"
+                  />
+                  /hr
+                  {estimate.bus_count > 1 && <> × {estimate.bus_count} buses</>}
+                  {estimate.override_hourly_rate != null && (
+                    <button
+                      type="button"
+                      disabled={isCancelled}
+                      onClick={() => handleSetRateOverride(quote.id, null)}
+                      title={`Standard rate is ${formatMoney(estimate.system_hourly_rate)}/hr`}
+                      className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+                    >
+                      Reset to {formatMoney(estimate.system_hourly_rate)}
+                    </button>
+                  )}
+                </span>
               </div>
               <PriceRowEditable
                 label="Base cost"
@@ -1299,6 +1524,8 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
             </div>
           )}
         </div>
+        </div>{/* end right column */}
+        </div>{/* end two-column grid */}
 
         {/* Confirmed trip banner */}
         {confirmedTrip && (

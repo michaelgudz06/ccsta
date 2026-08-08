@@ -492,6 +492,11 @@ export type Database = {
           edited_at: string | null
           estimated_hours: number | null
           fuel_waived: boolean
+          yard_id: string | null
+          leg_out_minutes: number | null
+          leg_back_minutes: number | null
+          pretrip_waived: boolean
+          override_hourly_rate: number | null
           grade_breakdown: Json | null
           id: string
           internal_notes: string | null
@@ -531,6 +536,11 @@ export type Database = {
           edited_at?: string | null
           estimated_hours?: number | null
           fuel_waived?: boolean
+          yard_id?: string | null
+          leg_out_minutes?: number | null
+          leg_back_minutes?: number | null
+          pretrip_waived?: boolean
+          override_hourly_rate?: number | null
           grade_breakdown?: Json | null
           id?: string
           internal_notes?: string | null
@@ -570,6 +580,11 @@ export type Database = {
           edited_at?: string | null
           estimated_hours?: number | null
           fuel_waived?: boolean
+          yard_id?: string | null
+          leg_out_minutes?: number | null
+          leg_back_minutes?: number | null
+          pretrip_waived?: boolean
+          override_hourly_rate?: number | null
           grade_breakdown?: Json | null
           id?: string
           internal_notes?: string | null
@@ -653,6 +668,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      quote_assignments: {
+        Row: {
+          bus_id: string | null
+          created_at: string
+          driver_id: string | null
+          id: string
+          quote_version_id: string
+          slot_number: number
+          updated_at: string
+        }
+        Insert: {
+          bus_id?: string | null
+          created_at?: string
+          driver_id?: string | null
+          id?: string
+          quote_version_id: string
+          slot_number: number
+          updated_at?: string
+        }
+        Update: {
+          bus_id?: string | null
+          created_at?: string
+          driver_id?: string | null
+          id?: string
+          quote_version_id?: string
+          slot_number?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       quote_multi_stops: {
         Row: {
