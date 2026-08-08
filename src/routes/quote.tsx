@@ -1651,7 +1651,13 @@ function QuotePage() {
                   </tbody>
                 </table>
                 <p className="mt-4 text-xs leading-relaxed text-white/50">
-                  Driver time is the {DRIVER_TIME_BUFFER_HOURS} hr we add for getting the bus to your pickup and back.
+                  {/* Reads from the same value shown in the table above. It used
+                      to hardcode the flat buffer, which would now contradict a
+                      measured figure — the sentence would say "1 hr" while the
+                      line above said 0.75. */}
+                  {measuredDriverHours != null
+                    ? `Driver time is the ${driverTimeHours} hr we add for getting the bus from our yard to your pickup and back, measured for your addresses.`
+                    : `Driver time is the ${driverTimeHours} hr we add for getting the bus to your pickup and back.`}
                   {minimumApplied && ` We bill a ${minHours} hr minimum on trip time, which is why the hours above may look longer than your trip.`}
                   {" "}Our staff will confirm the exact amount after reviewing your request — it may be higher or
                   lower based on the actual route. No surprise billing.
