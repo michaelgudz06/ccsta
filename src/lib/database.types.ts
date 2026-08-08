@@ -98,6 +98,8 @@ export type Database = {
         Row: {
           created_at: string
           date: string
+          start_time: string | null
+          end_time: string | null
           driver_id: string
           id: string
           note: string | null
@@ -107,6 +109,8 @@ export type Database = {
         Insert: {
           created_at?: string
           date: string
+          start_time?: string | null
+          end_time?: string | null
           driver_id: string
           id?: string
           note?: string | null
@@ -116,6 +120,8 @@ export type Database = {
         Update: {
           created_at?: string
           date?: string
+          start_time?: string | null
+          end_time?: string | null
           driver_id?: string
           id?: string
           note?: string | null
