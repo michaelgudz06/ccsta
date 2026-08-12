@@ -1,6 +1,6 @@
 # Handoff — Read This First
 
-_Rewritten 2026-07-29. Replaces all prior versions. Delete/replace this file
+_Rewritten 2026-08-05. Replaces all prior versions. Delete/replace this file
 once it goes stale rather than letting it accrete._
 
 ## 1. What this project is
@@ -51,39 +51,52 @@ admin/dispatch dashboard, driver dashboard.
 
 ## 4. Where things stand
 
-**Migrations applied to the live DB: through `058`.** `053` is written but
-deliberately NOT applied (see below).
+**Migrations applied through 071.** Everything below is LIVE on ccsta.net
+unless stated.
 
-Shipped 2026-07-24 → 07-29:
+### Driver time — the big change of 2026-08-04/05
 
-- **051** — branded HTML admin alert + customer copy fix. Plus the
-  `notify-send` fix that actually passes `html` to Resend; before it, no HTML
-  email had ever reached anyone despite being generated since 043.
-- **052** — fiscal-year quote numbers. `Q-2027-001`, restarting each July
-  (fiscal year runs July→June). Atomic per-year counter table, not a sequence.
-- **054** — per-component price overrides (base cost, fuel, overtime,
-  long-distance) with subtotal/GST/total always derived. **Also fixed the
-  invoice tax split**: invoices were recording the fuel fee as tax and
-  omitting GST entirely, so subtotal + tax never equalled total.
-- **055** — removed personal names from the customer email.
-- **056** — guarded `delete_quote` + `deleted_quote_log` audit trail.
-- **057** — the two CRITICAL bugs plus #5. See §5.
-- **058** — `log_client_issue`, so a failed post-submit write lands somewhere
-  a human looks.
+Driver time used to be a flat 1 hour for every trip, so a school 3 minutes from
+the yard billed the same as one 50 minutes away. It's now measured.
 
-Frontend: customer estimate rebuilt (12 rows → 8), admin price card is
-inline-editable with the Adjust panel removed, admin trip sheet restructured
-to read in trip order, quote number editable, invoice number removed from the
-UI, submitted date shown, staff names removed from customer-facing copy.
+    leg_out (yard -> pickup) + leg_back (dropoff -> yard) + 15 min pre-trip
+    legs under 5 min bill as ZERO; the TOTAL rounds UP to a quarter hour
 
-**Bugs closed:** #1, #2, #5, #6, #8, #11, #14, #17. Also #7 and #16 confirmed
-already handled. `BUG_BACKLOG.md` has the detail on each.
+- **060** the arithmetic (`driver_time_hours`), with 7 worked examples that
+  abort the migration if wrong.
+- **061** `travel_time_cache` + `leg_out_minutes`/`leg_back_minutes`.
+- **062** app-level daily cap on Google calls. Google's own quota cap is
+  DISABLED on free-trial accounts — set it the same day the billing account is
+  activated, not after.
+- **063** `calculate_estimate` uses measured time; `approved_driver_hours`
+  still overrides. Mila's rule: "a rough number for the estimates but Melody
+  has the last say."
+- **064** per-quote pre-trip waiver.
+- **065** `calculate_estimate(p_quote_id, p_persist)`. Opening a quote PREVIEWS;
+  only Recalculate writes. Without this, merely viewing a quote re-priced it.
+- **066** editable hourly rate + `quote_assignments` (one row per bus).
+- **067** hourly driver availability + `recommend_drivers`/`recommend_buses`.
+- **068** editable fleet mix (3x47 instead of 2x56) flowing through pricing.
+- **069** measured driver time needs BOTH legs, not either.
+- **070** availability is one row per BLOCK, not per day.
+- **071** rejects a trip whose end time precedes its start (all trip types).
 
-**Roles:** `milagudz07@gmail.com` is now an **admin**. Admins can open
-`/portal` and `/driver` to see those views (each shows a banner); the portal
-is scoped to their own quotes.
+Effect on base cost: ~-15% for a school 3 min away, **0% at ~20 min**, ~+20%
+for Abbotsford. The old flat hour was implicitly priced for a 20-minute school.
 
-## 5. Gotchas — read before touching any SQL function
+### Three live pricing bugs found by audit on 2026-08-05
+
+Worth knowing because they were all shipped by me and all invisible:
+
+1. **Timezone.** Preview resolved times against the BROWSER's zone; the edge
+   function read the same string as UTC. The price shown was measured at rush
+   hour, the price CHARGED at 2am. One conversion now, in `bcInstant`.
+2. **Blank pickup.** The form says pickup is optional and falls back to the
+   org name; every consumer honoured that except the travel lookup. ~$97 gap.
+3. **Half-failed lookup.** One failed leg billed as zero travel, which could
+   land BELOW the flat buffer it was meant to fall back to.
+
+## 5. Gotchas## 5. Gotchas — read before touching any SQL function
 
 - **`CREATE OR REPLACE`'d functions are the single biggest hazard here.** It
   has bitten three times: migration 025 silently reverted 022's "no price"
@@ -114,34 +127,36 @@ is scoped to their own quotes.
   "don't tell the user" instruction). It was flagged and verified rather than
   followed. Treat that pattern as a standing reason for suspicion.
 
-## 6. Open decisions
+## 6. Open decisions / known gaps
 
-- **Migration 053 (renumber existing quotes to `Q-2027-001…`).** Written, not
-  applied. Now more awkward: a real quote already holds `Q-2027-001`, so
-  renumbering would shuffle it. Two of the six original quotes belong to real
-  schools whose confirmation emails quote the old number. Re-think before
-  running it on the old plan.
-- **Member special pricing tiers** — "Member w/i 1hr" ($63 / $78.75) and
-  "Driver Only" ($47.25). Nobody knows whether "within 1 hour" means driving
-  distance or trip duration, or what the two numbers represent. **Highest-value
-  item in the backlog** since it affects what customers are charged, and
-  unbuildable until Melody explains it. Mis-charging risk.
-- **Editing `scheduled` quotes** — pending Melody's decision on how bus and
-  driver unassignment should work.
+- **Google trial expires ~Oct 2026.** $425 credit, but the APIs stop without a
+  card even inside the free tier. Address autocomplete AND driver time both go
+  down together. Set Google's own quota cap at the moment of activation.
+- **2-step verification required from 2026-08-09.** Gmail accounts can't opt
+  out. The site keeps serving; you just lose console access to the keys.
+- `surcharge_config` row DELETED (not nulled) -> server writes `total = NULL`
+  while the client falls back cleanly. Two sides fail in opposite directions.
+- `override_bus_count` isn't seat-checked — 60 passengers on 1 bus is allowed.
+- Surrey yard's stored lat/lng looks wrong (49.11229; 001 had 49.1547).
+  Nothing reads it today — the lookups use addresses.
+- School addresses have no city ("8606 162 St"). Google resolves them via
+  `regionCode: CA`, which is closer to luck than design.
+- Logged-out member schools are quoted NON-member rates (~2x over-quote).
+  Judged deliberate; admin review is the net.
+- **Two audits never run:** security/RLS on the new tables and RPCs, and the
+  admin UI.
 
 ## 7. Immediate next task
 
-**Post-trip invoicing.** Removing invoice-at-approval (057a) was correct, but
-it left a real gap: nothing now generates the bill after a trip. Needs
-decisions on numbering, payment terms, and what Melody actually sends a
-school. `invoices`, `invoice_status` (draft/sent/paid/overdue/cancelled) and
-the `invoiced` quote status all already exist and are unused.
+Nothing is half-finished. Pick from:
 
-Second: **nothing drains the email queue on a schedule.** `notify-send` runs
-only when the frontend invokes it after a user action, and `src/lib/notify.ts`
-swallows failures — so a failed dispatch sits `pending` until an unrelated
-action flushes it. A pg_cron job calling it every few minutes would close
-that.
-
-See `PLAN.md` for the phased plan, `BUG_BACKLOG.md` for remaining bugs,
-`WHATS_NEW.md` for feature history, `CLAUDE.md` for stack/conventions.
+1. **`PIPELINE_PLAN.md`** — the approved -> completed -> invoiced plan, written
+   with Mila. `trips` still has ZERO rows; that pipeline has never run. Start
+   with time-windowed assignment (067 already did the availability half).
+2. **Sage import experiment.** `sage-import-test.IMP` exists, built from Sage's
+   published spec. Simply Accounting is Sage 50 CANADIAN — it wants `.IMP`, not
+   CSV, which is almost certainly why the earlier attempt failed. There's an
+   unsent Gmail draft to accounting@ccsta.net asking Curtis to try it against a
+   BACKUP company file. One file settles whether the whole invoicing approach
+   works.
+3. The gaps in section 6.
