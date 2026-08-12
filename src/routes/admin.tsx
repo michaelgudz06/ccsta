@@ -302,6 +302,12 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
   // Bumped after any action that can change a quote's status, to refresh
   // counts and the current page without a full remount.
   const [countsNonce, setCountsNonce] = useState(0);
+  // Admin invite (rare, high-consequence — kept collapsed in the UI).
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteFirst, setInviteFirst] = useState("");
+  const [inviteLast, setInviteLast] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteNote, setInviteNote] = useState<{ text: string; ok: boolean } | null>(null);
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
 
   // Action state
@@ -782,6 +788,41 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
     await loadRecommendations(quoteId);
   }
 
+  // Send an admin invitation. The edge function checks that the CALLER is an
+  // admin using their own JWT, which is why this has to be a button rather than
+  // something done from a script.
+  //
+  // Reports which of three things happened, because they're materially
+  // different: a fresh invite email, a promoted existing account, or someone
+  // who was already an admin. "Sent!" for all three would hide the case where
+  // no email goes out at all.
+  async function handleInviteAdmin() {
+    setInviteBusy(true); setInviteNote(null);
+    const { data, error } = await supabase.functions.invoke("invite-admin", {
+      body: {
+        email: inviteEmail.trim(),
+        first_name: inviteFirst.trim() || null,
+        last_name: inviteLast.trim() || null,
+      },
+    });
+    setInviteBusy(false);
+    if (error) { setInviteNote({ text: friendlyError(error.message), ok: false }); return; }
+    const status = (data as { status?: string })?.status;
+    const messages: Record<string, string> = {
+      invited: `Invitation sent to ${inviteEmail.trim()}. If it doesn't arrive within a few minutes, check spam — these go through Supabase's mailer, not ours.`,
+      promoted_existing: `${inviteEmail.trim()} already had an account, so it's been promoted to admin. No email was sent — tell them directly.`,
+      already_admin: `${inviteEmail.trim()} is already an admin. Nothing changed.`,
+    };
+    setInviteNote({
+      text: messages[status ?? ""] ?? `Done (${status ?? "unknown"}).`,
+      // promoted_existing is a SUCCESS but needs follow-up, so it isn't green.
+      ok: status === "invited" || status === "already_admin",
+    });
+    if (status === "invited" || status === "promoted_existing") {
+      setInviteEmail(""); setInviteFirst(""); setInviteLast("");
+    }
+  }
+
   // Permanently remove a quote. The server refuses if it has a non-draft
   // invoice or a completed trip, and snapshots everything to
   // deleted_quote_log first — so this can clear test data but can't erase a
@@ -910,6 +951,60 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
           )}
         </div>
       </div>
+
+      {/* Invite an admin. Collapsed by default -- this is a rare action with
+          large consequences, so it shouldn't sit open next to daily work.
+          It lives here rather than in a settings page because there ISN'T a
+          settings page, and burying it would mean it never gets used. */}
+      <details className="rounded-2xl border border-border bg-card p-4 shadow-soft">
+        <summary className="cursor-pointer text-sm font-semibold text-foreground">
+          Invite an admin
+        </summary>
+        <p className="mt-2 text-xs text-muted-foreground">
+          An admin can see every quote and every customer contact, and can change
+          what anyone is charged. If they already have a customer account, this
+          promotes it instead of creating a second one.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-[220px] flex-1">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Email</label>
+            <input
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="name@ccsta.net"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-ring focus:ring-2"
+            />
+          </div>
+          <div className="w-32">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">First name</label>
+            <input
+              value={inviteFirst}
+              onChange={(e) => setInviteFirst(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-ring focus:ring-2"
+            />
+          </div>
+          <div className="w-32">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Last name</label>
+            <input
+              value={inviteLast}
+              onChange={(e) => setInviteLast(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-ring focus:ring-2"
+            />
+          </div>
+          <button
+            onClick={handleInviteAdmin}
+            disabled={inviteBusy || !inviteEmail.trim()}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {inviteBusy ? "Sending…" : "Send invite"}
+          </button>
+        </div>
+        {inviteNote && (
+          <p className={`mt-2 text-xs font-medium ${inviteNote.ok ? "text-emerald-700" : "text-rose-700"}`}>
+            {inviteNote.text}
+          </p>
+        )}
+      </details>
 
       {/* The five stages, as big targets. Count first and large — it's the
           number Melody scans for; the label explains it. */}
