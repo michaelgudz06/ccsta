@@ -24,6 +24,17 @@ function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  // Supabase puts type=invite in the URL fragment for an invitation and
+  // type=recovery for a forgotten password. Same page, same mechanism, but the
+  // wording matters: an invited admin has no OLD password, so "Set a NEW
+  // password" and "the reset link in your email" both read as though they've
+  // done something before. This is the first screen they ever see.
+  const [isInvite, setIsInvite] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash ?? "";
+    setIsInvite(hash.includes("type=invite") || window.location.search.includes("type=invite"));
+  }, []);
 
   // Supabase puts a recovery session in place from the email link. Wait for it.
   useEffect(() => {
@@ -55,32 +66,39 @@ function ResetPasswordPage() {
       </div>
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-elevated">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Set a new password</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {isInvite ? "Welcome — choose a password" : "Set a new password"}
+          </h1>
+          {isInvite && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your CCSTA admin account is ready. Pick a password and you're in.
+            </p>
+          )}
 
           {done ? (
             <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-800">
-              Password updated. Taking you to the login page…
+              {isInvite ? "You're all set. Taking you to the login page…" : "Password updated. Taking you to the login page…"}
             </p>
           ) : !ready ? (
             <p className="mt-4 text-sm text-muted-foreground">
-              Open this page from the reset link in your email. If you got here by mistake,{" "}
+              Open this page from the link in your email. If you got here by mistake,{" "}
               <Link to="/login" className="font-medium text-primary hover:underline">go back to log in</Link>.
             </p>
           ) : (
             <form onSubmit={submit} className="mt-6 space-y-4">
               <label className="block text-sm">
-                <span className="font-medium text-foreground">New password</span>
+                <span className="font-medium text-foreground">{isInvite ? "Password" : "New password"}</span>
                 <PasswordInput value={password} onChange={setPassword} placeholder="At least 8 characters" autoComplete="new-password" />
               </label>
               <label className="block text-sm">
-                <span className="font-medium text-foreground">Confirm new password</span>
+                <span className="font-medium text-foreground">{isInvite ? "Confirm password" : "Confirm new password"}</span>
                 <PasswordInput value={confirm} onChange={setConfirm} placeholder="Re-enter password" autoComplete="new-password" />
               </label>
               {error && (
                 <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
               )}
               <Button type="submit" variant="hero" size="lg" className="w-full" disabled={busy}>
-                {busy ? "Saving…" : "Save new password"}
+                {busy ? "Saving…" : isInvite ? "Create my account" : "Save new password"}
               </Button>
             </form>
           )}

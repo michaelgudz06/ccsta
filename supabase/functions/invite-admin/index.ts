@@ -68,8 +68,26 @@ Deno.serve(async (req) => {
       return json({ status: "promoted_existing", user_id: existing.id });
     }
 
+    // Send them to the set-password page, NOT the homepage.
+    //
+    // Without redirectTo, Supabase bounces the invite to the project's Site URL
+    // — so an invited admin lands on the marketing homepage, signed in, with no
+    // password set and nothing telling them what to do. They'd be locked out
+    // the moment that session expired, and would have no idea why.
+    //
+    // Site URL is read from the same place the notification emails use, so the
+    // two can't drift apart.
+    let siteUrl = "https://ccsta.net";
+    try {
+      const { data: configured } = await adminClient.rpc("_site_url");
+      if (typeof configured === "string" && configured.startsWith("http")) siteUrl = configured;
+    } catch { /* fall back to the constant above */ }
+
     const { data: invited, error: inviteError } = await adminClient.auth.admin
-      .inviteUserByEmail(email, { data: { first_name, last_name } });
+      .inviteUserByEmail(email, {
+        data: { first_name, last_name },
+        redirectTo: `${siteUrl}/reset-password`,
+      });
     if (inviteError) return json({ error: inviteError.message }, 400);
 
     const userId = invited.user.id;
