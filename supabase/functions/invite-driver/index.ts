@@ -24,10 +24,21 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
+    // Scope to the CALLER'S OWN row. `.single()` alone was a bug that only bit
+    // admins: profiles_admin_read lets an admin read EVERY profile, so .single()
+    // saw every row, errored, and this concluded they weren't an admin. Found
+    // 2026-08-11 when the same mistake in invite-admin blocked Mila.
+    const { data: { user: caller } } = await callerClient.auth.getUser();
+    if (!caller) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const { data: profile } = await callerClient
       .from("profiles")
       .select("role")
-      .single();
+      .eq("id", caller.id)
+      .maybeSingle();
 
     if (profile?.role !== "admin") {
       return new Response(JSON.stringify({ error: "unauthorized" }), {

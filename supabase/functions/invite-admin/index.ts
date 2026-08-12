@@ -40,7 +40,15 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } },
     );
-    const { data: profile } = await callerClient.from("profiles").select("role").single();
+    // Scope to the CALLER'S OWN row. `.single()` alone was a bug that only bit
+    // admins: profiles_admin_read lets an admin read EVERY profile, so .single()
+    // saw 13 rows, errored, and the function concluded they weren't an admin.
+    // A non-admin passed the query (RLS limits them to their own row) and was
+    // then correctly rejected -- so it failed for exactly the people it was for.
+    const { data: { user: caller } } = await callerClient.auth.getUser();
+    if (!caller) return json({ error: "unauthorized" }, 401);
+    const { data: profile } = await callerClient
+      .from("profiles").select("role").eq("id", caller.id).maybeSingle();
     if (profile?.role !== "admin") return json({ error: "unauthorized" }, 403);
 
     const { email, first_name, last_name } = await req.json();
