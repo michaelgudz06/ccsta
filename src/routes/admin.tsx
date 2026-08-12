@@ -2343,9 +2343,11 @@ type DriverRow = {
   last_name: string;
   email: string | null;
   phone: string | null;
-  trip_type: string;
+  // Matches the DB enum rather than plain string, so writes typecheck.
+  trip_type: "field_trip" | "route" | "both";
   air_brake_cert: boolean;
   active: boolean;
+  home_yard_id: string | null;
 };
 
 type BusRow = { id: string; fleet_number: string; bench_count: number; air_brake_req: boolean; active: boolean; notes: string | null };
@@ -2376,10 +2378,53 @@ function Assets() {
   useEffect(() => {
     supabase
       .from("drivers")
-      .select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active")
+      .select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active, home_yard_id")
       .order("last_name")
-      .then(({ data }) => { setDrivers(data ?? []); setDriversLoading(false); });
+      .then(({ data }) => { setDrivers((data as DriverRow[]) ?? []); setDriversLoading(false); });
   }, []);
+
+  // Clearances and yards, for finishing a new driver's setup.
+  //
+  // This matters more than it looks: recommend_drivers INNER JOINs
+  // driver_bus_clearances, so a driver with no clearance rows is never
+  // suggested for anything. An invited driver who hasn't been set up is
+  // invisible to dispatch, silently — no error, they just never appear.
+  const [clearances, setClearances] = useState<Record<string, number[]>>({});
+  const [yards, setYards] = useState<{ id: string; name: string }[]>([]);
+  const [openDriver, setOpenDriver] = useState<string | null>(null);
+  const [savingDriver, setSavingDriver] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from("driver_bus_clearances").select("driver_id, bench_count").then(({ data }) => {
+      const map: Record<string, number[]> = {};
+      for (const row of (data ?? []) as { driver_id: string; bench_count: number }[]) {
+        (map[row.driver_id] ??= []).push(row.bench_count);
+      }
+      setClearances(map);
+    });
+    supabase.from("yards").select("id, name").order("name")
+      .then(({ data }) => setYards(data ?? []));
+  }, []);
+
+  async function toggleClearance(driverId: string, bench: number, on: boolean) {
+    setSavingDriver(driverId);
+    const prev = clearances[driverId] ?? [];
+    setClearances((c) => ({ ...c, [driverId]: on ? [...prev, bench] : prev.filter((b) => b !== bench) }));
+    const { error } = on
+      ? await supabase.from("driver_bus_clearances").insert({ driver_id: driverId, bench_count: bench })
+      : await supabase.from("driver_bus_clearances").delete().eq("driver_id", driverId).eq("bench_count", bench);
+    setSavingDriver(null);
+    if (error) setClearances((c) => ({ ...c, [driverId]: prev }));
+  }
+
+  async function updateDriver(driverId: string, patch: Partial<DriverRow>) {
+    setSavingDriver(driverId);
+    const prev = drivers;
+    setDrivers((ds) => ds.map((d) => (d.id === driverId ? { ...d, ...patch } : d)));
+    const { error } = await supabase.from("drivers").update(patch).eq("id", driverId);
+    setSavingDriver(null);
+    if (error) setDrivers(prev);
+  }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -2405,8 +2450,8 @@ function Assets() {
       setInviteFirst(""); setInviteLast(""); setInviteEmail("");
       setShowInvite(false);
       // Refresh driver list
-      supabase.from("drivers").select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active")
-        .order("last_name").then(({ data }) => setDrivers(data ?? []));
+      supabase.from("drivers").select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active, home_yard_id")
+        .order("last_name").then(({ data }) => setDrivers((data as DriverRow[]) ?? []));
     }
   }
 
@@ -2516,11 +2561,35 @@ function Assets() {
           <div className="p-4 text-sm text-muted-foreground">No drivers yet — use the invite button to add them.</div>
         ) : (
           <ul className="divide-y divide-border">
-            {drivers.map((d) => (
+            {drivers.map((d) => {
+              const cleared = clearances[d.id] ?? [];
+              // The check that actually matters. No clearance = never suggested,
+              // with nothing anywhere saying why.
+              const notSetUp = d.active && cleared.length === 0;
+              const open = openDriver === d.id;
+              return (
               <li key={d.id} className="px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-foreground">{d.first_name} {d.last_name}</div>
-                  <div className="flex gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => setOpenDriver(open ? null : d.id)}
+                    className="text-left text-sm font-semibold text-foreground hover:underline"
+                  >
+                    {d.first_name} {d.last_name}
+                  </button>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {notSetUp && (
+                      <span
+                        title="No bus clearances, so this driver is never suggested for a trip."
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+                      >
+                        Setup incomplete
+                      </span>
+                    )}
+                    {cleared.length > 0 && (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                        {[...cleared].sort((a, b) => a - b).join(", ")} bench
+                      </span>
+                    )}
                     {d.air_brake_cert && (
                       <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">Air brake</span>
                     )}
@@ -2532,8 +2601,97 @@ function Assets() {
                 <div className="mt-0.5 text-xs text-muted-foreground">
                   {d.email ?? "No email"}{d.phone ? ` · ${d.phone}` : ""} · {d.trip_type.replace("_", " ")}
                 </div>
+
+                {notSetUp && !open && (
+                  <p className="mt-1 text-[11px] font-medium text-amber-700">
+                    Won't be offered for any trip until a bus size is ticked.{" "}
+                    <button onClick={() => setOpenDriver(d.id)} className="underline">Finish setup</button>
+                  </p>
+                )}
+
+                {open && (
+                  <div className="mt-3 grid gap-3 rounded-xl border border-border bg-surface/60 p-3">
+                    <div>
+                      <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                        Cleared to drive
+                      </span>
+                      <div className="flex flex-wrap gap-3">
+                        {[18, 47, 56].map((bench) => (
+                          <label key={bench} className="flex items-center gap-1.5 text-sm text-foreground">
+                            <input
+                              type="checkbox"
+                              checked={cleared.includes(bench)}
+                              onChange={(e) => toggleClearance(d.id, bench, e.target.checked)}
+                              className="h-4 w-4"
+                            />
+                            {bench} bench
+                          </label>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Dispatch only suggests drivers cleared for the size a trip needs.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Home yard</label>
+                        <select
+                          value={d.home_yard_id ?? ""}
+                          onChange={(e) => updateDriver(d.id, { home_yard_id: e.target.value || null })}
+                          className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                        >
+                          <option value="">Not set</option>
+                          {yards.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+                        </select>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Drivers at the trip's yard are suggested first.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Drives</label>
+                        <select
+                          value={d.trip_type}
+                          onChange={(e) => updateDriver(d.id, { trip_type: e.target.value as DriverRow["trip_type"] })}
+                          className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                        >
+                          <option value="field_trip">Field trips only</option>
+                          <option value="route">Routes only</option>
+                          <option value="both">Both</option>
+                        </select>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          "Routes only" drivers are never suggested for field trips.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center gap-1.5 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={d.air_brake_cert}
+                          onChange={(e) => updateDriver(d.id, { air_brake_cert: e.target.checked })}
+                          className="h-4 w-4"
+                        />
+                        Air-brake certified
+                      </label>
+                      <label className="flex items-center gap-1.5 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={d.active}
+                          onChange={(e) => updateDriver(d.id, { active: e.target.checked })}
+                          className="h-4 w-4"
+                        />
+                        Active
+                      </label>
+                      {savingDriver === d.id && (
+                        <span className="text-xs text-muted-foreground">Saving…</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </li>
-            ))}
+            );})}
           </ul>
         )}
       </div>
