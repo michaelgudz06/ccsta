@@ -124,65 +124,69 @@ That's fine — convenience was the actual complaint — but nobody should belie
 the portal protects student location data, because it doesn't. The only real fix
 is rotating the Samsara links, which is a Samsara question, not a code one.
 
-### Decisions taken (Mila, 2026-08-11)
+### Decisions taken (Mila, 2026-08-11/12)
 
-- **Signup is restricted to emails the schools provide.** Not open signup.
-- **Links are per school**, not CCSTA-wide. Each school has its own AM, PM and
-  late-start routes.
+- **Links are per school**, not CCSTA-wide.
+- **Parents are INVITED, not allowlisted.** CCSTA emails each parent a signup
+  link; only someone holding a link can register. This works because CCSTA
+  already emails parents the Samsara links today, so the parent addresses
+  already exist — no new thing to ask schools for.
+- **Student rosters WILL be stored.** Schools give CCSTA a list of students per
+  route, updated every September. Mila wants this in the system because knowing
+  who should be on each bus is useful beyond the portal.
 
-### What that implies
+### Built (074)
 
-    school ──< school_routes (label, samsara_url, active)
-      │
-      └──< parent_allowlist (email, added_by, registered_at)
-             │
-             └── profiles.role = 'parent'  ──  scoped to one school
+`school_routes` — school, label, Samsara URL, sort order, active.
 
-A parent signs up, their email is checked against the allowlist, and they're
-bound to that school. They then see that school's links and nobody else's.
+Deliberately NOT public-read, unlike `yards` and `rate_config`. A Samsara share
+link is a live position feed for a bus carrying children, and the link itself is
+the only thing protecting it. Verified that an anonymous caller reads zero rows
+before any real link goes in. Parent read access comes with the parent role,
+scoped to their own school.
 
-New pieces:
-- `parent` role
-- `school_routes` — three rows per school, admin-editable. The editability IS
-  the benefit: when a Samsara link changes, it changes in one place instead of
-  in an email nobody can find.
-- `parent_allowlist` — who may register
-- a `/parent` page: the school's name, and its route links
-- signup that rejects an unlisted email clearly, without revealing whether that
-  address is on any other school's list
+This is useful before any parent logs in: the links stop existing only inside
+sent emails, and a changed link changes in one place.
 
-### The ongoing cost, stated plainly
+### Still to build
 
-**The allowlist has to be maintained every September**, per school, forever.
-Families leave, families arrive, addresses change. If it isn't maintained,
-parents can't register and the office gets the phone calls.
+1. `parent` role + invite flow (mirrors invite-admin: token by email, land on
+   set-password, bind to one school)
+2. `/parent` page — that school's active routes, nothing else
+3. Parent read policy on `school_routes`, scoped to their school
+4. Student roster — see the obligations below
 
-That is the real cost of choosing an allowlist over open signup, and it's
-recurring rather than one-off. Two things would soften it:
+### Student rosters: what storing them commits CCSTA to
 
-- let each school's own admin manage their list, rather than CCSTA doing it for
-  everyone
-- accept a bulk paste or CSV, since schools already keep these lists somewhere
+Worth being explicit, because this is the first genuinely sensitive data in the
+system. Quotes and invoices are business records. A list of children's names,
+tied to a school and to which bus they ride each day, is data about identifiable
+minors and their daily movements.
 
-Worth deciding before building, because "CCSTA maintains every school's parent
-list by hand" is a job nobody has agreed to do.
+Under BC privacy law that carries obligations the rest of this app doesn't have:
 
-### Suggested phasing
+- **Purpose limitation.** Collected to run transport. Not for anything else, and
+  the table shouldn't quietly become a mailing list.
+- **Retention.** Rosters are replaced every September. Old ones should be
+  deleted or archived on a defined schedule, not left to accumulate — "we still
+  have the 2024 roster" is a liability with no upside.
+- **Access.** Today there is ONE admin role that sees everything. A roster of
+  children probably shouldn't be visible to whoever is doing invoicing. This is
+  the strongest argument yet for splitting the admin role.
+- **Breach handling.** If this leaked, the notification obligations are
+  different from a leaked quote.
 
-1. `school_routes` + admin editing. Useful immediately even with no portal —
-   the links stop living only in old emails.
-2. `/parent` page + parent role, with the allowlist.
-3. Bulk list management, and per-school admins if the maintenance burden bites.
-
-Phase 1 has value on its own, which is the test of whether the phasing is real.
-
----
+None of that blocks building it. It does mean the roster table should be
+designed with a year stamp and a deletion policy from the first migration,
+rather than retrofitted once there are four years of children in it.
 
 ## Open questions
 
-- Who maintains the parent allowlist — CCSTA or each school?
 - Do the same three route types apply at every school, or do some have only AM
-  and PM?
+  and PM? (`school_routes` allows any number with any labels, so this is a data
+  question, not a schema one.)
+- How long should a student roster be kept after the year ends?
+- Should the roster be visible to every admin, or only some?
 - Should a parent with children at two schools see both? The model above binds
   a parent to one school.
 - Can Samsara links be rotated or expired? If so, the honesty caveat above gets
