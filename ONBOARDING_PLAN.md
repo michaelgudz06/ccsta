@@ -55,49 +55,81 @@ five.
 
 ## 2. Drivers
 
-**Status: `invite-driver` exists** and creates the account, the `drivers` row and
-the profile role in one call.
+### The problem, restated by Mila (2026-08-12)
 
-### The constraint that should drive every decision
+> "a lot of them are old and I fear they won't use the scheduling / trip info"
 
-Mila: the drivers are **older and not tech-forward**. Notes in Samsara can't be
-depended on. That's why the availability grid uses taps and drags rather than
-typed times, and why the driver app does one thing per screen.
+That's the correct fear, and it's the thing to design around rather than train
+against. A second app that only matters occasionally is the app that doesn't get
+opened.
 
-Onboarding has to assume: no training session, no manual read, possibly a phone
-they're not comfortable with. If a step can be skipped by the office doing it
-instead, it should be.
+### The answer: don't add an app, use the one they already open
 
-### The sequence
+Drivers already sign into **Samsara** every day to log on and track hours. The
+Samsara Driver App shows them the route dispatch has assigned. So the trip sheet
+should go THERE, not into a CCSTA app they'd have to remember exists.
 
-1. **Office side, before the driver touches anything**
-   - `invite-driver` with name and email
-   - set `driver_bus_clearances` (which bench sizes they're cleared for) —
-     108 rows already exist for the current roster
-   - set `home_yard_id` — this now affects recommendations, since same-yard
-     drivers rank first
-   - `air_brake_cert`, `trip_type` (field trip / route / both)
-2. **Driver side, first login**
-   - accept the invite, set a password
-   - see today's trips
-   - mark availability
-3. **Ongoing**
-   - pre-trip checklist per trip
-   - availability, ideally including their route hours so they aren't offered
-     field trips that clash
+Confirmed against Samsara's API docs, 2026-08-12:
 
-### The honest risk
+- the Routing API creates a route with stops and assigns it to a **driver or a
+  vehicle**
+- assigned routes appear in the Samsara Driver App for whoever is signed into
+  that vehicle
+- route-level and stop-level `notes` fields carry free text — the trip sheet
+  content (times, contact, special requests) fits here
+- documents can be attached to a stop as a driver task, if a signature or form
+  is ever needed
 
-Step 3 depends on drivers maintaining their own availability, and the whole
-premise is that they may not. Two mitigations, one built:
+### The detail that makes this cheap
 
-- **Built:** an admin can now edit any driver's availability from the same grid
-  (the driver-picker added 2026-08-11). Melody can fill it in for anyone who
-  won't.
-- **Not built:** route hours are the predictable part of a driver's week and
-  could be imported once rather than entered weekly. Worth doing when the
-  route data arrives — it's the single biggest reduction in what drivers have
-  to do themselves.
+**Assign to the BUS, not the driver.**
+
+Checked against our own data: all **28 active buses have `samsara_vehicle_id`**
+populated. **Zero of 37 drivers have `samsara_driver_id`** — the column exists
+and was never filled in.
+
+Since Samsara shows a vehicle's route to whoever is signed into it, and signing
+in is something drivers already do, assigning by vehicle works with data we
+already hold. Assigning by driver would mean mapping 37 people to Samsara IDs
+first, for no benefit.
+
+### What this does to the CCSTA driver app
+
+Worth facing directly: if Samsara carries the trip sheet, most of the driver app
+has no reason to exist. What's left is
+
+- **availability** — and the premise is that drivers may not maintain it. Melody
+  can now edit anyone's (built 2026-08-11), and route hours could be imported
+  once the route data arrives.
+- **pre-trip checklist** — Samsara already does driver vehicle inspection
+  reports. Worth checking whether ours duplicates something they already do
+  daily, because two checklists means one gets ignored.
+
+The honest conclusion is that driver onboarding may need almost no CCSTA
+software at all. Melody assigns in the CCSTA admin; the driver sees it in the
+app they already use. That is a much better outcome than a well-designed driver
+app nobody opens.
+
+### Sequence to build it
+
+1. **Samsara API token** into Supabase edge function secrets. The
+   `SAMSARA_API_TOKEN` slot exists in `config.server.ts` and is unset. Same rule
+   as the Google key: a secret, not `.env`.
+2. **`push-trip-to-samsara` edge function.** On confirm_trip, create a Samsara
+   route: start at the yard, stop at pickup, stop at destination, assigned to
+   the bus's `samsara_vehicle_id`, with the trip sheet in the notes.
+3. **Store the returned Samsara route id** on `trips`, so a changed trip updates
+   the same route instead of creating a second one.
+4. **Handle cancellation** — a cancelled trip must delete its Samsara route, or
+   a driver turns up for a trip that isn't happening. This is the failure mode
+   worth testing hardest.
+
+### Still true regardless
+
+Office-side setup before a driver can be used at all: clearances, home yard,
+air-brake, field-trip vs route. Built 2026-08-12 in the admin roster, with a
+"Setup incomplete" badge because a driver with no clearances is silently
+invisible to dispatch.
 
 ---
 
