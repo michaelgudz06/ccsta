@@ -80,6 +80,14 @@ on every password field — login, signup, and reset-password.
 - A Supabase **Edge Function (`notify-send`)** delivers them via Resend.
 - *(Action item: set `RESEND_API_KEY` on the function and verify the `ccsta.net` domain in
   Resend to send from `@ccsta.net`. Until then, emails just queue — nothing breaks.)*
+- **Prior troubleshooting (2026-07-15, on an unmerged branch — not confirmed current):**
+  secret names are case-sensitive (`RESEND_API_KEY`, not `resend_api_key`) and
+  `NOTIFY_FROM_EMAIL` must be an address on the verified `ccsta.net` domain, e.g.
+  `CCSTA Bookings <bookings@ccsta.net>`, or the function silently falls back off-domain.
+  That session's notes said this got fixed and delivery confirmed live, but the
+  "Operational items raised by Melody" section below (later, on `main`) still lists
+  delivery as unconfirmed — so treat this as a troubleshooting lead, re-check the
+  actual secret values in Supabase before assuming it still holds.
 
 ## 9. Driver dashboard — the day-of essentials
 

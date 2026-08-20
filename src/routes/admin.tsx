@@ -132,6 +132,9 @@ function friendlyError(msg: string): string {
   return "Something went wrong: " + msg + ". Please try again, or refresh the page.";
 }
 
+// Mirrors BUS_SEATS in quote.tsx: each bus's bench seats (18->9, 47->23.67, 56->28).
+const BENCH_SEAT_CAPACITY: Record<number, number> = { 18: 9, 47: 23.67, 56: 28 };
+
 const STATUS_LABEL: Record<string, string> = {
   requested: "Requested",
   in_review: "In review",
@@ -215,6 +218,7 @@ type AssignmentResult = {
 type EstimateBreakdown = {
   bench_count: number;
   bus_count: number;
+  seats_needed: number;
   // Migration 067/068: the seat calculation's answer, alongside whatever
   // Melody chose instead.
   system_bench_count: number;
@@ -1504,6 +1508,16 @@ function QuoteQueue({ initialQuoteId }: { initialQuoteId?: string | null }) {
               </button>
             </p>
           )}
+          {estimate && (() => {
+            const seats = BENCH_SEAT_CAPACITY[estimate.bench_count] ?? 0;
+            const capacity = seats * estimate.bus_count;
+            return capacity < estimate.seats_needed ? (
+              <p className="mb-3 text-[11px] font-medium text-amber-700">
+                This fleet mix seats {capacity.toFixed(1)}, but the trip needs {estimate.seats_needed.toFixed(1)} —
+                riders won't all fit.
+              </p>
+            ) : null;
+          })()}
 
           {slots.map((slot) => {
             const row = assignments.find((a) => a.slot_number === slot);
