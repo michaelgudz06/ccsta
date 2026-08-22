@@ -47,6 +47,85 @@ function bcInstant(naive: string): Date {
   return new Date(asIfUtc.getTime() + (asIfUtc.getTime() - shown.getTime()));
 }
 
+function addrKey(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Samsara rejects route and stop names that aren't alphanumeric:
+ *   "Name must contain only letters or numbers"
+ *
+ * This bites REAL data, not just test data -- our trip numbers look like
+ * Q-2027-001 and every one of them would have been refused. Punctuation becomes
+ * spaces rather than being deleted, so "Q-2027-001" reads "Q 2027 001" instead
+ * of collapsing into "Q2027001".
+ */
+function samsaraName(s: string, fallback: string): string {
+  const cleaned = (s ?? "").replace(/[^a-zA-Z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+  return cleaned.length ? cleaned.slice(0, 90) : fallback;
+}
+
+/**
+ * Address -> coordinates, because Samsara's singleUseLocation requires
+ * latitude/longitude and rejects a bare address string. Found the hard way:
+ * the first real push came back "latitude is missing from body".
+ *
+ * Uses OpenStreetMap's Nominatim — keyless, and the same service the quote
+ * form's route map already relies on, so no new dependency or cost. Cached in
+ * geocode_cache because the same dozen schools repeat constantly, and
+ * Nominatim's usage policy expects light, cached traffic.
+ *
+ * A failure is cached too (resolved=false). Retrying a hopeless address on
+ * every push helps nobody, and the row makes it visible which addresses need
+ * correcting.
+ */
+async function geocode(
+  admin: ReturnType<typeof createClient>,
+  address: string,
+): Promise<{ lat: number; lng: number } | null> {
+  if (!address?.trim()) return null;
+  const key = addrKey(address);
+
+  const { data: hit } = await admin
+    .from("geocode_cache").select("lat, lng, resolved").eq("address_key", key).maybeSingle();
+  if (hit) {
+    return hit.resolved && hit.lat != null ? { lat: Number(hit.lat), lng: Number(hit.lng) } : null;
+  }
+
+  try {
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("format", "json");
+    url.searchParams.set("limit", "1");
+    url.searchParams.set("countrycodes", "ca");
+    url.searchParams.set("q", address);
+    const r = await fetch(url, {
+      // Nominatim requires an identifying User-Agent.
+      headers: { "User-Agent": "ccsta-booking/1.0 (admin@ccsta.net)" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (r.ok) {
+      const rows = await r.json();
+      const first = Array.isArray(rows) ? rows[0] : null;
+      if (first?.lat && first?.lon) {
+        const lat = Number(first.lat), lng = Number(first.lon);
+        await admin.from("geocode_cache").upsert({
+          address_key: key, address_raw: address, lat, lng, resolved: true,
+          fetched_at: new Date().toISOString(),
+        });
+        return { lat, lng };
+      }
+    }
+  } catch (e) {
+    console.error("geocode failed", address, String(e));
+  }
+
+  await admin.from("geocode_cache").upsert({
+    address_key: key, address_raw: address, lat: null, lng: null, resolved: false,
+    fetched_at: new Date().toISOString(),
+  });
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -130,27 +209,58 @@ Deno.serve(async (req) => {
       trip.special_requests ? `Notes: ${trip.special_requests}` : null,
     ].filter(Boolean).join("\n");
 
+    // Coordinates, not addresses. Samsara rejects singleUseLocation without
+    // lat/lng — refuse up front rather than sending a request we know fails.
+    const pickupAddr = trip.pickup_address ?? "";
+    const destAddr = trip.destination_address ?? trip.pickup_address ?? "";
+    const [pickupGeo, destGeo] = await Promise.all([
+      geocode(admin, pickupAddr),
+      geocode(admin, destAddr),
+    ]);
+
+    if (!pickupGeo || !destGeo) {
+      const which = [!pickupGeo ? `pickup "${pickupAddr}"` : null,
+                     !destGeo ? `destination "${destAddr}"` : null].filter(Boolean).join(" and ");
+      const msg = `could not find coordinates for ${which}`;
+      await admin.from("trips").update({ samsara_error: msg }).eq("id", trip.id);
+      // 422, not 500: the address needs fixing, retrying won't help.
+      return json({ status: "geocode_failed", detail: msg }, 422);
+    }
+
     // Two stops minimum, per Samsara. With the default start/completion
     // conditions the FIRST stop needs a departure time and the LAST needs an
     // arrival time.
     const payload = {
-      name: `${trip.trip_number ?? "Trip"} — ${trip.destination_name ?? "Field trip"}`,
+      name: samsaraName(
+        `${trip.trip_number ?? "Trip"} ${trip.destination_name ?? "Field trip"}`,
+        "CCSTA field trip",
+      ),
       vehicleId: String(bus.samsara_vehicle_id),
       notes: sheet,
       // Lets a re-push find the same route instead of creating a second one.
-      externalIds: { ccsta_trip: String(trip.id) },
+      // camelCase key, no underscore. Samsara validates external ID KEYS as
+      // strictly alphanumeric and reports it as "Name must contain only letters
+      // or numbers" -- which reads like it's about the route name and isn't.
+      externalIds: { ccstaTrip: String(trip.id) },
       stops: [
         {
           name: "Pickup",
-          singleUseLocation: { address: trip.pickup_address ?? "", name: "Pickup" },
+          singleUseLocation: {
+            name: "Pickup",
+            address: pickupAddr,
+            latitude: pickupGeo.lat,
+            longitude: pickupGeo.lng,
+          },
           scheduledDepartureTime: depart,
           notes: sheet,
         },
         {
-          name: trip.destination_name ?? "Destination",
+          name: samsaraName(trip.destination_name ?? "", "Destination"),
           singleUseLocation: {
-            address: trip.destination_address ?? trip.pickup_address ?? "",
-            name: trip.destination_name ?? "Destination",
+            name: samsaraName(trip.destination_name ?? "", "Destination"),
+            address: destAddr,
+            latitude: destGeo.lat,
+            longitude: destGeo.lng,
           },
           scheduledArrivalTime: back,
         },
