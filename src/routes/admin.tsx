@@ -2410,13 +2410,30 @@ function Assets() {
   const [newBusBench, setNewBusBench] = useState("47");
   const [newBusBusy, setNewBusBusy] = useState(false);
 
+  /**
+   * Transient "Saved" tick, shared by buses and drivers.
+   *
+   * Worth the code: without it there was NO positive confirmation that a field
+   * had written. Mila changed Bus 74 to 52, the change saved fine, but an amber
+   * advisory notice sat underneath it — so the screen read as a refusal and she
+   * reasonably concluded the app had blocked her. Silence on success plus a
+   * warning on screen is indistinguishable from rejection.
+   */
+  const [savedFlash, setSavedFlash] = useState<string | null>(null);
+  function flashSaved(id: string) {
+    setSavedFlash(id);
+    setTimeout(() => setSavedFlash((cur) => (cur === id ? null : cur)), 2000);
+  }
+
   async function updateBus(busId: string, patch: Partial<BusRow>) {
     setSavingBus(busId);
     const prev = buses;
     setBuses((bs) => bs.map((b) => (b.id === busId ? { ...b, ...patch } : b)));
     const { error } = await supabase.from("buses").update(patch).eq("id", busId);
     setSavingBus(null);
-    if (error) { setBuses(prev); setBusErr(error.message); } else setBusErr(null);
+    if (error) { setBuses(prev); setBusErr(error.message); return; }
+    setBusErr(null);
+    flashSaved(busId);
   }
 
   function busValue(b: BusRow, field: "fleet_number" | "bench_count" | "notes" | "samsara_vehicle_id") {
@@ -2560,7 +2577,9 @@ function Assets() {
     setDrivers((ds) => ds.map((d) => (d.id === driverId ? { ...d, ...patch } : d)));
     const { error } = await supabase.from("drivers").update(patch).eq("id", driverId);
     setSavingDriver(null);
-    if (error) { setDrivers(prev); setDriverErr(error.message); }
+    if (error) { setDrivers(prev); setDriverErr(error.message); return; }
+    setDriverErr(null);
+    flashSaved(driverId);
   }
 
   // Text fields (name, email, phone) are edited through a local draft and
@@ -2794,10 +2813,11 @@ function Assets() {
                           className="mt-0.5 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
                         />
                         {oddSize && (
-                          <span className="mt-1 block text-[11px] font-medium text-amber-700">
-                            No driver is cleared for {b.bench_count} seats, so this bus won't be
-                            suggested for any trip. Open a driver below and tick {b.bench_count} to
-                            fix it — the size appears there automatically.
+                          <span className="mt-1 block text-[11px] text-amber-700">
+                            <span className="font-medium">Saved — but one more step.</span> No driver is
+                            yet cleared for {b.bench_count} seats, so dispatch won't suggest this bus.
+                            Open any driver below and tick "{b.bench_count} bench" to fix it. Any seat
+                            count is allowed here; this is a reminder, not a restriction.
                           </span>
                         )}
                       </label>
@@ -2864,9 +2884,13 @@ function Assets() {
                         />
                         Active
                       </label>
-                      {savingBus === b.id && (
+                      {savingBus === b.id ? (
                         <span className="text-xs text-muted-foreground">Saving…</span>
-                      )}
+                      ) : savedFlash === b.id ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                        </span>
+                      ) : null}
                     </div>
                     <p className="text-[11px] text-muted-foreground">
                       Text boxes save when you click away. Tick boxes and dropdowns save straight away.
@@ -3139,9 +3163,13 @@ function Assets() {
                         />
                         Active
                       </label>
-                      {savingDriver === d.id && (
+                      {savingDriver === d.id ? (
                         <span className="text-xs text-muted-foreground">Saving…</span>
-                      )}
+                      ) : savedFlash === d.id ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 )}
