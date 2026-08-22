@@ -10,7 +10,7 @@ import { formatTripDate, formatTime, formatMoney, formatTripType, todayISO, addD
 import { COMPANY } from "@/lib/company";
 import {
   Inbox, ClipboardCheck, CalendarDays, Bus, Bell,
-  FileText, AlertCircle, CheckCircle2, X, UserCheck, UserPlus,
+  FileText, AlertCircle, CheckCircle2, X, UserCheck, UserPlus, Plus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -2364,7 +2364,25 @@ type DriverRow = {
   home_yard_id: string | null;
 };
 
-type BusRow = { id: string; fleet_number: string; bench_count: number; air_brake_req: boolean; active: boolean; notes: string | null };
+type BusRow = {
+  id: string;
+  fleet_number: string;
+  bench_count: number;
+  air_brake_req: boolean;
+  active: boolean;
+  notes: string | null;
+  home_yard_id: string | null;
+  samsara_vehicle_id: string | null;
+};
+
+/**
+ * The bus sizes drivers can actually be cleared for. Clearances are stored as
+ * a bench_count per driver, and recommend_drivers INNER JOINs on that number,
+ * so a bus whose bench_count isn't one of these matches NO driver and quietly
+ * stops being dispatchable. Used to warn rather than to restrict — CCSTA may
+ * genuinely buy a different size, and that should be possible.
+ */
+const CLEARED_BENCH_SIZES = [18, 47, 56];
 
 function Assets() {
   const { session } = useAuth();
@@ -2373,13 +2391,96 @@ function Assets() {
   const [buses, setBuses] = useState<BusRow[]>([]);
   const [busesLoading, setBusesLoading] = useState(true);
 
+  const BUS_COLS = "id, fleet_number, bench_count, air_brake_req, active, notes, home_yard_id, samsara_vehicle_id";
+
   useEffect(() => {
     supabase
       .from("buses")
-      .select("id, fleet_number, bench_count, air_brake_req, active, notes")
+      .select(BUS_COLS)
       .order("fleet_number")
       .then(({ data }) => { setBuses((data as BusRow[]) ?? []); setBusesLoading(false); });
+
   }, []);
+
+  // Bus editing — same draft-then-commit-on-blur shape as drivers below.
+  const [openBus, setOpenBus] = useState<string | null>(null);
+  const [savingBus, setSavingBus] = useState<string | null>(null);
+  const [busErr, setBusErr] = useState<string | null>(null);
+  const [busDraft, setBusDraft] = useState<Record<string, Record<string, string>>>({});
+  const [showAddBus, setShowAddBus] = useState(false);
+  const [newBusFleet, setNewBusFleet] = useState("");
+  const [newBusBench, setNewBusBench] = useState("47");
+  const [newBusBusy, setNewBusBusy] = useState(false);
+
+  async function updateBus(busId: string, patch: Partial<BusRow>) {
+    setSavingBus(busId);
+    const prev = buses;
+    setBuses((bs) => bs.map((b) => (b.id === busId ? { ...b, ...patch } : b)));
+    const { error } = await supabase.from("buses").update(patch).eq("id", busId);
+    setSavingBus(null);
+    if (error) { setBuses(prev); setBusErr(error.message); } else setBusErr(null);
+  }
+
+  function busValue(b: BusRow, field: "fleet_number" | "bench_count" | "notes" | "samsara_vehicle_id") {
+    const d = busDraft[b.id]?.[field];
+    if (d !== undefined) return d;
+    const v = b[field];
+    return v === null || v === undefined ? "" : String(v);
+  }
+
+  function setBusDraftValue(id: string, field: string, value: string) {
+    setBusDraft((s) => ({ ...s, [id]: { ...s[id], [field]: value } }));
+  }
+
+  async function commitBusField(b: BusRow, field: "fleet_number" | "bench_count" | "notes" | "samsara_vehicle_id") {
+    const raw = busDraft[b.id]?.[field];
+    if (raw === undefined) return;
+    const trimmed = raw.trim();
+
+    if (field === "fleet_number") {
+      if (!trimmed) {
+        setBusDraftValue(b.id, field, b.fleet_number);
+        setBusErr("Fleet number can't be empty.");
+        return;
+      }
+      if (trimmed === b.fleet_number) return;
+      await updateBus(b.id, { fleet_number: trimmed });
+      return;
+    }
+
+    if (field === "bench_count") {
+      const n = Number(trimmed);
+      // NOT NULL smallint. A blank or non-numeric value would come back as a
+      // type error Melody can't act on, so refuse it here instead.
+      if (!trimmed || !Number.isFinite(n) || n <= 0) {
+        setBusDraftValue(b.id, field, String(b.bench_count));
+        setBusErr("Seat count must be a number greater than zero.");
+        return;
+      }
+      if (n === b.bench_count) return;
+      await updateBus(b.id, { bench_count: n });
+      return;
+    }
+
+    const next = trimmed === "" ? null : trimmed;
+    if (next === (b[field] ?? null)) return;
+    await updateBus(b.id, { [field]: next } as Partial<BusRow>);
+  }
+
+  async function handleAddBus(e: React.FormEvent) {
+    e.preventDefault();
+    const fleet = newBusFleet.trim();
+    const bench = Number(newBusBench);
+    if (!fleet || !Number.isFinite(bench) || bench <= 0) return;
+    setNewBusBusy(true);
+    const { error } = await supabase.from("buses").insert({ fleet_number: fleet, bench_count: bench });
+    setNewBusBusy(false);
+    if (error) { setBusErr(error.message); return; }
+    setBusErr(null);
+    setNewBusFleet(""); setNewBusBench("47"); setShowAddBus(false);
+    const { data } = await supabase.from("buses").select(BUS_COLS).order("fleet_number");
+    setBuses((data as BusRow[]) ?? []);
+  }
 
   // Invite form state
   const [showInvite, setShowInvite] = useState(false);
@@ -2549,32 +2650,206 @@ function Assets() {
           <h3 className="text-sm font-semibold text-foreground">
             Buses {!busesLoading && `(${buses.length})`}
           </h3>
-          <Bus className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2">
+            <Bus className="h-4 w-4 text-muted-foreground" />
+            <button
+              onClick={() => { setShowAddBus((v) => !v); setBusErr(null); }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add bus
+            </button>
+          </div>
         </div>
+
+        {showAddBus && (
+          <form onSubmit={handleAddBus} className="border-b border-border bg-surface p-4 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs">
+                <span className="font-medium text-foreground">Fleet number</span>
+                <input required value={newBusFleet} onChange={(e) => setNewBusFleet(e.target.value)}
+                  placeholder="12" className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
+              </label>
+              <label className="block text-xs">
+                <span className="font-medium text-foreground">Seats</span>
+                <input required type="number" min="1" value={newBusBench} onChange={(e) => setNewBusBench(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
+              </label>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              You can set the yard, air brake and Samsara ID after it's added — open the bus in the list below.
+            </p>
+            <div className="flex gap-2">
+              <button type="submit" disabled={newBusBusy}
+                className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                {newBusBusy ? "Adding…" : "Add bus"}
+              </button>
+              <button type="button" onClick={() => setShowAddBus(false)}
+                className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {busErr && (
+          <div className="border-b border-border bg-rose-50 px-4 py-2 text-xs text-rose-800">
+            Couldn't save: {busErr}
+          </div>
+        )}
+
         {busesLoading ? (
           <div className="p-4 text-sm text-muted-foreground">Loading fleet…</div>
         ) : buses.length === 0 ? (
-          <div className="p-4 text-sm text-muted-foreground">
-            No buses yet. (Demo fleet is seeded — real fleet replaces it once Curtis provides the bus list.)
-          </div>
+          <div className="p-4 text-sm text-muted-foreground">No buses yet — use "Add bus" above.</div>
         ) : (
           <ul className="divide-y divide-border">
-            {buses.map((b) => (
-              <li key={b.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <div className="text-sm font-semibold text-foreground">{b.fleet_number}</div>
-                  <div className="text-xs text-muted-foreground">{b.bench_count}-passenger{b.notes ? ` · ${b.notes}` : ""}</div>
+            {buses.map((b) => {
+              const openB = openBus === b.id;
+              const oddSize = !CLEARED_BENCH_SIZES.includes(b.bench_count);
+              const noSamsara = !b.samsara_vehicle_id;
+              return (
+              <li key={b.id} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => setOpenBus(openB ? null : b.id)}
+                    className="text-left text-sm font-semibold text-foreground hover:underline"
+                  >
+                    {b.fleet_number}
+                  </button>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {oddSize && (
+                      <span
+                        title="No driver is cleared for this seat count, so this bus is never suggested for a trip."
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+                      >
+                        No cleared drivers
+                      </span>
+                    )}
+                    {noSamsara && (
+                      <span
+                        title="Without a Samsara vehicle ID, trip sheets can't be sent to this bus."
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+                      >
+                        No Samsara ID
+                      </span>
+                    )}
+                    {b.air_brake_req && (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">Air brake</span>
+                    )}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${b.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                      {b.active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex gap-1.5">
-                  {b.air_brake_req && (
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">Air brake</span>
-                  )}
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${b.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
-                    {b.active ? "Active" : "Inactive"}
-                  </span>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {b.bench_count}-passenger{b.notes ? ` · ${b.notes}` : ""}
                 </div>
+
+                {openB && (
+                  <div className="mt-3 grid gap-3 rounded-xl border border-border bg-surface/60 p-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="block text-[11px]">
+                        <span className="text-muted-foreground">Fleet number</span>
+                        <input
+                          value={busValue(b, "fleet_number")}
+                          onChange={(e) => setBusDraftValue(b.id, "fleet_number", e.target.value)}
+                          onBlur={() => commitBusField(b, "fleet_number")}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                          className="mt-0.5 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                        />
+                      </label>
+                      <label className="block text-[11px]">
+                        <span className="text-muted-foreground">Seats</span>
+                        <input
+                          type="number" min="1"
+                          value={busValue(b, "bench_count")}
+                          onChange={(e) => setBusDraftValue(b.id, "bench_count", e.target.value)}
+                          onBlur={() => commitBusField(b, "bench_count")}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                          className="mt-0.5 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                        />
+                        {oddSize && (
+                          <span className="mt-1 block text-[11px] font-medium text-amber-700">
+                            Drivers are only cleared for {CLEARED_BENCH_SIZES.join(", ")} seats. At this
+                            size no driver matches, so the bus won't be suggested for any trip.
+                          </span>
+                        )}
+                      </label>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[11px] text-muted-foreground">Home yard</label>
+                        <select
+                          value={b.home_yard_id ?? ""}
+                          onChange={(e) => updateBus(b.id, { home_yard_id: e.target.value || null })}
+                          className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                        >
+                          <option value="">Not set</option>
+                          {yards.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+                        </select>
+                      </div>
+                      <label className="block text-[11px]">
+                        <span className="text-muted-foreground">Notes</span>
+                        <input
+                          value={busValue(b, "notes")}
+                          placeholder="Optional"
+                          onChange={(e) => setBusDraftValue(b.id, "notes", e.target.value)}
+                          onBlur={() => commitBusField(b, "notes")}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                          className="mt-0.5 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block text-[11px]">
+                      <span className="text-muted-foreground">Samsara vehicle ID</span>
+                      <input
+                        value={busValue(b, "samsara_vehicle_id")}
+                        placeholder="e.g. 281474988980545"
+                        onChange={(e) => setBusDraftValue(b.id, "samsara_vehicle_id", e.target.value)}
+                        onBlur={() => commitBusField(b, "samsara_vehicle_id")}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                        className="mt-0.5 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                      />
+                      <span className="mt-1 block text-[11px] text-muted-foreground">
+                        A long number from Samsara. Not the gateway serial (which looks like
+                        GV6C-E9T-U3W) — that's a different value and trip sheets won't reach
+                        the driver if it's used here.
+                      </span>
+                    </label>
+
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center gap-1.5 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={b.air_brake_req}
+                          onChange={(e) => updateBus(b.id, { air_brake_req: e.target.checked })}
+                          className="h-4 w-4"
+                        />
+                        Needs air-brake certification
+                      </label>
+                      <label className="flex items-center gap-1.5 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={b.active}
+                          onChange={(e) => updateBus(b.id, { active: e.target.checked })}
+                          className="h-4 w-4"
+                        />
+                        Active
+                      </label>
+                      {savingBus === b.id && (
+                        <span className="text-xs text-muted-foreground">Saving…</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Text boxes save when you click away. Tick boxes and dropdowns save straight away.
+                    </p>
+                  </div>
+                )}
               </li>
-            ))}
+            );})}
           </ul>
         )}
       </div>
