@@ -89,6 +89,51 @@ a number in this file for long.)
   would have failed. Backfilled correctly (28/28) against the live Samsara
   API and the serial preserved in a new `samsara_gateway_serial` column.
 
+### Samsara trip sheets — BUILT, PROVEN, AND DELIBERATELY PAUSED (2026-08-22)
+
+`push-trip-to-samsara` works. It was verified end to end against the live
+Samsara account: route `9013496000` created and assigned to a bus, then
+deleted cleanly. Three bugs surfaced during that test and were fixed (missing
+lat/lng on `singleUseLocation`; route/stop names must be alphanumeric, which
+real trip numbers like `Q-2027-001` are not; and `externalIds` KEYS must be
+alphanumeric — `ccsta_trip` was rejected with an error that reads as though
+it's about the route name, `ccstaTrip` works).
+
+**Do not wire this to a button yet.** Mila paused it on 2026-08-22 for a
+reason that isn't technical: the routes approach adds every field trip into
+Samsara's `Dispatch > Routes` list, which CCSTA may already use for daily
+school routes. Creating a route can't break existing ones — they're separate
+objects — but cluttering a list dispatchers rely on is a real cost, and she'd
+rather not.
+
+She recalls a "driver sheet / trip information" area in the Samsara Driver App
+that accepts an uploaded sheet. Checked against Samsara's docs and **that is
+probably not what she saw**: Samsara *Documents* are forms drivers fill out and
+SUBMIT (typed fields — string, number, photo, datetime, signature). PDF
+generation goes the other way, producing a PDF *of a submitted document*. There
+is no office→driver "upload a PDF for the driver to read" feature in the docs.
+
+Three real options, and what each costs:
+
+| Approach | Route needed? | Catch |
+|---|---|---|
+| Route + trip sheet in `notes` (built) | yes | clutters the routes list |
+| Document assigned to a driver | no | it's a form, not a sheet; keyed by **driver ID** |
+| Driver-dispatch messaging | no | also driver ID; it's a chat message |
+
+The blocker for both non-route options is the same: **28/28 buses have
+`samsara_vehicle_id`, 0/37 drivers have `samsara_driver_id`.** Anything keyed
+by driver needs all 37 mapped first.
+
+Three questions went to Curtis in the "Summary of work and next steps" email
+(drafted 2026-08-22, unsent as of this writing): is `Dispatch > Routes`
+actually in use; what is that Driver App tile really called; do drivers have
+individual Samsara driver profiles or do they just sign into a vehicle. **Build
+the final version only after those answers land.** Everything needed is already
+in `supabase/functions/push-trip-to-samsara/index.ts` — the sheet formatting,
+the geocoding cache, the timezone handling and the removal path all carry over
+whichever delivery mechanism wins.
+
 ### Driver time — the big change of 2026-08-04/05 (still current)
 
 Driver time used to be a flat 1 hour for every trip; it's now measured

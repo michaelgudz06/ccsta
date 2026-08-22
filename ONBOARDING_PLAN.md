@@ -110,6 +110,38 @@ software at all. Melody assigns in the CCSTA admin; the driver sees it in the
 app they already use. That is a much better outcome than a well-designed driver
 app nobody opens.
 
+### PAUSED 2026-08-22 — pending three answers from Curtis
+
+The sequence below was built and proven (see NEXT_SESSION.md for the verified
+test and the three bugs it caught). Mila then paused it, correctly, before
+wiring it to a button.
+
+The reason: this creates a route per field trip in `Dispatch > Routes`, and
+CCSTA may already have a lot of routes in there. Nothing breaks — routes are
+independent objects — but adding noise to a list dispatchers use daily is a
+real cost that wasn't weighed when the approach was chosen.
+
+Her alternative — "upload a PDF the driver opens" — was checked against
+Samsara's docs and **appears not to exist as remembered**. Samsara *Documents*
+are forms drivers fill out and submit upward; the PDF output is generated FROM
+a submitted document. The office→driver PDF drop isn't a documented feature.
+
+What does exist, besides routes: a Document created via API and assigned to a
+driver (a form, not a sheet), and driver-dispatch messaging (a chat message).
+Both are keyed by **driver ID**, and 0 of 37 drivers have `samsara_driver_id`
+populated against 28 of 28 buses that have `samsara_vehicle_id`. That mapping
+gap is the true cost of leaving the route approach.
+
+Asked of Curtis before building further:
+
+1. Is `Dispatch > Routes` actually used by CCSTA, or largely empty?
+2. What is the Driver App tile she remembers really called?
+3. Do drivers have individual Samsara driver profiles, or just sign into a
+   vehicle?
+
+Answer 3 decides whether the non-route options are even open. Answer 1 decides
+whether the clutter objection survives.
+
 ### Sequence to build it
 
 1. **Samsara API token** into Supabase edge function secrets. The
