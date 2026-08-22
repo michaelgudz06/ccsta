@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppTopBar } from "@/components/AppTopBar";
 import { RouteMap } from "@/components/RouteMap";
 import { useAuth } from "@/lib/auth";
@@ -11,6 +11,7 @@ import { COMPANY } from "@/lib/company";
 import {
   Inbox, ClipboardCheck, CalendarDays, Bus, Bell,
   FileText, AlertCircle, CheckCircle2, X, UserCheck, UserPlus, Plus,
+  Pencil, ChevronDown,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -2375,14 +2376,11 @@ type BusRow = {
   samsara_vehicle_id: string | null;
 };
 
-/**
- * The bus sizes drivers can actually be cleared for. Clearances are stored as
- * a bench_count per driver, and recommend_drivers INNER JOINs on that number,
- * so a bus whose bench_count isn't one of these matches NO driver and quietly
- * stops being dispatchable. Used to warn rather than to restrict — CCSTA may
- * genuinely buy a different size, and that should be possible.
- */
-const CLEARED_BENCH_SIZES = [18, 47, 56];
+// Bus sizes are NOT a fixed list. They used to be hardcoded [18, 47, 56], which
+// is how Bus 74 ended up recorded as 56 when Curtis had actually said 52 — the
+// real number didn't fit the assumed set, so it got "corrected" to one that did.
+// The sizes offered as driver clearances are now derived from the fleet itself,
+// so adding a bus of any size immediately makes that size clearable.
 
 function Assets() {
   const { session } = useAuth();
@@ -2526,6 +2524,24 @@ function Assets() {
     supabase.from("yards").select("id, name").order("name")
       .then(({ data }) => setYards(data ?? []));
   }, []);
+
+  // Every size that exists in the fleet, plus any size a driver is already
+  // cleared for (so removing the last bus of a size doesn't hide, and silently
+  // strand, existing clearances).
+  const fleetSizes = useMemo(() => {
+    const s = new Set<number>();
+    for (const b of buses) s.add(b.bench_count);
+    for (const list of Object.values(clearances)) for (const n of list) s.add(n);
+    return [...s].sort((a, b) => a - b);
+  }, [buses, clearances]);
+
+  // Sizes at least one driver can actually drive. A bus outside this set is
+  // never suggested for any trip — the failure the amber badge warns about.
+  const clearedSizes = useMemo(() => {
+    const s = new Set<number>();
+    for (const list of Object.values(clearances)) for (const n of list) s.add(n);
+    return s;
+  }, [clearances]);
 
   async function toggleClearance(driverId: string, bench: number, on: boolean) {
     setSavingDriver(driverId);
@@ -2706,15 +2722,16 @@ function Assets() {
           <ul className="divide-y divide-border">
             {buses.map((b) => {
               const openB = openBus === b.id;
-              const oddSize = !CLEARED_BENCH_SIZES.includes(b.bench_count);
+              const oddSize = clearedSizes.size > 0 && !clearedSizes.has(b.bench_count);
               const noSamsara = !b.samsara_vehicle_id;
               return (
               <li key={b.id} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <button
                     onClick={() => setOpenBus(openB ? null : b.id)}
-                    className="text-left text-sm font-semibold text-foreground hover:underline"
+                    className="flex items-center gap-1 text-left text-sm font-semibold text-foreground hover:underline"
                   >
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openB ? "" : "-rotate-90"}`} />
                     {b.fleet_number}
                   </button>
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -2740,6 +2757,13 @@ function Assets() {
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${b.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
                       {b.active ? "Active" : "Inactive"}
                     </span>
+                    <button
+                      onClick={() => setOpenBus(openB ? null : b.id)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold text-foreground hover:bg-surface"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      {openB ? "Done" : "Edit"}
+                    </button>
                   </div>
                 </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
@@ -2771,8 +2795,9 @@ function Assets() {
                         />
                         {oddSize && (
                           <span className="mt-1 block text-[11px] font-medium text-amber-700">
-                            Drivers are only cleared for {CLEARED_BENCH_SIZES.join(", ")} seats. At this
-                            size no driver matches, so the bus won't be suggested for any trip.
+                            No driver is cleared for {b.bench_count} seats, so this bus won't be
+                            suggested for any trip. Open a driver below and tick {b.bench_count} to
+                            fix it — the size appears there automatically.
                           </span>
                         )}
                       </label>
@@ -2963,8 +2988,9 @@ function Assets() {
                 <div className="flex items-center justify-between gap-2">
                   <button
                     onClick={() => setOpenDriver(open ? null : d.id)}
-                    className="text-left text-sm font-semibold text-foreground hover:underline"
+                    className="flex items-center gap-1 text-left text-sm font-semibold text-foreground hover:underline"
                   >
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`} />
                     {d.first_name} {d.last_name}
                   </button>
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -2987,6 +3013,13 @@ function Assets() {
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${d.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
                       {d.active ? "Active" : "Inactive"}
                     </span>
+                    <button
+                      onClick={() => setOpenDriver(open ? null : d.id)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold text-foreground hover:bg-surface"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      {open ? "Done" : "Edit"}
+                    </button>
                   </div>
                 </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
@@ -3038,7 +3071,7 @@ function Assets() {
                         Cleared to drive
                       </span>
                       <div className="flex flex-wrap gap-3">
-                        {[18, 47, 56].map((bench) => (
+                        {fleetSizes.map((bench) => (
                           <label key={bench} className="flex items-center gap-1.5 text-sm text-foreground">
                             <input
                               type="checkbox"
