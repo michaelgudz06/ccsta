@@ -2386,8 +2386,14 @@ function Assets() {
   const [inviteFirst, setInviteFirst] = useState("");
   const [inviteLast,  setInviteLast]  = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePhone, setInvitePhone] = useState("");
   const [inviteBusy,  setInviteBusy]  = useState(false);
   const [inviteMsg,   setInviteMsg]   = useState<{ ok: boolean; text: string } | null>(null);
+  // Most CCSTA drivers will never log in — the trip sheet reaches them through
+  // Samsara, not through this site. Forcing an email address to add someone to
+  // the roster would mean inventing fake addresses, so adding without an
+  // account is the DEFAULT and the login invite is opt-in.
+  const [sendInvite,  setSendInvite]  = useState(false);
 
   useEffect(() => {
     supabase
@@ -2437,13 +2443,81 @@ function Assets() {
     setDrivers((ds) => ds.map((d) => (d.id === driverId ? { ...d, ...patch } : d)));
     const { error } = await supabase.from("drivers").update(patch).eq("id", driverId);
     setSavingDriver(null);
-    if (error) setDrivers(prev);
+    if (error) { setDrivers(prev); setDriverErr(error.message); }
+  }
+
+  // Text fields (name, email, phone) are edited through a local draft and
+  // committed on blur, NOT on every keystroke. Writing per-character would put
+  // one UPDATE per letter onto a live table and make the optimistic-rollback
+  // above meaningless — a mid-word failure would leave a half-typed name saved.
+  const [draft, setDraft] = useState<Record<string, Partial<DriverRow>>>({});
+  const [driverErr, setDriverErr] = useState<string | null>(null);
+
+  function draftValue(d: DriverRow, field: "first_name" | "last_name" | "email" | "phone") {
+    return (draft[d.id]?.[field] as string | null | undefined) ?? d[field] ?? "";
+  }
+
+  function setDraftValue(id: string, field: string, value: string) {
+    setDraft((s) => ({ ...s, [id]: { ...s[id], [field]: value } }));
+  }
+
+  /**
+   * Commit one text field if it actually changed.
+   *
+   * first_name/last_name are NOT NULL in the schema, so an emptied name would
+   * be rejected by Postgres at the end of a round-trip with a constraint error
+   * Melody can't act on. Refuse locally and put the old value back instead.
+   * email/phone are nullable, so blank means null, not "".
+   */
+  async function commitField(d: DriverRow, field: "first_name" | "last_name" | "email" | "phone") {
+    const raw = (draft[d.id]?.[field] as string | undefined);
+    if (raw === undefined) return;
+    const trimmed = raw.trim();
+
+    if ((field === "first_name" || field === "last_name") && !trimmed) {
+      setDraft((s) => ({ ...s, [d.id]: { ...s[d.id], [field]: d[field] } }));
+      setDriverErr("First and last name can't be empty.");
+      return;
+    }
+    const next = trimmed === "" ? null : trimmed;
+    if (next === (d[field] ?? null)) return;
+    setDriverErr(null);
+    await updateDriver(d.id, { [field]: next } as Partial<DriverRow>);
+  }
+
+  function refreshDrivers() {
+    return supabase.from("drivers")
+      .select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active, home_yard_id")
+      .order("last_name").then(({ data }) => setDrivers((data as DriverRow[]) ?? []));
   }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
-    if (!inviteFirst || !inviteLast || !inviteEmail) return;
+    if (!inviteFirst || !inviteLast) return;
+    if (sendInvite && !inviteEmail) return;
     setInviteBusy(true); setInviteMsg(null);
+
+    // No login wanted: just a roster row. profile_id stays null, which every
+    // consumer already tolerates — recommend_drivers joins clearances, not
+    // profiles, so a driver with no account is suggested for trips normally.
+    if (!sendInvite) {
+      const { error } = await supabase.from("drivers").insert({
+        first_name: inviteFirst.trim(),
+        last_name:  inviteLast.trim(),
+        email:      inviteEmail.trim() || null,
+        phone:      invitePhone.trim() || null,
+      });
+      setInviteBusy(false);
+      if (error) { setInviteMsg({ ok: false, text: error.message }); return; }
+      setInviteMsg({
+        ok: true,
+        text: `${inviteFirst} ${inviteLast} added. Open them below to set bus clearances — until a bus size is ticked they won't be suggested for any trip.`,
+      });
+      setInviteFirst(""); setInviteLast(""); setInviteEmail(""); setInvitePhone("");
+      setShowInvite(false);
+      await refreshDrivers();
+      return;
+    }
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
     const res = await fetch(`${supabaseUrl}/functions/v1/invite-driver`, {
@@ -2461,11 +2535,9 @@ function Assets() {
       setInviteMsg({ ok: false, text: json.error ?? "Invite failed" });
     } else {
       setInviteMsg({ ok: true, text: `Invite sent to ${inviteEmail}. They'll get an email to set their password.` });
-      setInviteFirst(""); setInviteLast(""); setInviteEmail("");
+      setInviteFirst(""); setInviteLast(""); setInviteEmail(""); setInvitePhone("");
       setShowInvite(false);
-      // Refresh driver list
-      supabase.from("drivers").select("id, first_name, last_name, email, phone, trip_type, air_brake_cert, active, home_yard_id")
-        .order("last_name").then(({ data }) => setDrivers((data as DriverRow[]) ?? []));
+      await refreshDrivers();
     }
   }
 
@@ -2518,17 +2590,24 @@ function Assets() {
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
           >
             <UserPlus className="h-3.5 w-3.5" />
-            Invite driver
+            Add driver
           </button>
         </div>
+
+        {driverErr && (
+          <div className="border-b border-border bg-rose-50 px-4 py-2 text-xs text-rose-800">
+            Couldn't save: {driverErr}
+          </div>
+        )}
 
         {/* Invite form */}
         {showInvite && (
           <form onSubmit={handleInvite} className="border-b border-border bg-surface p-4 space-y-3">
             <p className="text-xs text-muted-foreground">
-              Enter the driver's details — they'll receive an email to set their own password.
+              Add a driver to the roster. Email and phone are optional unless you're
+              sending them a login.
             </p>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-xs">
                 <span className="font-medium text-foreground">First name</span>
                 <input required value={inviteFirst} onChange={(e) => setInviteFirst(e.target.value)}
@@ -2540,15 +2619,38 @@ function Assets() {
                   placeholder="Smith" className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
               </label>
               <label className="block text-xs">
-                <span className="font-medium text-foreground">Email</span>
-                <input required type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="jane@driver.ca" className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
+                <span className="font-medium text-foreground">
+                  Email {sendInvite ? "" : <span className="font-normal text-muted-foreground">(optional)</span>}
+                </span>
+                <input required={sendInvite} type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder={sendInvite ? "jane@driver.ca" : "Leave blank if they don't have one"}
+                  className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
+              </label>
+              <label className="block text-xs">
+                <span className="font-medium text-foreground">
+                  Phone <span className="font-normal text-muted-foreground">(optional)</span>
+                </span>
+                <input type="tel" value={invitePhone} onChange={(e) => setInvitePhone(e.target.value)}
+                  placeholder="778-555-0123" className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none ring-ring focus:ring-2" />
               </label>
             </div>
+
+            <label className="flex items-start gap-2 rounded-lg bg-background/60 p-2.5 text-xs">
+              <input type="checkbox" checked={sendInvite}
+                onChange={(e) => setSendInvite(e.target.checked)} className="mt-0.5 h-4 w-4" />
+              <span>
+                <span className="font-medium text-foreground">Also send them a login for this website</span>
+                <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                  Only needed if this driver will set their own availability here. Trip
+                  sheets don't depend on it, so most drivers won't need an account.
+                </span>
+              </span>
+            </label>
+
             <div className="flex gap-2">
               <button type="submit" disabled={inviteBusy}
                 className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                {inviteBusy ? "Sending…" : "Send invite"}
+                {inviteBusy ? "Saving…" : sendInvite ? "Add driver & send invite" : "Add driver"}
               </button>
               <button type="button" onClick={() => setShowInvite(false)}
                 className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground">
@@ -2572,7 +2674,7 @@ function Assets() {
         {driversLoading ? (
           <div className="p-4 text-sm text-muted-foreground">Loading drivers…</div>
         ) : drivers.length === 0 ? (
-          <div className="p-4 text-sm text-muted-foreground">No drivers yet — use the invite button to add them.</div>
+          <div className="p-4 text-sm text-muted-foreground">No drivers yet — use "Add driver" above.</div>
         ) : (
           <ul className="divide-y divide-border">
             {drivers.map((d) => {
@@ -2625,6 +2727,37 @@ function Assets() {
 
                 {open && (
                   <div className="mt-3 grid gap-3 rounded-xl border border-border bg-surface/60 p-3">
+                    <div>
+                      <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                        Contact details
+                      </span>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {([
+                          ["first_name", "First name", "text",  "Jane"],
+                          ["last_name",  "Last name",  "text",  "Smith"],
+                          ["email",      "Email",      "email", "Optional"],
+                          ["phone",      "Phone",      "tel",   "Optional"],
+                        ] as const).map(([field, label, type, placeholder]) => (
+                          <label key={field} className="block text-[11px]">
+                            <span className="text-muted-foreground">{label}</span>
+                            <input
+                              type={type}
+                              value={draftValue(d, field)}
+                              placeholder={placeholder}
+                              onChange={(e) => setDraftValue(d.id, field, e.target.value)}
+                              onBlur={() => commitField(d, field)}
+                              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                              className="mt-0.5 w-full rounded-lg border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Saves when you click away. Email and phone can be left blank —
+                        a driver doesn't need either to be assigned trips.
+                      </p>
+                    </div>
+
                     <div>
                       <span className="mb-1 block text-xs font-medium text-muted-foreground">
                         Cleared to drive

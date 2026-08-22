@@ -42,3 +42,6 @@ ccsta-test/
 
 # Build output
 .vercel/
+
+# Claude Code local machine settings
+.claude/settings.local.json
