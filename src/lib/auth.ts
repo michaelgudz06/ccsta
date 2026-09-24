@@ -79,7 +79,32 @@ export function useAuth() {
     // requires email confirmation (no session yet); false when the user is
     // logged in immediately.
     signup: async (email: string, password: string) => {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      // emailRedirectTo is NOT optional, and omitting it was a live bug that
+      // silently blocked real customers for weeks.
+      //
+      // Without it, Supabase points the "Confirm email address" link at the
+      // PROJECT'S Site URL from the Auth dashboard — which was still
+      // http://localhost:8080 from development. Every customer who signed up
+      // got a confirmation email whose link opened "Safari can't open the page
+      // because it couldn't connect to the server". Nothing errored on our
+      // side: signup succeeded, the email sent, and the account simply sat
+      // unconfirmed forever. resetPasswordForEmail in login.tsx already passed
+      // a redirectTo, which is why password reset worked and signup didn't.
+      //
+      // Deriving it from window.location.origin rather than hard-coding
+      // ccsta.net means local dev keeps working and a future domain change
+      // can't reintroduce this.
+      //
+      // /login is the landing spot on purpose: the Supabase client consumes the
+      // token from the URL hash on load, and login.tsx already redirects a
+      // signed-in user on to the right place for their role.
+      const emailRedirectTo =
+        typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo },
+      });
       if (error) throw error;
       return { needsConfirmation: !data.session };
     },
