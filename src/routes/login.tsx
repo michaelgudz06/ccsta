@@ -45,6 +45,35 @@ function LoginPage() {
     return n && n.startsWith("/") && !n.startsWith("//") ? n : null;
   })();
 
+  // Explain a failed confirmation link instead of showing a bare login form.
+  //
+  // When a confirm/invite link is expired or already used, Supabase still sends
+  // the person here — but with the reason in the URL HASH
+  // (#error=access_denied&error_code=otp_expired), which nothing was reading.
+  // The result was a plain login page: no error, no explanation, and no hint
+  // that the link was the problem. To a customer that is indistinguishable from
+  // the broken-link bug they just hit, so they try the same dead link again.
+  //
+  // Links expire in about 24 hours, so this is the normal path for anyone who
+  // opens the email a day later — not a rare edge case.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    if (!hash) return;
+    const p = new URLSearchParams(hash);
+    const code = p.get("error_code");
+    const desc = p.get("error_description");
+    if (!code && !desc) return;
+
+    setError(
+      code === "otp_expired"
+        ? "That link has expired. Enter your email below and choose \"Forgot password\" and we'll send you a fresh one."
+        : (desc ?? "That link could not be used.").replace(/\+/g, " "),
+    );
+    // Clear the hash so a refresh doesn't re-show a stale error.
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, []);
+
   async function doSignup(e: { preventDefault(): void }) {
     e.preventDefault();
     setError(null); setNotice(null);

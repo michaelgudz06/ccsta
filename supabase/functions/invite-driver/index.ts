@@ -61,8 +61,27 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Send them to the set-password page, NOT the homepage.
+    //
+    // This mirrors invite-admin, which was fixed for exactly this in b3e65e3
+    // while invite-driver was missed. Without redirectTo, Supabase points the
+    // invite at the project's Site URL — which was still http://localhost:8080
+    // from development, so an invited driver got a link to a server that only
+    // exists on a developer's laptop. Even with Site URL corrected, they'd land
+    // on the marketing homepage, signed in, with no password set and nothing
+    // telling them what to do.
+    //
+    // Site URL is read from the same place invite-admin and the notification
+    // emails use, so the three can't drift apart.
+    let siteUrl = "https://ccsta.net";
+    try {
+      const { data: configured } = await adminClient.rpc("_site_url");
+      if (typeof configured === "string" && configured.startsWith("http")) siteUrl = configured;
+    } catch { /* fall back to the constant above */ }
+
     const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
       data: { first_name, last_name },
+      redirectTo: `${siteUrl}/reset-password`,
     });
 
     if (inviteError) {
