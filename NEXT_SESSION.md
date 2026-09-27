@@ -21,9 +21,10 @@ admin/dispatch dashboard, driver dashboard, first piece of a parent portal.
 
 ## 2. State as of 2026-09-26
 
-- `main` == `origin/main` == **`f1a88eb`**, working tree clean, nothing unpushed.
+- Last code commit on `main` is **`f1a88eb`**; everything after it is
+  handoff-doc only. `main` == `origin/main`.
 - **Published to ccsta.net at `f1a88eb`** (verified via Lovable
-  `latest_commit_sha`).
+  `latest_commit_sha`). Doc-only commits don't need a publish.
 - **79 migrations**, latest `079_geocode_cache.sql`. (An older note said "078" —
   check `supabase/migrations/` directly rather than trusting a number here.)
 - Edge functions: `invite-admin`, `invite-driver`, `notify-send`,
@@ -50,7 +51,7 @@ admin/dispatch dashboard, driver dashboard, first piece of a parent portal.
 **Rollback:** backup branch `backup-pre-deploy-2026-07-21` at `482c58b`.
 Prefer `git revert -m 1 <sha>` over force-pushing.
 
-## 4. OPEN — auth email links (the live issue)
+## 4. MOSTLY RESOLVED — auth email links
 
 ### What happened
 
@@ -77,36 +78,37 @@ error, with no session and no route into the site.
 - `supabase/functions/invite-driver/index.ts` — **had the identical bug**,
   missed when `invite-admin` was fixed in `b3e65e3` six weeks earlier. Now reads
   `_site_url()` and redirects to `/reset-password` (`f1a88eb`).
-  **⚠ Committed but NOT deployed — needs `supabase functions deploy
-  invite-driver`.**
+  **Already live** — checked 2026-09-26 via `get_edge_function`: the deployed
+  v12 has the same `redirectTo` logic and differs from the repo only in
+  comments. Oddly, Supabase dates that deploy 2026-08-11, before the commit —
+  likely deployed during the `invite-admin` fix and committed later. A
+  redeploy would only sync comments.
 - `src/routes/login.tsx` — a failed/expired link lands on `/login` with the
   reason in the URL **hash** (`#error=...&error_code=otp_expired`) and nothing
   read it, so the user saw a bare login form. Now explained, hash cleared
   (`f1a88eb`).
 
-### STILL OPEN — not fixable from code
+### Verified from logs (2026-09-26)
 
-**Supabase dashboard → Authentication → URL Configuration:**
-1. **Site URL** must be `https://ccsta.net` (was localhost).
-2. **Redirect URLs** must include `https://ccsta.net/**`.
+Supabase edge/auth logs for `operation@secondsavour.ca` (signup 2026-09-24
+22:16 UTC, 14 min after the publish) show:
+- `POST /auth/v1/signup?redirect_to=https://ccsta.net/login`
+- `GET /auth/v1/verify?...&type=signup&redirect_to=https://ccsta.net/login`
+  → **303**, session created <1s later.
 
-Point 2 is not optional. Supabase only honours `redirectTo` if it matches the
-allow-list; otherwise it **silently discards it** and falls back to Site URL. If
-that isn't set, every fix above is a no-op with no error anywhere.
+The emailed link carried `redirect_to=ccsta.net/login`. GoTrue only keeps a
+custom redirect that matches the **Redirect URLs allow-list**, and the link
+only includes it if the template uses `{{ .ConfirmationURL }}` — so both of
+those dashboard items are effectively confirmed. (Re-query logs the same way
+if in doubt: `query_logs`, filter `event_message ilike '%/verify%'`.)
 
-**Also needs a manual check:** Auth → Email Templates. If "Confirm signup" or
-"Invite user" use `{{ .SiteURL }}` rather than `{{ .ConfirmationURL }}`, the
-redirect is ignored outright.
+### STILL OPEN — dashboard only
 
-Mila was asked to make these changes; **not confirmed done.**
-
-### Evidence it may already be working
-
-`operation@secondsavour.ca` signed up 2026-09-24 22:16 UTC — 14 minutes after
-the publish — and confirmed 27 seconds later. Encouraging, but it does not prove
-*where they landed*, only that verification succeeded. A real end-to-end test is
-still outstanding: sign up as `milagudz07+test1@gmail.com`, tap the link, and
-check whether the address bar says `ccsta.net` or `localhost`.
+- **Site URL** (Auth → URL Configuration) is not visible from logs/SQL and may
+  still be `http://localhost:8080`. It's now only the fallback when a redirect
+  is missing or rejected, but set it to `https://ccsta.net` anyway.
+- Optional: an end-to-end test as `milagudz07+test1@gmail.com` to eyeball the
+  landing page. Logs make it very likely to pass. Delete the test user after.
 
 ### Three accounts still stranded
 
@@ -117,8 +119,13 @@ check whether the address bar says `ccsta.net` or `localhost`.
 | `accounting@ccsta.net` | 2026-08-12 | Curtis's admin invite, same |
 
 Those two admin invites likely explain why neither Curtis nor Melody ever set a
-password or ran the tests they were asked for. Re-send **after** the dashboard
-is corrected, not before.
+password or ran the tests they were asked for. Redirects are now proven to
+work, so re-sending is unblocked.
+
+**Melody may already have an account:** `melodyddaigneault@gmail.com` signed
+up via the customer form 2026-09-24 18:20 UTC and confirmed. If that's her,
+promoting it to admin may beat re-sending the `admin@ccsta.net` invite — ask
+before changing any role.
 
 ## 5. Samsara trip sheets — BUILT, PROVEN, DELIBERATELY PAUSED
 
@@ -237,12 +244,13 @@ wrong, and seat count feeds directly into what a school is quoted.
 
 ## 9. Immediate next tasks
 
-1. **Confirm the Supabase dashboard change** (§4). Everything else in auth is
-   blocked behind it, and it cannot be verified from code.
-2. **Deploy `invite-driver`** — fixed in `f1a88eb` but never deployed.
-3. **End-to-end signup test** — `milagudz07+test1@gmail.com`, tap the link,
-   check the address bar. Then delete the test user.
-4. **Re-send to the three stranded accounts** once 1 is done.
+1. **Set Site URL to `https://ccsta.net`** in the Supabase dashboard (§4).
+   Fallback only now — redirect allow-list and templates are verified working.
+2. **Stranded accounts** (§4) — nudge the MEI contact personally, then resend;
+   decide Melody (promote `melodyddaigneault@gmail.com` vs. resend
+   `admin@ccsta.net`); resend Curtis's `accounting@ccsta.net` invite.
+3. *(Optional)* End-to-end signup test as `milagudz07+test1@gmail.com`.
+4. ~~Deploy `invite-driver`~~ — already live (§4).
 5. **`PIPELINE_PLAN.md`** — approved → completed → invoiced. `trips` still has
    ZERO rows; that pipeline has never run.
 6. **Sage import** — `sage-import-test.IMP` exists, built from Sage's published
